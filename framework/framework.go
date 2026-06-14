@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -23,6 +24,10 @@ type TestSuite struct {
 	Verbose     bool
 	Quiet       bool
 	Client      *http.Client
+	// Out is the writer for all human-readable progress and summary output.
+	// Defaults to os.Stdout; callers may redirect it to os.Stderr when structured
+	// report output owns stdout.
+	Out io.Writer
 
 	// Capabilities holds the parsed service capability profile; nil disables capability gating.
 	Capabilities *CapabilityProfile
@@ -101,6 +106,7 @@ func NewTestSuite(name, description, specURL string) *TestSuite {
 		Tests:       []Test{},
 		Results:     &TestResults{},
 		ServerURL:   "http://localhost:9090",
+		Out:         os.Stdout,
 		Client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -119,18 +125,18 @@ func (s *TestSuite) AddTest(name, description string, fn func(*TestContext) erro
 // Run executes all tests in the suite
 func (s *TestSuite) Run() error {
 	if s.Verbose {
-		fmt.Println("======================================")
-		fmt.Printf("OData v4 Compliance Test\n")
-		fmt.Printf("Suite: %s\n", s.Name)
-		fmt.Println("======================================")
-		fmt.Println()
-		fmt.Printf("Description: %s\n", s.Description)
-		fmt.Println()
-		fmt.Printf("Spec Reference: %s\n", s.SpecURL)
-		fmt.Println()
+		fmt.Fprintln(s.Out, "======================================")
+		fmt.Fprintln(s.Out, "OData v4 Compliance Test")
+		fmt.Fprintf(s.Out, "Suite: %s\n", s.Name)
+		fmt.Fprintln(s.Out, "======================================")
+		fmt.Fprintln(s.Out)
+		fmt.Fprintf(s.Out, "Description: %s\n", s.Description)
+		fmt.Fprintln(s.Out)
+		fmt.Fprintf(s.Out, "Spec Reference: %s\n", s.SpecURL)
+		fmt.Fprintln(s.Out)
 	} else if !s.Quiet {
 		// In non-verbose mode, show a simple progress message unless suppressed
-		fmt.Printf("Running %d tests... ", len(s.Tests))
+		fmt.Fprintf(s.Out, "Running %d tests... ", len(s.Tests))
 	}
 
 	// Capability gate: if the service declares a required capability as unsupported and
@@ -149,9 +155,9 @@ func (s *TestSuite) Run() error {
 					})
 				}
 				if s.Verbose {
-					fmt.Printf("⊘ Suite skipped: %s\n\n", reason)
+					fmt.Fprintf(s.Out, "⊘ Suite skipped: %s\n\n", reason)
 				} else if !s.Quiet {
-					fmt.Printf("Skipped (%s)\n", reason)
+					fmt.Fprintf(s.Out, "Skipped (%s)\n", reason)
 				}
 				return nil
 			}
@@ -162,8 +168,8 @@ func (s *TestSuite) Run() error {
 	// Tests within a suite may depend on data created by previous tests
 	if err := s.reseedDatabase(); err != nil {
 		if s.Verbose {
-			fmt.Printf("\n⚠ WARNING: Failed to reseed database before suite '%s': %v\n", s.Name, err)
-			fmt.Println("Continuing with existing data...")
+			fmt.Fprintf(s.Out, "\n⚠ WARNING: Failed to reseed database before suite '%s': %v\n", s.Name, err)
+			fmt.Fprintln(s.Out, "Continuing with existing data...")
 		}
 	}
 
@@ -185,8 +191,8 @@ func (s *TestSuite) Run() error {
 					Error:  skipErr.Reason,
 				})
 				if s.Verbose {
-					fmt.Printf("\n⊘ SKIP: %s\n", test.Description)
-					fmt.Printf("  Reason: %s\n", skipErr.Reason)
+					fmt.Fprintf(s.Out, "\n⊘ SKIP: %s\n", test.Description)
+					fmt.Fprintf(s.Out, "  Reason: %s\n", skipErr.Reason)
 				}
 			} else {
 				s.Results.Failed++
@@ -196,8 +202,8 @@ func (s *TestSuite) Run() error {
 					Error:  err.Error(),
 				})
 				if s.Verbose {
-					fmt.Printf("\n✗ FAIL: %s\n", test.Description)
-					fmt.Printf("  Details: %s\n", err.Error())
+					fmt.Fprintf(s.Out, "\n✗ FAIL: %s\n", test.Description)
+					fmt.Fprintf(s.Out, "  Details: %s\n", err.Error())
 				}
 			}
 		} else {
@@ -207,18 +213,18 @@ func (s *TestSuite) Run() error {
 				Status: StatusPass,
 			})
 			if s.Verbose {
-				fmt.Printf("\n✓ PASS: %s\n", test.Description)
+				fmt.Fprintf(s.Out, "\n✓ PASS: %s\n", test.Description)
 			}
 		}
 
 		// Print progress dots in non-verbose, non-quiet mode
 		if !s.Verbose && !s.Quiet && (i+1)%10 == 0 {
-			fmt.Printf("%d/%d ", i+1, len(s.Tests))
+			fmt.Fprintf(s.Out, "%d/%d ", i+1, len(s.Tests))
 		}
 	}
 
 	if !s.Verbose && !s.Quiet {
-		fmt.Printf("Done\n")
+		fmt.Fprintln(s.Out, "Done")
 	}
 
 	if !s.Quiet {
@@ -233,26 +239,26 @@ func (s *TestSuite) Run() error {
 
 // PrintSummary prints the test summary in standardized format
 func (s *TestSuite) PrintSummary() {
-	fmt.Println()
-	fmt.Println("======================================")
-	fmt.Printf("COMPLIANCE_TEST_RESULT:PASSED=%d:FAILED=%d:SKIPPED=%d:TOTAL=%d\n",
+	fmt.Fprintln(s.Out)
+	fmt.Fprintln(s.Out, "======================================")
+	fmt.Fprintf(s.Out, "COMPLIANCE_TEST_RESULT:PASSED=%d:FAILED=%d:SKIPPED=%d:TOTAL=%d\n",
 		s.Results.Passed, s.Results.Failed, s.Results.Skipped, s.Results.Total)
-	fmt.Println("======================================")
+	fmt.Fprintln(s.Out, "======================================")
 
 	if s.Results.Failed == 0 {
-		fmt.Println("Status: PASSING")
+		fmt.Fprintln(s.Out, "Status: PASSING")
 	} else {
-		fmt.Println("Status: FAILING")
+		fmt.Fprintln(s.Out, "Status: FAILING")
 
 		// Print failed tests list
 		if !s.Verbose && s.Results.Failed > 0 {
-			fmt.Println()
-			fmt.Println("Failed Tests:")
+			fmt.Fprintln(s.Out)
+			fmt.Fprintln(s.Out, "Failed Tests:")
 			for _, detail := range s.Results.Details {
 				if detail.Status == StatusFail {
-					fmt.Printf("  ✗ %s\n", detail.Name)
+					fmt.Fprintf(s.Out, "  ✗ %s\n", detail.Name)
 					if detail.Error != "" {
-						fmt.Printf("    Error: %s\n", detail.Error)
+						fmt.Fprintf(s.Out, "    Error: %s\n", detail.Error)
 					}
 				}
 			}
@@ -357,7 +363,7 @@ func (c *TestContext) GETWithHeaders(path string, customHeaders map[string]strin
 // Log logs a message during test execution
 func (c *TestContext) Log(message string) {
 	if c.suite.Debug {
-		fmt.Printf("[LOG] %s\n", message)
+		fmt.Fprintf(c.suite.Out, "[LOG] %s\n", message)
 	}
 }
 
@@ -461,55 +467,57 @@ func (c *TestContext) requestWithOptions(method, path string, body interface{}, 
 
 // debugRequest prints debug information about the request
 func (c *TestContext) debugRequest(req *http.Request, body interface{}) {
-	fmt.Println("\n╔══════════════════════════════════════════════════════╗")
-	fmt.Println("║ DEBUG: HTTP Request                                  ║")
-	fmt.Println("╚══════════════════════════════════════════════════════╝")
-	fmt.Println()
-	fmt.Printf("Method: %s\n", req.Method)
-	fmt.Printf("URL: %s\n", req.URL.String())
+	out := c.suite.Out
+	fmt.Fprintln(out, "\n╔══════════════════════════════════════════════════════╗")
+	fmt.Fprintln(out, "║ DEBUG: HTTP Request                                  ║")
+	fmt.Fprintln(out, "╚══════════════════════════════════════════════════════╝")
+	fmt.Fprintln(out)
+	fmt.Fprintf(out, "Method: %s\n", req.Method)
+	fmt.Fprintf(out, "URL: %s\n", req.URL.String())
 	if len(req.Header) > 0 {
-		fmt.Println("Headers:")
+		fmt.Fprintln(out, "Headers:")
 		for k, v := range req.Header {
-			fmt.Printf("  %s: %s\n", k, strings.Join(v, ", "))
+			fmt.Fprintf(out, "  %s: %s\n", k, strings.Join(v, ", "))
 		}
 	}
 	if body != nil {
-		fmt.Println("Body:")
+		fmt.Fprintln(out, "Body:")
 		if str, ok := body.(string); ok {
-			fmt.Println(str)
+			fmt.Fprintln(out, str)
 		} else if b, ok := body.([]byte); ok {
-			fmt.Println(string(b))
+			fmt.Fprintln(out, string(b))
 		} else {
 			bodyJSON, err := json.MarshalIndent(body, "", "  ")
 			if err == nil {
-				fmt.Println(string(bodyJSON))
+				fmt.Fprintln(out, string(bodyJSON))
 			}
 		}
 	}
-	fmt.Println()
+	fmt.Fprintln(out)
 }
 
 // debugResponse prints debug information about the response
 func (c *TestContext) debugResponse(resp *HTTPResponse) {
-	fmt.Println("\n╔══════════════════════════════════════════════════════╗")
-	fmt.Println("║ DEBUG: HTTP Response                                 ║")
-	fmt.Println("╚══════════════════════════════════════════════════════╝")
-	fmt.Println()
-	fmt.Printf("Status Code: %d\n", resp.StatusCode)
+	out := c.suite.Out
+	fmt.Fprintln(out, "\n╔══════════════════════════════════════════════════════╗")
+	fmt.Fprintln(out, "║ DEBUG: HTTP Response                                 ║")
+	fmt.Fprintln(out, "╚══════════════════════════════════════════════════════╝")
+	fmt.Fprintln(out)
+	fmt.Fprintf(out, "Status Code: %d\n", resp.StatusCode)
 	if len(resp.Body) > 0 {
-		fmt.Println("Body:")
+		fmt.Fprintln(out, "Body:")
 		// Try to pretty-print JSON
 		var jsonBody interface{}
 		if err := json.Unmarshal(resp.Body, &jsonBody); err == nil {
 			prettyJSON, marshalErr := json.MarshalIndent(jsonBody, "", "  ")
 			if marshalErr == nil {
-				fmt.Println(string(prettyJSON))
+				fmt.Fprintln(out, string(prettyJSON))
 			}
 		} else {
-			fmt.Println(string(resp.Body))
+			fmt.Fprintln(out, string(resp.Body))
 		}
 	}
-	fmt.Println()
+	fmt.Fprintln(out)
 }
 
 // AssertStatusCode checks if the response has the expected status code

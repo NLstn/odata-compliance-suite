@@ -58,6 +58,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: unknown format %q — valid values are: %s\n", *format, validFormats)
 		os.Exit(1)
 	}
+	if *format == "text" && *outputFile != "" {
+		fmt.Fprintln(os.Stderr, "Error: --output requires a non-text format (use --format junit, json, or sarif)")
+		os.Exit(1)
+	}
 
 	// progressOut is where human-readable output goes.
 	// For non-text formats we redirect it to stderr so that stdout (or --output)
@@ -66,6 +70,9 @@ func main() {
 	if *format != "text" && *outputFile == "" {
 		progressOut = os.Stderr
 	}
+
+	// useColor controls whether ANSI escape codes appear in progress output.
+	useColor := isTerminal(progressOut) && os.Getenv("NO_COLOR") == ""
 
 	fmt.Fprintln(progressOut)
 	fmt.Fprintln(progressOut, "╔════════════════════════════════════════════════════════╗")
@@ -88,7 +95,7 @@ func main() {
 
 	// The suite runs entirely against an externally-provided OData service.
 	// Wait for it to become reachable before running any tests.
-	if !waitForServer(*serverURL, *timeout, progressOut) {
+	if !waitForServer(*serverURL, *timeout, progressOut, useColor) {
 		fmt.Fprintf(os.Stderr, "Error: cannot reach OData service at %s after %ds\n", *serverURL, *timeout)
 		fmt.Fprintln(os.Stderr, "Start your service and point -server at its root URL.")
 		fmt.Fprintln(os.Stderr, "The service must expose the reference data model documented in CONTRACT.md.")
@@ -1155,6 +1162,7 @@ func main() {
 		suite.Debug = *debug
 		suite.Verbose = *verbose
 		suite.Quiet = !*verbose
+		suite.Out = progressOut
 		suite.Capabilities = capProfile
 		suite.Strict = *strict
 		if reqs, ok := capabilityRequirements[suiteInfo.Name]; ok {
@@ -1212,7 +1220,7 @@ func main() {
 		suite := prepared.suite
 
 		if *verbose {
-			fmt.Fprintf(progressOut, "\033[0;34mRunning: [%s] %s\033[0m\n", prepared.versionPrefix, prepared.info.Name)
+			fmt.Fprintln(progressOut, ansi("0;34", fmt.Sprintf("Running: [%s] %s", prepared.versionPrefix, prepared.info.Name), useColor))
 			fmt.Fprintln(progressOut, "─────────────────────────────────────────────────────────")
 		}
 
@@ -1390,9 +1398,9 @@ func main() {
 			}
 			var icon string
 			if ls.failed > 0 {
-				icon = "\033[0;31m✗\033[0m"
+				icon = ansi("0;31", "✗", useColor)
 			} else {
-				icon = "\033[0;32m✓\033[0m"
+				icon = ansi("0;32", "✓", useColor)
 			}
 			fmt.Fprintf(progressOut, "  %s [%s] %s: %s (%d/%d suites)\n",
 				icon, versionLabel, lvl.String(),
@@ -1405,9 +1413,9 @@ func main() {
 				ls.total-ls.failed, ls.total)
 		}
 		if highest != framework.LevelUnspecified {
-			fmt.Fprintf(progressOut, "  → Highest level fully met: \033[0;32m%s %s\033[0m\n", versionLabel, highest.String())
+			fmt.Fprintf(progressOut, "  → Highest level fully met: %s\n", ansi("0;32", versionLabel+" "+highest.String(), useColor))
 		} else {
-			fmt.Fprintf(progressOut, "  → Highest level fully met: \033[0;31mNone\033[0m\n")
+			fmt.Fprintf(progressOut, "  → Highest level fully met: %s\n", ansi("0;31", "None", useColor))
 		}
 		fmt.Fprintln(progressOut)
 	}
@@ -1443,11 +1451,11 @@ func main() {
 			fs := row.stat
 			var status string
 			if fs.failed > 0 {
-				status = "\033[0;31m✗ FAIL\033[0m"
+				status = ansi("0;31", "✗ FAIL", useColor)
 			} else if fs.passed > 0 {
-				status = "\033[0;32m✓ PASS\033[0m"
+				status = ansi("0;32", "✓ PASS", useColor)
 			} else {
-				status = "\033[0;33m⊘ SKIP\033[0m"
+				status = ansi("0;33", "⊘ SKIP", useColor)
 			}
 			fmt.Fprintf(progressOut, "  %-32s %-14s  %6d  %6d  %6d  %s [%s]\n",
 				row.key.feature, fs.level.String(),
@@ -1460,11 +1468,11 @@ func main() {
 	// Clean exit with proper status code
 	var exitCode int
 	if passedSuites == totalSuites {
-		fmt.Fprintln(progressOut, "\033[0;32m✓ ALL TESTS PASSED\033[0m")
+		fmt.Fprintln(progressOut, ansi("0;32", "✓ ALL TESTS PASSED", useColor))
 		fmt.Fprintln(progressOut)
 		exitCode = 0
 	} else {
-		fmt.Fprintln(progressOut, "\033[0;31m✗ SOME TESTS FAILED\033[0m")
+		fmt.Fprintln(progressOut, ansi("0;31", "✗ SOME TESTS FAILED", useColor))
 		fmt.Fprintln(progressOut)
 		exitCode = 1
 	}
@@ -1479,7 +1487,6 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: cannot open output file %q: %v\n", *outputFile, err)
 			os.Exit(1)
 		}
-		defer closeFile()
 
 		var writeErr error
 		switch *format {
@@ -1490,6 +1497,7 @@ func main() {
 		case "sarif":
 			writeErr = report.WriteSARIF(reportDest)
 		}
+		closeFile()
 		if writeErr != nil {
 			fmt.Fprintf(os.Stderr, "Error writing %s report: %v\n", *format, writeErr)
 			os.Exit(1)
@@ -1547,11 +1555,11 @@ func openReportDest(path string) (io.Writer, func(), error) {
 
 // waitForServer polls the service root until it responds with HTTP 200 or the
 // timeout (in seconds) elapses. It returns true once the server is reachable.
-func waitForServer(serverURL string, timeoutSeconds int, out io.Writer) bool {
+func waitForServer(serverURL string, timeoutSeconds int, out io.Writer, useColor bool) bool {
 	fmt.Fprintf(out, "Waiting for OData service at %s ...\n", serverURL)
 	for i := 0; i < timeoutSeconds; i++ {
 		if checkServerConnectivity(serverURL) {
-			fmt.Fprintln(out, "\033[0;32m✓ Service is reachable!\033[0m")
+			fmt.Fprintln(out, ansi("0;32", "✓ Service is reachable!", useColor))
 			fmt.Fprintln(out)
 			return true
 		}
@@ -1588,4 +1596,25 @@ func checkServerConnectivity(serverURL string) bool {
 	//nolint:errcheck
 	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode == 200
+}
+
+// isTerminal reports whether w is a file descriptor connected to a terminal.
+func isTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+}
+
+// ansi wraps text in an ANSI color escape sequence when enabled is true.
+func ansi(code, text string, enabled bool) string {
+	if !enabled {
+		return text
+	}
+	return "\033[" + code + "m" + text + "\033[0m"
 }
