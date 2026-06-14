@@ -1,0 +1,16 @@
+# Binaries
+/compliance-test
+compliance-test
+*.exe
+
+# Reports
+compliance-report.md
+*.out
+
+# Go
+/vendor/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
