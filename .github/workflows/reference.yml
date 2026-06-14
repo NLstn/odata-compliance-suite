@@ -1,0 +1,35 @@
+name: Reference compliance run
+
+# Runs the full suite against the go-odata reference implementation
+# (NLstn/go-odata, cmd/complianceserver). This is the end-to-end gate that
+# confirms the suite still measures a known-good service correctly.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  reference:
+    name: Run suite vs go-odata
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out suite
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          # The reference compliance server requires Go 1.25; this also
+          # satisfies the suite's own 1.24 requirement.
+          go-version: '1.25'
+
+      - name: Run compliance suite against go-odata reference server
+        env:
+          # Pin to a branch/tag/commit of the reference implementation here.
+          GO_ODATA_REF: main
+        run: ./scripts/run-reference.sh -verbose
