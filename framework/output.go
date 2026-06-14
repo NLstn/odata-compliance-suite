@@ -225,6 +225,7 @@ func (r *RunReport) WriteSARIF(w io.Writer) error {
 	}
 
 	rulesMap := map[string]bool{}
+	resultsMap := map[string]bool{}
 	var rules []sarifRule
 	var results []sarifResult
 
@@ -241,11 +242,14 @@ func (r *RunReport) WriteSARIF(w io.Writer) error {
 					ShortDescription: sarifMessage{Text: d.Name},
 				})
 			}
-			results = append(results, sarifResult{
-				RuleID:  ruleID,
-				Level:   "error",
-				Message: sarifMessage{Text: d.Error},
-			})
+			if !resultsMap[ruleID] {
+				resultsMap[ruleID] = true
+				results = append(results, sarifResult{
+					RuleID:  ruleID,
+					Level:   "error",
+					Message: sarifMessage{Text: d.Error},
+				})
+			}
 		}
 	}
 
