@@ -3,7 +3,10 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      # Full version tags only (vX.Y.Z). The moving major tag (v1) used for the
+      # Action ref must NOT trigger a release — it points at an already-released
+      # commit and would fail re-uploading existing assets.
+      - 'v*.*.*'
 
 permissions:
   contents: write   # create the GitHub Release + upload binaries
