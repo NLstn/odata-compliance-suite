@@ -78,7 +78,39 @@ return HTTP 200 before running.
 -verbose  Show every individual test result
 -debug    Show full HTTP request/response details
 -timeout  Seconds to wait for the server to become reachable (default 30)
+-strict   Treat capability-skipped tests as failures (see below)
 ```
+
+### Capability-aware skipping
+
+Before running any tests the suite fetches `/$metadata` and reads the service's
+`Org.OData.Capabilities.V1` annotations. When a suite requires a feature (e.g.
+`$filter`, `$batch`, INSERT) and the service has declared that feature unsupported,
+the suite is **skipped** instead of run-and-failed. Skipped suites are reported
+separately and never counted as failures.
+
+Supported annotations:
+
+| Annotation | Capability gated |
+|---|---|
+| `FilterRestrictions.Filterable=false` on an entity set | all `$filter` suites |
+| `SortRestrictions.Sortable=false` | `$orderby` suites |
+| `ExpandRestrictions.Expandable=false` | `$expand` suites |
+| `CountRestrictions.Countable=false` | `$count` suites |
+| `SearchRestrictions.Searchable=false` | `$search` suites |
+| `InsertRestrictions.Insertable=false` | create / deep-insert / upsert suites |
+| `UpdateRestrictions.Updatable=false` | update / upsert suites |
+| `DeleteRestrictions.Deletable=false` | delete suite |
+| `TopSupported=false` (container) | top/skip/pagination suites |
+| `SkipSupported=false` (container) | skip/skiptoken/pagination suites |
+| `BatchSupported=false` (container) | multipart and JSON batch suites |
+
+If `$metadata` cannot be fetched or parsed, the suite warns and runs all tests
+(fail-open).
+
+Use `-strict` to disable this behaviour — unsupported-capability suites run and
+fail normally. This is useful when you expect a service to be fully conformant
+and want to catch accidental capability declarations.
 
 ### Exit codes
 

@@ -234,9 +234,12 @@ v1 hard-codes this reference model. Planned work to broaden applicability:
 2. **Configurable fixtures** — a config file mapping the abstract roles the
    tests need (a "primary collection", a "composite-key set", a "singleton",
    a "media entity", a "flags enum") onto the target's actual names.
-3. **Capability negotiation** — skip suites for features the target's
-   `$metadata` / capability annotations declare unsupported, rather than
-   failing them.
+3. ~~**Capability negotiation**~~ ✓ **Done** — suites for features the target's
+   `$metadata` / capability annotations declare unsupported are skipped (not
+   failed). Supported terms: `FilterRestrictions`, `SortRestrictions`,
+   `ExpandRestrictions`, `CountRestrictions`, `SearchRestrictions`,
+   `InsertRestrictions`, `UpdateRestrictions`, `DeleteRestrictions`,
+   `TopSupported`, `SkipSupported`, `BatchSupported`. Use `-strict` to override.
 
 Until then, the simplest path for a non-`go-odata` service is to expose an
 endpoint that reproduces the model above.
