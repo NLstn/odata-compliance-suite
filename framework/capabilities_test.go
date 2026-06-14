@@ -116,6 +116,37 @@ func TestSkipReason(t *testing.T) {
 	}
 }
 
+func TestParseSelectSupportComputeable(t *testing.T) {
+	// SelectSupport.Computeable=false on an entity set should gate CapCompute.
+	xml := []byte(`<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="ComputeService" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityContainer Name="Container"/>
+      <Annotations Target="ComputeService.Container/Products">
+        <Annotation Term="Org.OData.Capabilities.V1.SelectSupport">
+          <Record>
+            <PropertyValue Property="Computeable" Bool="false"/>
+          </Record>
+        </Annotation>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>`)
+
+	profile, err := framework.ParseCapabilityProfile(xml)
+	if err != nil {
+		t.Fatalf("ParseCapabilityProfile: %v", err)
+	}
+	if profile.Supports(framework.Require(framework.CapCompute, "Products")) {
+		t.Error("expected CapCompute unsupported on Products (SelectSupport.Computeable=false)")
+	}
+	// Other caps unaffected
+	if !profile.Supports(framework.Require(framework.CapFilter, "Products")) {
+		t.Error("expected CapFilter still supported")
+	}
+}
+
 func TestCapabilityProfileSetAndGet(t *testing.T) {
 	p := framework.NewCapabilityProfile()
 

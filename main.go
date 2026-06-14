@@ -919,8 +919,18 @@ func main() {
 		"11.4.9.1_batch_error_handling":      {framework.Require(framework.CapBatch, "")},
 		"11.4.9.3_batch_content_id_referencing": {framework.Require(framework.CapBatch, "")},
 		"19_json_batch":                      {framework.Require(framework.CapBatch, "")},
-		// --- compute (v4.01) ---
-		"11.2.5.8_query_compute": {framework.Require(framework.CapCompute, "")},
+		// --- compute (v4.01; gated via SelectSupport.Computeable on entity set) ---
+		"11.2.5.8_query_compute": {framework.Require(framework.CapCompute, "Products")},
+		// --- returning results (Prefer: return=representation after mutations) ---
+		"11.4.12_returning_results": {framework.Require(framework.CapInsert, "Products")},
+		// --- null value handling (create + patch with nullable fields) ---
+		"11.4.14_null_value_handling": {framework.Require(framework.CapInsert, "Products")},
+		// --- data validation (POST with invalid payloads) ---
+		"11.4.15_data_validation": {framework.Require(framework.CapInsert, "Products")},
+		// --- conditional requests (ETags; all mutations are PATCH) ---
+		"11.5.1_conditional_requests": {framework.Require(framework.CapUpdate, "Products")},
+		// --- asynchronous processing (POST /Products as setup) ---
+		"13.1_asynchronous_processing": {framework.Require(framework.CapInsert, "Products")},
 	}
 
 	// Prepare suites (apply pattern filter) so we can compute totals for concise progress output

@@ -99,6 +99,8 @@ var termEntitySetCap = map[string]struct {
 	"Org.OData.Capabilities.V1.InsertRestrictions": {CapInsert, "Insertable"},
 	"Org.OData.Capabilities.V1.UpdateRestrictions": {CapUpdate, "Updatable"},
 	"Org.OData.Capabilities.V1.DeleteRestrictions": {CapDelete, "Deletable"},
+	// SelectSupport.Computeable=false means $compute expressions are not supported.
+	"Org.OData.Capabilities.V1.SelectSupport": {CapCompute, "Computeable"},
 }
 
 // termServiceCap maps scalar Capabilities V1 terms to service-level capabilities.
