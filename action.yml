@@ -33,6 +33,13 @@ inputs:
     description: Seconds to wait for the server to become reachable.
     required: false
     default: '30'
+  strict:
+    description: >-
+      Treat capability-skipped tests as failures. By default, tests for features the
+      service declares unsupported via Capabilities.V1 annotations are skipped, not
+      failed. Set to 'true' to disable that and require full compliance.
+    required: false
+    default: 'false'
   suite-version:
     description: >-
       Release tag of the suite to run (e.g. v1.2.3), or "latest". This pins the
@@ -52,6 +59,7 @@ runs:
         PATTERN: ${{ inputs.pattern }}
         VERBOSE: ${{ inputs.verbose }}
         DEBUG: ${{ inputs.debug }}
+        STRICT: ${{ inputs.strict }}
         WAIT_TIMEOUT: ${{ inputs.timeout }}
         SUITE_VERSION: ${{ inputs.suite-version }}
         REPO: NLstn/odata-compliance-suite
@@ -88,6 +96,7 @@ runs:
         [ -n "$PATTERN" ] && args+=( -pattern "$PATTERN" )
         [ "$VERBOSE" = "true" ] && args+=( -verbose )
         [ "$DEBUG" = "true" ] && args+=( -debug )
+        [ "$STRICT" = "true" ] && args+=( -strict )
 
         # Exit code propagates: 0 = compliant, 1 = failures/unreachable.
         "$bin" "${args[@]}"

@@ -23,6 +23,14 @@ type TestSuite struct {
 	Verbose     bool
 	Quiet       bool
 	Client      *http.Client
+
+	// Capabilities holds the parsed service capability profile; nil disables capability gating.
+	Capabilities *CapabilityProfile
+	// Strict disables capability-based skipping so all tests run regardless of declared restrictions.
+	Strict bool
+	// RequiredCapabilities lists capabilities this suite depends on. When Strict is false and the
+	// service declares any of them unsupported, every test in the suite is recorded as skipped.
+	RequiredCapabilities []RequiredCapability
 }
 
 // Test represents a single test case
@@ -123,6 +131,31 @@ func (s *TestSuite) Run() error {
 	} else if !s.Quiet {
 		// In non-verbose mode, show a simple progress message unless suppressed
 		fmt.Printf("Running %d tests... ", len(s.Tests))
+	}
+
+	// Capability gate: if the service declares a required capability as unsupported and
+	// strict mode is off, skip every test in this suite rather than running and failing them.
+	if s.Capabilities != nil && !s.Strict && len(s.RequiredCapabilities) > 0 {
+		for _, req := range s.RequiredCapabilities {
+			if !s.Capabilities.Supports(req) {
+				reason := s.Capabilities.SkipReason(req)
+				for _, test := range s.Tests {
+					s.Results.Total++
+					s.Results.Skipped++
+					s.Results.Details = append(s.Results.Details, TestDetail{
+						Name:   test.Description,
+						Status: StatusSkip,
+						Error:  reason,
+					})
+				}
+				if s.Verbose {
+					fmt.Printf("⊘ Suite skipped: %s\n\n", reason)
+				} else if !s.Quiet {
+					fmt.Printf("Skipped (%s)\n", reason)
+				}
+				return nil
+			}
+		}
 	}
 
 	// Reseed the database once at the beginning of the suite to ensure clean state

@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -25,6 +27,7 @@ var (
 	debug     = flag.Bool("debug", false, "Enable debug mode with full HTTP request/response details")
 	verbose   = flag.Bool("verbose", false, "Enable verbose mode to show all individual test results")
 	timeout   = flag.Int("timeout", 30, "Seconds to wait for the server to become reachable before giving up")
+	strict    = flag.Bool("strict", false, "Treat capability-skipped tests as failures (disables capability-aware skipping)")
 )
 
 type TestSuiteInfo struct {
@@ -59,6 +62,19 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Start your service and point -server at its root URL.")
 		fmt.Fprintln(os.Stderr, "The service must expose the reference data model documented in CONTRACT.md.")
 		os.Exit(1)
+	}
+
+	// Fetch and parse the service's $metadata to build a capability profile used for
+	// intelligent test skipping. Failure is non-fatal: we warn and run all tests.
+	var capProfile *framework.CapabilityProfile
+	if !*strict {
+		if profile, err := fetchCapabilityProfile(*serverURL); err != nil {
+			fmt.Printf("⚠ WARNING: Could not parse capability profile from $metadata: %v\n", err)
+			fmt.Println("  Capability-aware skipping is disabled; all tests will run.")
+			fmt.Println()
+		} else {
+			capProfile = profile
+		}
 	}
 
 	// Gather test suites
@@ -844,6 +860,69 @@ func main() {
 		os.Exit(1)
 	}
 
+	// capabilityRequirements maps a suite name to the capabilities it depends on.
+	// If the service declares any of them unsupported (via Capabilities.V1 annotations in
+	// $metadata), the suite is skipped rather than run-and-failed.
+	// Entity-set requirements use "Products" — the primary fixture for all protocol suites.
+	capabilityRequirements := map[string][]framework.RequiredCapability{
+		// --- filter ---
+		"11.2.5.1_query_filter":                         {framework.Require(framework.CapFilter, "Products")},
+		"5.2.1_complex_filter":                          {framework.Require(framework.CapFilter, "Products")},
+		"11.3.1_filter_string_functions":                {framework.Require(framework.CapFilter, "Products")},
+		"11.3.2_filter_date_functions":                  {framework.Require(framework.CapFilter, "Products")},
+		"11.3.3_filter_arithmetic_functions":            {framework.Require(framework.CapFilter, "Products")},
+		"11.3.4_filter_type_functions":                  {framework.Require(framework.CapFilter, "Products")},
+		"11.3.5_filter_logical_operators":               {framework.Require(framework.CapFilter, "Products")},
+		"11.3.6_filter_comparison_operators":            {framework.Require(framework.CapFilter, "Products")},
+		"11.3.7_filter_geo_functions":                   {framework.Require(framework.CapFilter, "Products")},
+		"11.3.8_filter_expanded_properties":             {framework.Require(framework.CapFilter, "Products"), framework.Require(framework.CapExpand, "Products")},
+		"11.3.9_string_function_edge_cases":             {framework.Require(framework.CapFilter, "Products")},
+		"11.3.10_filter_single_entity_navigation":       {framework.Require(framework.CapFilter, "Products")},
+		"11.2.9_lambda_operators":                       {framework.Require(framework.CapFilter, "Products")},
+		"11.2.5.11_query_select_with_navigation_filter": {framework.Require(framework.CapFilter, "Products")},
+		// v4.01 filter
+		"11.2.5.1_filter_in_operator":  {framework.Require(framework.CapFilter, "Products")},
+		"11.5.1.1_filter_divby_operator": {framework.Require(framework.CapFilter, "Products")},
+		"11.5.3.3_filter_matches_pattern": {framework.Require(framework.CapFilter, "Products")},
+		// --- sort ---
+		"11.2.5.2_query_select_orderby":         {framework.Require(framework.CapSort, "Products")},
+		"5.2.2_complex_orderby":                  {framework.Require(framework.CapSort, "Products")},
+		"11.3.11_orderby_navigation_property":    {framework.Require(framework.CapSort, "Products")},
+		"11.2.5.11_orderby_computed_properties":  {framework.Require(framework.CapSort, "Products")},
+		// --- expand ---
+		"11.2.5.6_query_expand":          {framework.Require(framework.CapExpand, "Products")},
+		"11.2.5.9_nested_expand_options": {framework.Require(framework.CapExpand, "Products")},
+		"11.2.5.9_nested_expand_advanced": {framework.Require(framework.CapExpand, "Products")},
+		// --- count ---
+		"11.2.5.5_query_count":   {framework.Require(framework.CapCount, "Products")},
+		"11.2.4.2_count_segment": {framework.Require(framework.CapCount, "Products")},
+		// --- search ---
+		"11.2.4.1_query_search": {framework.Require(framework.CapSearch, "Products")},
+		// --- top / skip ---
+		"11.2.5.3_query_top_skip":        {framework.Require(framework.CapTop, "Products"), framework.Require(framework.CapSkip, "Products")},
+		"11.2.5.7_query_skiptoken":        {framework.Require(framework.CapSkip, "Products")},
+		"11.2.5.12_pagination_edge_cases": {framework.Require(framework.CapTop, "Products"), framework.Require(framework.CapSkip, "Products")},
+		// --- insert ---
+		"11.4.2_create_entity":                    {framework.Require(framework.CapInsert, "Products")},
+		"11.4.2.1_odata_bind":                     {framework.Require(framework.CapInsert, "Products")},
+		"11.4.7_deep_insert":                      {framework.Require(framework.CapInsert, "Products")},
+		"11.4.6.1_navigation_property_operations": {framework.Require(framework.CapInsert, "Products")},
+		// --- update ---
+		"11.4.3_update_entity":     {framework.Require(framework.CapUpdate, "Products")},
+		"11.4.8_modify_relationships": {framework.Require(framework.CapUpdate, "Products")},
+		// --- upsert (insert + update) ---
+		"11.4.5_upsert": {framework.Require(framework.CapInsert, "Products"), framework.Require(framework.CapUpdate, "Products")},
+		// --- delete ---
+		"11.4.4_delete_entity": {framework.Require(framework.CapDelete, "Products")},
+		// --- batch ---
+		"11.4.9_batch_requests":              {framework.Require(framework.CapBatch, "")},
+		"11.4.9.1_batch_error_handling":      {framework.Require(framework.CapBatch, "")},
+		"11.4.9.3_batch_content_id_referencing": {framework.Require(framework.CapBatch, "")},
+		"19_json_batch":                      {framework.Require(framework.CapBatch, "")},
+		// --- compute (v4.01) ---
+		"11.2.5.8_query_compute": {framework.Require(framework.CapCompute, "")},
+	}
+
 	// Prepare suites (apply pattern filter) so we can compute totals for concise progress output
 	type preparedSuite struct {
 		info          TestSuiteInfo
@@ -864,6 +943,11 @@ func main() {
 		suite.Debug = *debug
 		suite.Verbose = *verbose
 		suite.Quiet = !*verbose
+		suite.Capabilities = capProfile
+		suite.Strict = *strict
+		if reqs, ok := capabilityRequirements[suiteInfo.Name]; ok {
+			suite.RequiredCapabilities = reqs
+		}
 
 		versionPrefix := "V4"
 		if suiteInfo.Version == "4.01" {
@@ -1013,6 +1097,25 @@ func waitForServer(serverURL string, timeoutSeconds int) bool {
 		time.Sleep(1 * time.Second)
 	}
 	return false
+}
+
+// fetchCapabilityProfile fetches $metadata from the service and parses it into a
+// CapabilityProfile. Returns an error if the document cannot be retrieved or parsed.
+func fetchCapabilityProfile(serverURL string) (*framework.CapabilityProfile, error) {
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(serverURL + "/$metadata")
+	if err != nil {
+		return nil, fmt.Errorf("GET /$metadata: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET /$metadata returned status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading $metadata body: %w", err)
+	}
+	return framework.ParseCapabilityProfile(body)
 }
 
 // checkServerConnectivity returns true if the service root responds with 200.
