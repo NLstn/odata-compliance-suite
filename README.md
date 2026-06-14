@@ -30,9 +30,11 @@ can all be measured the same way.
 
 ## Requirements
 
-- Go 1.24+ (to build/run the suite)
 - A running OData service that exposes the **reference data model**
   documented in [`CONTRACT.md`](./CONTRACT.md).
+- Go 1.24+ *only* if you build from source or use `go run`. The
+  [prebuilt binary](#3-prebuilt-binary), [Docker image](#2-docker-image), and
+  [GitHub Action](#1-github-action-ci) need no Go toolchain.
 
 > **Important:** v1 requires the exact reference model (entity sets like
 > `Products`/`Categories`, the `Company` singleton, specific seed rows, and a
@@ -83,14 +85,98 @@ return HTTP 200 before running.
 - `0` — all suites passed
 - `1` — one or more tests failed, or the server was unreachable
 
-Suitable for CI gating:
+## Consuming the suite
+
+The suite never starts a service — **you** start one that implements
+[`CONTRACT.md`](./CONTRACT.md), then point the suite at its root URL. There are
+four ways to run it; pick by your toolchain and where you run it.
+
+| Channel | Best for |
+|---|---|
+| [GitHub Action](#1-github-action-ci) | CI for any service started as a host process (e.g. Go) |
+| [Docker image](#2-docker-image) | Any language; local runs without a Go toolchain |
+| [Prebuilt binary](#3-prebuilt-binary) | Local dev on any machine; CI without Docker |
+| [`go run`](#4-go-run) | Go users; quick local runs |
+
+In every case the suite exits `0` when compliant and `1` on failure (or if the
+service is unreachable), so it gates CI directly.
+
+### 1. GitHub Action (CI)
+
+Start your service in the background, then run the Action against it:
 
 ```yaml
+- name: Start OData service   # must expose the CONTRACT.md model
+  run: ./start-my-odata-service &   # listening on :9090
+
 - name: OData compliance
-  run: |
-    ./start-my-odata-service &   # your service on :8080
-    go run . -server http://localhost:8080
+  uses: NLstn/odata-compliance-suite@v1
+  with:
+    server: http://localhost:9090
+    # version: 4.01      # optional: 4.0 | 4.01 | vocabularies | all
+    # pattern: filter    # optional: run only matching suites
+    # verbose: 'true'    # optional
 ```
+
+The Action downloads a prebuilt binary and runs it **on the runner host**, so a
+service listening on `localhost` is reachable with no extra networking. Pin the
+binary with `suite-version: v1.2.3` (defaults to the latest release).
+
+### 2. Docker image
+
+Language-agnostic, no Go required:
+
+```bash
+docker run --rm ghcr.io/nlstn/odata-compliance-suite:v1 \
+  -server http://my-service:9090 -version 4.01
+```
+
+> **Networking note:** inside the container, `localhost` is the *container*, not
+> your host. To reach a service running on the host, use
+> `--network host` (Linux) and `-server http://localhost:9090`, or
+> `-server http://host.docker.internal:9090` (Docker Desktop). In CI, prefer
+> running the service-under-test as a service container (or on the same Docker
+> network) and addressing it by name.
+
+### 3. Prebuilt binary
+
+Download a static binary for your platform from the
+[Releases](https://github.com/NLstn/odata-compliance-suite/releases) page:
+
+```bash
+curl -fsSL -o compliance-test \
+  https://github.com/NLstn/odata-compliance-suite/releases/latest/download/odata-compliance-suite_linux_amd64
+chmod +x compliance-test
+./compliance-test -server http://localhost:9090
+```
+
+### 4. `go run`
+
+For Go users, no checkout needed:
+
+```bash
+go run github.com/nlstn/odata-compliance-suite@latest -server http://localhost:9090
+```
+
+### Worked example: a Go service (`go-odata`)
+
+A Go OData library can start its reference server and run the suite against it.
+In CI:
+
+```yaml
+- name: Start OData service (exposes the CONTRACT.md model)
+  run: go run ./cmd/complianceserver -db sqlite -port 9090 &
+  # The suite waits up to -timeout for the root to return 200, and calls
+  # POST /Reseed itself before each run.
+
+- name: Run compliance suite
+  uses: NLstn/odata-compliance-suite@v1
+  with:
+    server: http://localhost:9090
+```
+
+Locally it's the same two steps: start the server, then run the suite via any
+channel above.
 
 ## Output
 

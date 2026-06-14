@@ -1,0 +1,93 @@
+name: OData Compliance Suite
+description: >-
+  Run the OData v4 compliance suite against a running OData service and fail the
+  job if it is not conformant. Downloads a prebuilt binary and runs it on the
+  runner host, so a service-under-test on localhost is reachable directly.
+author: NLstn
+
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  server:
+    description: URL of the OData service under test (its root).
+    required: true
+  version:
+    description: 'OData version to test: 4.0 | 4.01 | vocabularies | all.'
+    required: false
+    default: all
+  pattern:
+    description: Run only suites whose name contains this substring.
+    required: false
+    default: ''
+  verbose:
+    description: Show every individual test result.
+    required: false
+    default: 'false'
+  debug:
+    description: Show full HTTP request/response details.
+    required: false
+    default: 'false'
+  timeout:
+    description: Seconds to wait for the server to become reachable.
+    required: false
+    default: '30'
+  suite-version:
+    description: >-
+      Release tag of the suite to run (e.g. v1.2.3), or "latest". This pins the
+      compliance binary independently of the action ref.
+    required: false
+    default: latest
+
+runs:
+  using: composite
+  steps:
+    - name: Run OData compliance suite
+      shell: bash
+      env:
+        # Pass inputs via env to avoid shell-injection from interpolation.
+        SERVER: ${{ inputs.server }}
+        ODATA_VERSION: ${{ inputs.version }}
+        PATTERN: ${{ inputs.pattern }}
+        VERBOSE: ${{ inputs.verbose }}
+        DEBUG: ${{ inputs.debug }}
+        WAIT_TIMEOUT: ${{ inputs.timeout }}
+        SUITE_VERSION: ${{ inputs.suite-version }}
+        REPO: NLstn/odata-compliance-suite
+      run: |
+        set -euo pipefail
+
+        case "$RUNNER_OS" in
+          Linux)   goos=linux ;;
+          macOS)   goos=darwin ;;
+          Windows) goos=windows ;;
+          *) echo "Unsupported runner OS: $RUNNER_OS" >&2; exit 1 ;;
+        esac
+        case "$RUNNER_ARCH" in
+          X64)   goarch=amd64 ;;
+          ARM64) goarch=arm64 ;;
+          *) echo "Unsupported runner arch: $RUNNER_ARCH" >&2; exit 1 ;;
+        esac
+        ext=""
+        [ "$goos" = "windows" ] && ext=".exe"
+
+        asset="odata-compliance-suite_${goos}_${goarch}${ext}"
+        if [ "$SUITE_VERSION" = "latest" ]; then
+          url="https://github.com/${REPO}/releases/latest/download/${asset}"
+        else
+          url="https://github.com/${REPO}/releases/download/${SUITE_VERSION}/${asset}"
+        fi
+
+        bin="${RUNNER_TEMP}/compliance-test${ext}"
+        echo "Downloading $url"
+        curl -fsSL -o "$bin" "$url"
+        chmod +x "$bin"
+
+        args=( -server "$SERVER" -version "$ODATA_VERSION" -timeout "$WAIT_TIMEOUT" )
+        [ -n "$PATTERN" ] && args+=( -pattern "$PATTERN" )
+        [ "$VERBOSE" = "true" ] && args+=( -verbose )
+        [ "$DEBUG" = "true" ] && args+=( -debug )
+
+        # Exit code propagates: 0 = compliant, 1 = failures/unreachable.
+        "$bin" "${args[@]}"

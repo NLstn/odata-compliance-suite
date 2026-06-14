@@ -10,6 +10,9 @@ compliance-report.md
 # Go
 /vendor/
 
+# GoReleaser build output
+/dist/
+
 # Editor / OS
 .DS_Store
 .vscode/
