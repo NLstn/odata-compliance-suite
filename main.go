@@ -31,9 +31,11 @@ var (
 )
 
 type TestSuiteInfo struct {
-	Name    string
-	Version string
-	Suite   func() *framework.TestSuite
+	Name             string
+	Version          string
+	Suite            func() *framework.TestSuite
+	ConformanceLevel framework.ConformanceLevel
+	Feature          string
 }
 
 func main() {
@@ -933,6 +935,183 @@ func main() {
 		"13.1_asynchronous_processing": {framework.Require(framework.CapInsert, "Products")},
 	}
 
+	// conformanceTags maps a suite name to its OData conformance level and feature area.
+	type conformanceTag struct {
+		Level   framework.ConformanceLevel
+		Feature string
+	}
+	conformanceTags := map[string]conformanceTag{
+		// --- Service Discovery ---
+		"1.1_introduction":    {framework.LevelMinimal, "Service Discovery"},
+		"2.1_conformance":     {framework.LevelMinimal, "Service Discovery"},
+		"9.1_service_document": {framework.LevelMinimal, "Service Discovery"},
+		// --- Metadata ---
+		"3.1_edmx_element":               {framework.LevelMinimal, "Metadata"},
+		"3.2_dataservices_element":        {framework.LevelMinimal, "Metadata"},
+		"3.3_reference_element":           {framework.LevelMinimal, "Metadata"},
+		"3.4_include_element":             {framework.LevelMinimal, "Metadata"},
+		"3.5_includeannotations_element":  {framework.LevelMinimal, "Metadata"},
+		"9.2_metadata_document":           {framework.LevelMinimal, "Metadata"},
+		"9.3_annotations_metadata":        {framework.LevelMinimal, "Metadata"},
+		"11.2.12_query_schemaversion":     {framework.LevelAdvanced, "Metadata"},
+		// --- Data Types ---
+		"4.1_nominal_types":            {framework.LevelMinimal, "Data Types"},
+		"4.2_structured_types":         {framework.LevelMinimal, "Data Types"},
+		"4.3_navigation_properties":    {framework.LevelMinimal, "Data Types"},
+		"4.4_primitive_types":          {framework.LevelMinimal, "Data Types"},
+		"4.5_builtin_abstract_types":   {framework.LevelMinimal, "Data Types"},
+		"4.6_annotations":              {framework.LevelMinimal, "Data Types"},
+		"5.1.1_primitive_data_types":   {framework.LevelMinimal, "Data Types"},
+		"5.1.1.1_numeric_edge_cases":   {framework.LevelMinimal, "Data Types"},
+		"5.1.1.2_byte_types":           {framework.LevelMinimal, "Data Types"},
+		"5.1.1.3_int16_type":           {framework.LevelMinimal, "Data Types"},
+		"5.1.1.4_single_type":          {framework.LevelMinimal, "Data Types"},
+		"5.1.1.5_numeric_boundary_tests": {framework.LevelMinimal, "Data Types"},
+		"5.1.2_nullable_properties":    {framework.LevelMinimal, "Data Types"},
+		"5.1.3_collection_properties":  {framework.LevelMinimal, "Data Types"},
+		"5.1.4_temporal_data_types":    {framework.LevelMinimal, "Data Types"},
+		"5.1.5_guid_type":              {framework.LevelMinimal, "Data Types"},
+		"5.1.6_binary_type":            {framework.LevelMinimal, "Data Types"},
+		"5.1.7_date_timeofday_types":   {framework.LevelMinimal, "Data Types"},
+		"5.1.8_duration_type":          {framework.LevelMinimal, "Data Types"},
+		"5.2_complex_types":            {framework.LevelMinimal, "Data Types"},
+		"5.3_enum_types":               {framework.LevelMinimal, "Data Types"},
+		"5.3_enum_metadata_members":    {framework.LevelMinimal, "Data Types"},
+		"5.4_type_definitions":         {framework.LevelMinimal, "Data Types"},
+		// --- HTTP Protocol ---
+		"6.1_extensibility":                      {framework.LevelMinimal, "HTTP Protocol"},
+		"7.1.1_unicode_strings":                  {framework.LevelMinimal, "HTTP Protocol"},
+		"8.1.1_header_content_type":              {framework.LevelMinimal, "HTTP Protocol"},
+		"8.1.2_request_headers":                  {framework.LevelMinimal, "HTTP Protocol"},
+		"8.1.3_response_headers":                 {framework.LevelMinimal, "HTTP Protocol"},
+		"8.1.5_response_status_codes":            {framework.LevelMinimal, "HTTP Protocol"},
+		"8.1.6_invalid_query_parameters":         {framework.LevelMinimal, "HTTP Protocol"},
+		"8.1.7_method_not_allowed":               {framework.LevelMinimal, "HTTP Protocol"},
+		"8.2.1_cache_control_header":             {framework.LevelMinimal, "HTTP Protocol"},
+		"8.2.2_header_if_match":                  {framework.LevelMinimal, "HTTP Protocol"},
+		"8.2.3_header_odata_entityid":            {framework.LevelMinimal, "HTTP Protocol"},
+		"8.2.4_header_content_id":                {framework.LevelMinimal, "HTTP Protocol"},
+		"8.2.5_header_location":                  {framework.LevelMinimal, "HTTP Protocol"},
+		"8.2.6_header_odata_version":             {framework.LevelMinimal, "HTTP Protocol"},
+		"8.2.7_header_accept":                    {framework.LevelMinimal, "HTTP Protocol"},
+		"8.2.8_header_prefer":                    {framework.LevelMinimal, "HTTP Protocol"},
+		"8.2.8.1_preference_allow_entityreferences": {framework.LevelIntermediate, "HTTP Protocol"},
+		"8.2.8.4_preference_include_annotations": {framework.LevelIntermediate, "HTTP Protocol"},
+		"8.2.8.6_preference_omit_values":         {framework.LevelAdvanced, "HTTP Protocol"},
+		"8.2.9_header_maxversion":                {framework.LevelMinimal, "HTTP Protocol"},
+		"8.3_error_responses":                    {framework.LevelMinimal, "HTTP Protocol"},
+		"8.3.1_header_async_result":              {framework.LevelAdvanced, "HTTP Protocol"},
+		"8.4_error_response_consistency":         {framework.LevelMinimal, "HTTP Protocol"},
+		"11.2.17_case_sensitivity":               {framework.LevelMinimal, "HTTP Protocol"},
+		"11.2.17_case_insensitive_system_query_options": {framework.LevelMinimal, "HTTP Protocol"},
+		// --- JSON Format ---
+		"10.1_json_format":       {framework.LevelMinimal, "JSON Format"},
+		"10.2_odata_annotations": {framework.LevelMinimal, "JSON Format"},
+		"11.2.6_query_format":    {framework.LevelMinimal, "JSON Format"},
+		"11.2.7_metadata_levels": {framework.LevelIntermediate, "JSON Format"},
+		// --- Entity Read ---
+		"11.1_resource_path":          {framework.LevelMinimal, "Entity Read"},
+		"11.2.1_addressing_entities":  {framework.LevelMinimal, "Entity Read"},
+		"11.2.1_key_as_segments":      {framework.LevelMinimal, "Entity Read"},
+		"11.2.2_canonical_url":        {framework.LevelMinimal, "Entity Read"},
+		"11.2.3_property_access":      {framework.LevelMinimal, "Entity Read"},
+		"11.2.4_collection_operations": {framework.LevelMinimal, "Entity Read"},
+		"11.2.10_addressing_operations": {framework.LevelIntermediate, "Entity Read"},
+		"11.2.11_property_value":      {framework.LevelMinimal, "Entity Read"},
+		"11.2.12_stream_properties":   {framework.LevelMinimal, "Entity Read"},
+		"11.2.13_type_casting":        {framework.LevelMinimal, "Entity Read"},
+		"11.2.14_url_encoding":        {framework.LevelMinimal, "Entity Read"},
+		"11.2.15_entity_references":   {framework.LevelIntermediate, "Entity Read"},
+		"11.2.16_singleton_operations": {framework.LevelMinimal, "Entity Read"},
+		"11.4.1_requesting_entities":  {framework.LevelMinimal, "Entity Read"},
+		"11.4.11_head_requests":       {framework.LevelMinimal, "HTTP Protocol"},
+		// --- Filtering ---
+		"11.2.5.1_query_filter":                  {framework.LevelIntermediate, "Filtering"},
+		"5.2.1_complex_filter":                   {framework.LevelIntermediate, "Filtering"},
+		"11.3.1_filter_string_functions":          {framework.LevelIntermediate, "Filtering"},
+		"11.3.2_filter_date_functions":            {framework.LevelIntermediate, "Filtering"},
+		"11.3.3_filter_arithmetic_functions":      {framework.LevelIntermediate, "Filtering"},
+		"11.3.4_filter_type_functions":            {framework.LevelIntermediate, "Filtering"},
+		"11.3.5_filter_logical_operators":         {framework.LevelIntermediate, "Filtering"},
+		"11.3.6_filter_comparison_operators":      {framework.LevelIntermediate, "Filtering"},
+		"11.3.7_filter_geo_functions":             {framework.LevelAdvanced, "Filtering"},
+		"11.3.8_filter_expanded_properties":       {framework.LevelAdvanced, "Filtering"},
+		"11.3.9_string_function_edge_cases":       {framework.LevelIntermediate, "Filtering"},
+		"11.3.10_filter_single_entity_navigation": {framework.LevelIntermediate, "Filtering"},
+		"11.2.9_lambda_operators":                 {framework.LevelAdvanced, "Filtering"},
+		"11.2.5.11_query_select_with_navigation_filter": {framework.LevelAdvanced, "Filtering"},
+		"11.2.5.1_filter_in_operator":             {framework.LevelIntermediate, "Filtering"},
+		"11.5.1.1_filter_divby_operator":          {framework.LevelIntermediate, "Filtering"},
+		"11.5.3.3_filter_matches_pattern":         {framework.LevelIntermediate, "Filtering"},
+		// --- Sorting ---
+		"11.2.5.2_query_select_orderby":         {framework.LevelIntermediate, "Sorting"},
+		"5.2.2_complex_orderby":                 {framework.LevelIntermediate, "Sorting"},
+		"11.3.11_orderby_navigation_property":   {framework.LevelAdvanced, "Sorting"},
+		"11.2.5.11_orderby_computed_properties": {framework.LevelAdvanced, "Sorting"},
+		// --- Paging ---
+		"11.2.5.3_query_top_skip":         {framework.LevelIntermediate, "Paging"},
+		"11.2.5.7_query_skiptoken":        {framework.LevelIntermediate, "Paging"},
+		"11.2.5.12_pagination_edge_cases": {framework.LevelIntermediate, "Paging"},
+		// --- Counting ---
+		"11.2.5.5_query_count":   {framework.LevelIntermediate, "Counting"},
+		"11.2.4.2_count_segment": {framework.LevelIntermediate, "Counting"},
+		// --- Searching ---
+		"11.2.4.1_query_search": {framework.LevelAdvanced, "Searching"},
+		// --- Expanding ---
+		"11.2.5.6_query_expand":           {framework.LevelAdvanced, "Expanding"},
+		"11.2.5.9_nested_expand_options":  {framework.LevelAdvanced, "Expanding"},
+		"11.2.5.9_nested_expand_advanced": {framework.LevelAdvanced, "Expanding"},
+		"11.2.5.14_wildcard_select_expand": {framework.LevelAdvanced, "Expanding"},
+		// --- Data Modification ---
+		"11.4.2_create_entity":                    {framework.LevelIntermediate, "Data Modification"},
+		"11.4.2.1_odata_bind":                     {framework.LevelIntermediate, "Data Modification"},
+		"11.4.3_update_entity":                    {framework.LevelIntermediate, "Data Modification"},
+		"11.4.4_delete_entity":                    {framework.LevelIntermediate, "Data Modification"},
+		"11.4.5_upsert":                           {framework.LevelAdvanced, "Data Modification"},
+		"11.4.6_relationships":                    {framework.LevelIntermediate, "Data Modification"},
+		"11.4.6.1_navigation_property_operations": {framework.LevelIntermediate, "Data Modification"},
+		"11.4.7_deep_insert":                      {framework.LevelAdvanced, "Data Modification"},
+		"11.4.8_modify_relationships":             {framework.LevelIntermediate, "Data Modification"},
+		"11.4.12_returning_results":               {framework.LevelIntermediate, "Data Modification"},
+		"11.4.14_null_value_handling":             {framework.LevelIntermediate, "Data Modification"},
+		"11.4.15_data_validation":                 {framework.LevelIntermediate, "Data Modification"},
+		// --- Batch ---
+		"11.4.9_batch_requests":                 {framework.LevelAdvanced, "Batch"},
+		"11.4.9.1_batch_error_handling":         {framework.LevelAdvanced, "Batch"},
+		"11.4.9.3_batch_content_id_referencing": {framework.LevelAdvanced, "Batch"},
+		"19_json_batch":                         {framework.LevelAdvanced, "Batch"},
+		// --- Advanced Querying ---
+		"5.2_custom_query_options":               {framework.LevelMinimal, "HTTP Protocol"},
+		"11.2.5.4_query_apply":                  {framework.LevelAdvanced, "Advanced Querying"},
+		"11.2.5.4.1_advanced_apply":             {framework.LevelAdvanced, "Advanced Querying"},
+		"11.2.5.4.2_apply_transformation_catalog": {framework.LevelAdvanced, "Advanced Querying"},
+		"11.2.5.4.3_apply_rollup":               {framework.LevelAdvanced, "Advanced Querying"},
+		"11.2.5.8_parameter_aliases":            {framework.LevelIntermediate, "Advanced Querying"},
+		"11.2.5.8_query_compute":                {framework.LevelAdvanced, "Advanced Querying"},
+		"11.2.5.10_query_option_combinations":   {framework.LevelIntermediate, "Advanced Querying"},
+		"11.2.5.13_query_index":                 {framework.LevelAdvanced, "Advanced Querying"},
+		"11.2.8_delta_links":                    {framework.LevelAdvanced, "Advanced Querying"},
+		// --- Operations (Functions & Actions) ---
+		"12.1_operations":                  {framework.LevelAdvanced, "Operations"},
+		"12.2_function_action_overloading": {framework.LevelAdvanced, "Operations"},
+		"11.4.13_action_function_parameters": {framework.LevelAdvanced, "Operations"},
+		// --- Concurrency ---
+		"11.5.1_conditional_requests": {framework.LevelAdvanced, "Concurrency"},
+		// --- Async ---
+		"11.4.10_asynchronous_requests": {framework.LevelAdvanced, "Async"},
+		"13.1_asynchronous_processing":  {framework.LevelAdvanced, "Async"},
+		// --- Annotations ---
+		"11.6_annotations":         {framework.LevelAdvanced, "Annotations"},
+		"14.1_vocabulary_annotations": {framework.LevelAdvanced, "Annotations"},
+		// --- Vocabularies ---
+		"vocab_core_computed":        {framework.LevelAdvanced, "Vocabularies"},
+		"vocab_core_immutable":       {framework.LevelAdvanced, "Vocabularies"},
+		"vocab_core_description":     {framework.LevelMinimal, "Vocabularies"},
+		"vocab_capabilities_insert":  {framework.LevelIntermediate, "Vocabularies"},
+		"vocab_capabilities_update":  {framework.LevelIntermediate, "Vocabularies"},
+		"vocab_capabilities_delete":  {framework.LevelIntermediate, "Vocabularies"},
+	}
+
 	// Prepare suites (apply pattern filter) so we can compute totals for concise progress output
 	type preparedSuite struct {
 		info          TestSuiteInfo
@@ -957,6 +1136,10 @@ func main() {
 		suite.Strict = *strict
 		if reqs, ok := capabilityRequirements[suiteInfo.Name]; ok {
 			suite.RequiredCapabilities = reqs
+		}
+		if tag, ok := conformanceTags[suiteInfo.Name]; ok {
+			suiteInfo.ConformanceLevel = tag.Level
+			suiteInfo.Feature = tag.Feature
 		}
 
 		versionPrefix := "V4"
@@ -1075,6 +1258,178 @@ func main() {
 			if failed.Error != "" {
 				fmt.Printf("    Error: %s\n", failed.Error)
 			}
+		}
+		fmt.Println()
+	}
+
+	// Conformance level reporting
+	//
+	// Group suites by (version, feature) and (version, level) to compute the
+	// per-feature matrix and the highest conformance level met per OData version.
+	type featureKey struct {
+		version string
+		feature string
+	}
+	type featureStats struct {
+		level   framework.ConformanceLevel
+		passed  int
+		failed  int
+		skipped int
+	}
+	featureMap := map[featureKey]*featureStats{}
+
+	type levelStats struct {
+		failed int
+		total  int
+	}
+	// levelMap[version][level] → stats
+	levelMap := map[string]map[framework.ConformanceLevel]*levelStats{}
+
+	for _, ps := range suitesToRun {
+		if ps.info.ConformanceLevel == framework.LevelUnspecified {
+			continue
+		}
+		ver := ps.info.Version
+		feat := ps.info.Feature
+		lvl := ps.info.ConformanceLevel
+		res := ps.suite.Results
+
+		fk := featureKey{ver, feat}
+		if featureMap[fk] == nil {
+			featureMap[fk] = &featureStats{level: lvl}
+		}
+		fs := featureMap[fk]
+		fs.passed += res.Passed
+		fs.failed += res.Failed
+		fs.skipped += res.Skipped
+		// level reflects the highest (most restrictive) suite in the feature group
+		if lvl > fs.level {
+			fs.level = lvl
+		}
+
+		if levelMap[ver] == nil {
+			levelMap[ver] = map[framework.ConformanceLevel]*levelStats{}
+		}
+		if levelMap[ver][lvl] == nil {
+			levelMap[ver][lvl] = &levelStats{}
+		}
+		ls := levelMap[ver][lvl]
+		ls.total++
+		if res.Failed > 0 {
+			ls.failed++
+		}
+	}
+
+	// Determine highest conformance level met per OData version (cumulative).
+	conformanceByVersion := map[string]framework.ConformanceLevel{}
+	for ver, lvls := range levelMap {
+		highest := framework.LevelUnspecified
+		for _, lvl := range []framework.ConformanceLevel{
+			framework.LevelMinimal,
+			framework.LevelIntermediate,
+			framework.LevelAdvanced,
+		} {
+			ls, ok := lvls[lvl]
+			if !ok || ls.total == 0 {
+				// No suites at this level; skip (don't block higher levels).
+				continue
+			}
+			if ls.failed > 0 {
+				break
+			}
+			highest = lvl
+		}
+		conformanceByVersion[ver] = highest
+	}
+
+	fmt.Println("╔════════════════════════════════════════════════════════╗")
+	fmt.Println("║              CONFORMANCE LEVEL REPORT                  ║")
+	fmt.Println("╚════════════════════════════════════════════════════════╝")
+	fmt.Println()
+
+	for _, ver := range []string{"4.0", "4.01", "vocabularies"} {
+		if _, ok := levelMap[ver]; !ok {
+			continue
+		}
+		highest := conformanceByVersion[ver]
+		versionLabel := "OData " + ver
+		if ver == "vocabularies" {
+			versionLabel = "Vocabularies"
+		}
+		for _, lvl := range []framework.ConformanceLevel{
+			framework.LevelMinimal,
+			framework.LevelIntermediate,
+			framework.LevelAdvanced,
+		} {
+			ls := levelMap[ver][lvl]
+			if ls == nil || ls.total == 0 {
+				continue
+			}
+			var icon string
+			if ls.failed > 0 {
+				icon = "\033[0;31m✗\033[0m"
+			} else {
+				icon = "\033[0;32m✓\033[0m"
+			}
+			fmt.Printf("  %s [%s] %s: %s (%d/%d suites)\n",
+				icon, versionLabel, lvl.String(),
+				func() string {
+					if ls.failed > 0 {
+						return "Not Met"
+					}
+					return "Met"
+				}(),
+				ls.total-ls.failed, ls.total)
+		}
+		if highest != framework.LevelUnspecified {
+			fmt.Printf("  → Highest level fully met: \033[0;32m%s %s\033[0m\n", versionLabel, highest.String())
+		} else {
+			fmt.Printf("  → Highest level fully met: \033[0;31mNone\033[0m\n")
+		}
+		fmt.Println()
+	}
+
+	if *verbose && len(featureMap) > 0 {
+		fmt.Println("Per-Feature Matrix:")
+		fmt.Printf("  %-32s %-14s  %6s  %6s  %6s  %s\n",
+			"Feature", "Level", "Passed", "Failed", "Skipped", "Status")
+		fmt.Println("  " + strings.Repeat("─", 80))
+
+		// Collect and sort feature keys for stable output.
+		type featureRow struct {
+			key  featureKey
+			stat *featureStats
+		}
+		var rows []featureRow
+		for k, v := range featureMap {
+			rows = append(rows, featureRow{k, v})
+		}
+		// Sort by version, then level, then feature name.
+		for i := 0; i < len(rows); i++ {
+			for j := i + 1; j < len(rows); j++ {
+				a, b := rows[i], rows[j]
+				if a.key.version > b.key.version ||
+					(a.key.version == b.key.version && a.stat.level > b.stat.level) ||
+					(a.key.version == b.key.version && a.stat.level == b.stat.level && a.key.feature > b.key.feature) {
+					rows[i], rows[j] = rows[j], rows[i]
+				}
+			}
+		}
+
+		for _, row := range rows {
+			fs := row.stat
+			var status string
+			if fs.failed > 0 {
+				status = "\033[0;31m✗ FAIL\033[0m"
+			} else if fs.passed > 0 {
+				status = "\033[0;32m✓ PASS\033[0m"
+			} else {
+				status = "\033[0;33m⊘ SKIP\033[0m"
+			}
+			fmt.Printf("  %-32s %-14s  %6d  %6d  %6d  %s [%s]\n",
+				row.key.feature, fs.level.String(),
+				fs.passed, fs.failed, fs.skipped,
+				status, row.key.version)
 		}
 		fmt.Println()
 	}
