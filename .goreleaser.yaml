@@ -48,7 +48,7 @@ dockers_v2:
     images:
       - ghcr.io/nlstn/odata-compliance-suite
     tags:
-      - "{{ .Version }}"
+      - "v{{ .Version }}"
       - "v{{ .Major }}"
       - latest
     platforms:
