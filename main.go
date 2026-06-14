@@ -16,18 +16,22 @@ import (
 	"github.com/nlstn/odata-compliance-suite/tests/vocabularies/core"
 )
 
+const validFormats = "text, junit, json, sarif"
+
 // buildVersion is stamped at build time via -ldflags "-X main.buildVersion=...".
 // It defaults to "dev" for `go run` / `go build` without ldflags.
 var buildVersion = "dev"
 
 var (
-	serverURL = flag.String("server", "http://localhost:9090", "URL of the OData service under test")
-	version   = flag.String("version", "all", "OData version to test (4.0, 4.01, vocabularies, or all)")
-	pattern   = flag.String("pattern", "", "Run only suites whose name matches this substring")
-	debug     = flag.Bool("debug", false, "Enable debug mode with full HTTP request/response details")
-	verbose   = flag.Bool("verbose", false, "Enable verbose mode to show all individual test results")
-	timeout   = flag.Int("timeout", 30, "Seconds to wait for the server to become reachable before giving up")
-	strict    = flag.Bool("strict", false, "Treat capability-skipped tests as failures (disables capability-aware skipping)")
+	serverURL  = flag.String("server", "http://localhost:9090", "URL of the OData service under test")
+	version    = flag.String("version", "all", "OData version to test (4.0, 4.01, vocabularies, or all)")
+	pattern    = flag.String("pattern", "", "Run only suites whose name matches this substring")
+	debug      = flag.Bool("debug", false, "Enable debug mode with full HTTP request/response details")
+	verbose    = flag.Bool("verbose", false, "Enable verbose mode to show all individual test results")
+	timeout    = flag.Int("timeout", 30, "Seconds to wait for the server to become reachable before giving up")
+	strict     = flag.Bool("strict", false, "Treat capability-skipped tests as failures (disables capability-aware skipping)")
+	format     = flag.String("format", "text", "Output format: "+validFormats)
+	outputFile = flag.String("output", "", "Write the structured report to this file (default: stdout for non-text formats)")
 )
 
 type TestSuiteInfo struct {
@@ -38,28 +42,53 @@ type TestSuiteInfo struct {
 	Feature          string
 }
 
+type preparedSuite struct {
+	info          TestSuiteInfo
+	suite         *framework.TestSuite
+	versionPrefix string
+}
+
 func main() {
 	flag.Parse()
 
-	fmt.Println()
-	fmt.Println("╔════════════════════════════════════════════════════════╗")
-	fmt.Println("║     OData v4 Compliance Test Suite                     ║")
-	fmt.Println("╚════════════════════════════════════════════════════════╝")
-	fmt.Println()
-	fmt.Printf("Suite Ver:  %s\n", buildVersion)
-	fmt.Printf("Server URL: %s\n", *serverURL)
-	fmt.Printf("Version:    %s\n", *version)
+	// Validate --format early so we fail before touching the network.
+	switch *format {
+	case "text", "junit", "json", "sarif":
+	default:
+		fmt.Fprintf(os.Stderr, "Error: unknown format %q — valid values are: %s\n", *format, validFormats)
+		os.Exit(1)
+	}
+
+	// progressOut is where human-readable output goes.
+	// For non-text formats we redirect it to stderr so that stdout (or --output)
+	// carries only the structured report without interleaved human text.
+	var progressOut io.Writer = os.Stdout
+	if *format != "text" && *outputFile == "" {
+		progressOut = os.Stderr
+	}
+
+	fmt.Fprintln(progressOut)
+	fmt.Fprintln(progressOut, "╔════════════════════════════════════════════════════════╗")
+	fmt.Fprintln(progressOut, "║     OData v4 Compliance Test Suite                     ║")
+	fmt.Fprintln(progressOut, "╚════════════════════════════════════════════════════════╝")
+	fmt.Fprintln(progressOut)
+	fmt.Fprintf(progressOut, "Suite Ver:  %s\n", buildVersion)
+	fmt.Fprintf(progressOut, "Server URL: %s\n", *serverURL)
+	fmt.Fprintf(progressOut, "Version:    %s\n", *version)
+	if *format != "text" {
+		fmt.Fprintf(progressOut, "Format:     %s\n", *format)
+	}
 	if *debug {
-		fmt.Println("Debug Mode: ENABLED")
+		fmt.Fprintln(progressOut, "Debug Mode: ENABLED")
 	}
 	if *verbose {
-		fmt.Println("Verbose Mode: ENABLED")
+		fmt.Fprintln(progressOut, "Verbose Mode: ENABLED")
 	}
-	fmt.Println()
+	fmt.Fprintln(progressOut)
 
 	// The suite runs entirely against an externally-provided OData service.
 	// Wait for it to become reachable before running any tests.
-	if !waitForServer(*serverURL, *timeout) {
+	if !waitForServer(*serverURL, *timeout, progressOut) {
 		fmt.Fprintf(os.Stderr, "Error: cannot reach OData service at %s after %ds\n", *serverURL, *timeout)
 		fmt.Fprintln(os.Stderr, "Start your service and point -server at its root URL.")
 		fmt.Fprintln(os.Stderr, "The service must expose the reference data model documented in CONTRACT.md.")
@@ -71,9 +100,9 @@ func main() {
 	var capProfile *framework.CapabilityProfile
 	if !*strict {
 		if profile, err := fetchCapabilityProfile(*serverURL); err != nil {
-			fmt.Printf("⚠ WARNING: Could not parse capability profile from $metadata: %v\n", err)
-			fmt.Println("  Capability-aware skipping is disabled; all tests will run.")
-			fmt.Println()
+			fmt.Fprintf(progressOut, "⚠ WARNING: Could not parse capability profile from $metadata: %v\n", err)
+			fmt.Fprintln(progressOut, "  Capability-aware skipping is disabled; all tests will run.")
+			fmt.Fprintln(progressOut)
 		} else {
 			capProfile = profile
 		}
@@ -858,7 +887,7 @@ func main() {
 	}
 
 	if len(testSuites) == 0 {
-		fmt.Println("No test suites found for version:", *version)
+		fmt.Fprintf(progressOut, "No test suites found for version: %s\n", *version)
 		os.Exit(1)
 	}
 
@@ -1113,12 +1142,6 @@ func main() {
 	}
 
 	// Prepare suites (apply pattern filter) so we can compute totals for concise progress output
-	type preparedSuite struct {
-		info          TestSuiteInfo
-		suite         *framework.TestSuite
-		versionPrefix string
-	}
-
 	var suitesToRun []preparedSuite
 	totalPlannedTests := 0
 
@@ -1157,13 +1180,13 @@ func main() {
 	}
 
 	if len(suitesToRun) == 0 {
-		fmt.Println("No test suites matched the provided pattern.")
+		fmt.Fprintln(progressOut, "No test suites matched the provided pattern.")
 		os.Exit(1)
 	}
 
 	// Run tests
-	fmt.Println("═════════════════════════════════════════════════════════")
-	fmt.Println()
+	fmt.Fprintln(progressOut, "═════════════════════════════════════════════════════════")
+	fmt.Fprintln(progressOut)
 
 	totalSuites := len(suitesToRun)
 	passedSuites := 0
@@ -1181,16 +1204,16 @@ func main() {
 	var allFailedTests []FailedTestInfo
 
 	if !*verbose {
-		fmt.Printf("Running %d suites (%d total tests)\n", totalSuites, totalPlannedTests)
-		fmt.Println()
+		fmt.Fprintf(progressOut, "Running %d suites (%d total tests)\n", totalSuites, totalPlannedTests)
+		fmt.Fprintln(progressOut)
 	}
 
 	for idx, prepared := range suitesToRun {
 		suite := prepared.suite
 
 		if *verbose {
-			fmt.Printf("\033[0;34mRunning: [%s] %s\033[0m\n", prepared.versionPrefix, prepared.info.Name)
-			fmt.Println("─────────────────────────────────────────────────────────")
+			fmt.Fprintf(progressOut, "\033[0;34mRunning: [%s] %s\033[0m\n", prepared.versionPrefix, prepared.info.Name)
+			fmt.Fprintln(progressOut, "─────────────────────────────────────────────────────────")
 		}
 
 		err := suite.Run()
@@ -1216,50 +1239,50 @@ func main() {
 		}
 
 		if *verbose {
-			fmt.Println()
+			fmt.Fprintln(progressOut)
 		} else {
 			progressLine := fmt.Sprintf(
 				"Progress: suites %d/%d | tests %d/%d | passed %d | failed %d | skipped %d",
 				idx+1, totalSuites, totalTests, totalPlannedTests, passedTests, failedTests, skippedTests,
 			)
-			fmt.Printf("\r%-80s", progressLine)
+			fmt.Fprintf(progressOut, "\r%-80s", progressLine)
 		}
 	}
 
 	if !*verbose {
-		fmt.Println()
-		fmt.Println()
+		fmt.Fprintln(progressOut)
+		fmt.Fprintln(progressOut)
 	}
 
 	// Print overall summary
-	fmt.Println("═════════════════════════════════════════════════════════")
-	fmt.Println()
-	fmt.Println("╔════════════════════════════════════════════════════════╗")
-	fmt.Println("║                  OVERALL SUMMARY                       ║")
-	fmt.Println("╚════════════════════════════════════════════════════════╝")
-	fmt.Println()
-	fmt.Printf("Test Scripts: %d/%d passed (%.0f%%)\n", passedSuites, totalSuites,
+	fmt.Fprintln(progressOut, "═════════════════════════════════════════════════════════")
+	fmt.Fprintln(progressOut)
+	fmt.Fprintln(progressOut, "╔════════════════════════════════════════════════════════╗")
+	fmt.Fprintln(progressOut, "║                  OVERALL SUMMARY                       ║")
+	fmt.Fprintln(progressOut, "╚════════════════════════════════════════════════════════╝")
+	fmt.Fprintln(progressOut)
+	fmt.Fprintf(progressOut, "Test Scripts: %d/%d passed (%.0f%%)\n", passedSuites, totalSuites,
 		float64(passedSuites)/float64(totalSuites)*100)
-	fmt.Println("Individual Tests:")
-	fmt.Printf("  - Total: %d\n", totalTests)
-	fmt.Printf("  - Passing: %d\n", passedTests)
-	fmt.Printf("  - Failing: %d\n", failedTests)
-	fmt.Printf("  - Skipped: %d\n", skippedTests)
+	fmt.Fprintln(progressOut, "Individual Tests:")
+	fmt.Fprintf(progressOut, "  - Total: %d\n", totalTests)
+	fmt.Fprintf(progressOut, "  - Passing: %d\n", passedTests)
+	fmt.Fprintf(progressOut, "  - Failing: %d\n", failedTests)
+	fmt.Fprintf(progressOut, "  - Skipped: %d\n", skippedTests)
 	if totalTests > 0 {
-		fmt.Printf("  - Pass Rate: %.0f%%\n", float64(passedTests)/float64(totalTests)*100)
+		fmt.Fprintf(progressOut, "  - Pass Rate: %.0f%%\n", float64(passedTests)/float64(totalTests)*100)
 	}
-	fmt.Println()
+	fmt.Fprintln(progressOut)
 
 	// Print list of failed tests if any
 	if len(allFailedTests) > 0 {
-		fmt.Println("Failed Tests:")
+		fmt.Fprintln(progressOut, "Failed Tests:")
 		for _, failed := range allFailedTests {
-			fmt.Printf("  ✗ [%s] %s\n", failed.SuiteName, failed.TestName)
+			fmt.Fprintf(progressOut, "  ✗ [%s] %s\n", failed.SuiteName, failed.TestName)
 			if failed.Error != "" {
-				fmt.Printf("    Error: %s\n", failed.Error)
+				fmt.Fprintf(progressOut, "    Error: %s\n", failed.Error)
 			}
 		}
-		fmt.Println()
+		fmt.Fprintln(progressOut)
 	}
 
 	// Conformance level reporting
@@ -1342,10 +1365,10 @@ func main() {
 		conformanceByVersion[ver] = highest
 	}
 
-	fmt.Println("╔════════════════════════════════════════════════════════╗")
-	fmt.Println("║              CONFORMANCE LEVEL REPORT                  ║")
-	fmt.Println("╚════════════════════════════════════════════════════════╝")
-	fmt.Println()
+	fmt.Fprintln(progressOut, "╔════════════════════════════════════════════════════════╗")
+	fmt.Fprintln(progressOut, "║              CONFORMANCE LEVEL REPORT                  ║")
+	fmt.Fprintln(progressOut, "╚════════════════════════════════════════════════════════╝")
+	fmt.Fprintln(progressOut)
 
 	for _, ver := range []string{"4.0", "4.01", "vocabularies"} {
 		if _, ok := levelMap[ver]; !ok {
@@ -1371,7 +1394,7 @@ func main() {
 			} else {
 				icon = "\033[0;32m✓\033[0m"
 			}
-			fmt.Printf("  %s [%s] %s: %s (%d/%d suites)\n",
+			fmt.Fprintf(progressOut, "  %s [%s] %s: %s (%d/%d suites)\n",
 				icon, versionLabel, lvl.String(),
 				func() string {
 					if ls.failed > 0 {
@@ -1382,18 +1405,18 @@ func main() {
 				ls.total-ls.failed, ls.total)
 		}
 		if highest != framework.LevelUnspecified {
-			fmt.Printf("  → Highest level fully met: \033[0;32m%s %s\033[0m\n", versionLabel, highest.String())
+			fmt.Fprintf(progressOut, "  → Highest level fully met: \033[0;32m%s %s\033[0m\n", versionLabel, highest.String())
 		} else {
-			fmt.Printf("  → Highest level fully met: \033[0;31mNone\033[0m\n")
+			fmt.Fprintf(progressOut, "  → Highest level fully met: \033[0;31mNone\033[0m\n")
 		}
-		fmt.Println()
+		fmt.Fprintln(progressOut)
 	}
 
 	if *verbose && len(featureMap) > 0 {
-		fmt.Println("Per-Feature Matrix:")
-		fmt.Printf("  %-32s %-14s  %6s  %6s  %6s  %s\n",
+		fmt.Fprintln(progressOut, "Per-Feature Matrix:")
+		fmt.Fprintf(progressOut, "  %-32s %-14s  %6s  %6s  %6s  %s\n",
 			"Feature", "Level", "Passed", "Failed", "Skipped", "Status")
-		fmt.Println("  " + strings.Repeat("─", 80))
+		fmt.Fprintln(progressOut, "  "+strings.Repeat("─", 80))
 
 		// Collect and sort feature keys for stable output.
 		type featureRow struct {
@@ -1426,37 +1449,110 @@ func main() {
 			} else {
 				status = "\033[0;33m⊘ SKIP\033[0m"
 			}
-			fmt.Printf("  %-32s %-14s  %6d  %6d  %6d  %s [%s]\n",
+			fmt.Fprintf(progressOut, "  %-32s %-14s  %6d  %6d  %6d  %s [%s]\n",
 				row.key.feature, fs.level.String(),
 				fs.passed, fs.failed, fs.skipped,
 				status, row.key.version)
 		}
-		fmt.Println()
+		fmt.Fprintln(progressOut)
 	}
 
 	// Clean exit with proper status code
 	var exitCode int
 	if passedSuites == totalSuites {
-		fmt.Println("\033[0;32m✓ ALL TESTS PASSED\033[0m")
-		fmt.Println()
+		fmt.Fprintln(progressOut, "\033[0;32m✓ ALL TESTS PASSED\033[0m")
+		fmt.Fprintln(progressOut)
 		exitCode = 0
 	} else {
-		fmt.Println("\033[0;31m✗ SOME TESTS FAILED\033[0m")
-		fmt.Println()
+		fmt.Fprintln(progressOut, "\033[0;31m✗ SOME TESTS FAILED\033[0m")
+		fmt.Fprintln(progressOut)
 		exitCode = 1
+	}
+
+	// Build structured report and write it when a non-text format is requested.
+	if *format != "text" {
+		report := buildRunReport(buildVersion, *serverURL, passedSuites, totalSuites,
+			passedTests, failedTests, skippedTests, totalTests, suitesToRun)
+
+		reportDest, closeFile, err := openReportDest(*outputFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot open output file %q: %v\n", *outputFile, err)
+			os.Exit(1)
+		}
+		defer closeFile()
+
+		var writeErr error
+		switch *format {
+		case "junit":
+			writeErr = report.WriteJUnit(reportDest)
+		case "json":
+			writeErr = report.WriteJSON(reportDest)
+		case "sarif":
+			writeErr = report.WriteSARIF(reportDest)
+		}
+		if writeErr != nil {
+			fmt.Fprintf(os.Stderr, "Error writing %s report: %v\n", *format, writeErr)
+			os.Exit(1)
+		}
 	}
 
 	os.Exit(exitCode)
 }
 
+// buildRunReport assembles a RunReport from the completed suite run.
+func buildRunReport(
+	toolVersion, serverURL string,
+	passedSuites, totalSuites, passedTests, failedTests, skippedTests, totalTests int,
+	suitesToRun []preparedSuite,
+) *framework.RunReport {
+	suites := make([]framework.SuiteRunResult, 0, len(suitesToRun))
+	for _, ps := range suitesToRun {
+		lvl := ""
+		if ps.info.ConformanceLevel != framework.LevelUnspecified {
+			lvl = ps.info.ConformanceLevel.String()
+		}
+		suites = append(suites, framework.SuiteRunResult{
+			Name:             ps.info.Name,
+			Version:          ps.info.Version,
+			ConformanceLevel: lvl,
+			Feature:          ps.info.Feature,
+			Results:          ps.suite.Results,
+		})
+	}
+	return &framework.RunReport{
+		ToolVersion:  toolVersion,
+		ServerURL:    serverURL,
+		TotalSuites:  totalSuites,
+		PassedSuites: passedSuites,
+		TotalTests:   totalTests,
+		PassedTests:  passedTests,
+		FailedTests:  failedTests,
+		SkippedTests: skippedTests,
+		Suites:       suites,
+	}
+}
+
+// openReportDest returns a writer for the report output.
+// If path is empty it returns os.Stdout and a no-op closer.
+func openReportDest(path string) (io.Writer, func(), error) {
+	if path == "" {
+		return os.Stdout, func() {}, nil
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	return f, func() { _ = f.Close() }, nil
+}
+
 // waitForServer polls the service root until it responds with HTTP 200 or the
 // timeout (in seconds) elapses. It returns true once the server is reachable.
-func waitForServer(serverURL string, timeoutSeconds int) bool {
-	fmt.Printf("Waiting for OData service at %s ...\n", serverURL)
+func waitForServer(serverURL string, timeoutSeconds int, out io.Writer) bool {
+	fmt.Fprintf(out, "Waiting for OData service at %s ...\n", serverURL)
 	for i := 0; i < timeoutSeconds; i++ {
 		if checkServerConnectivity(serverURL) {
-			fmt.Println("\033[0;32m✓ Service is reachable!\033[0m")
-			fmt.Println()
+			fmt.Fprintln(out, "\033[0;32m✓ Service is reachable!\033[0m")
+			fmt.Fprintln(out)
 			return true
 		}
 		time.Sleep(1 * time.Second)
