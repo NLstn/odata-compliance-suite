@@ -46,11 +46,31 @@ inputs:
       compliance binary independently of the action ref.
     required: false
     default: latest
+  format:
+    description: >-
+      Output format for the structured report: text (default), junit, json, or sarif.
+      "text" writes human-readable output only. The other formats also write a
+      machine-readable report to report-file (or stdout when report-file is empty).
+    required: false
+    default: text
+  report-file:
+    description: >-
+      Path where the structured report is written (e.g. odata-results.xml).
+      Required when format is junit, json, or sarif and you want to upload the
+      report as an artifact. When omitted the report goes to stdout.
+    required: false
+    default: ''
+
+outputs:
+  report-file:
+    description: Path to the generated report file (empty when report-file input was not set).
+    value: ${{ steps.run.outputs.report-file }}
 
 runs:
   using: composite
   steps:
     - name: Run OData compliance suite
+      id: run
       shell: bash
       env:
         # Pass inputs via env to avoid shell-injection from interpolation.
@@ -62,6 +82,8 @@ runs:
         STRICT: ${{ inputs.strict }}
         WAIT_TIMEOUT: ${{ inputs.timeout }}
         SUITE_VERSION: ${{ inputs.suite-version }}
+        FORMAT: ${{ inputs.format }}
+        REPORT_FILE: ${{ inputs.report-file }}
         REPO: NLstn/odata-compliance-suite
       run: |
         set -euo pipefail
@@ -97,6 +119,19 @@ runs:
         [ "$VERBOSE" = "true" ] && args+=( -verbose )
         [ "$DEBUG" = "true" ] && args+=( -debug )
         [ "$STRICT" = "true" ] && args+=( -strict )
+        [ "$FORMAT" != "text" ] && args+=( -format "$FORMAT" )
+        [ -n "$REPORT_FILE" ] && args+=( -output "$REPORT_FILE" )
+
+        # Emit the report path as a step output so callers can reference it.
+        echo "report-file=${REPORT_FILE}" >> "$GITHUB_OUTPUT"
 
         # Exit code propagates: 0 = compliant, 1 = failures/unreachable.
         "$bin" "${args[@]}"
+
+    - name: Upload compliance report
+      if: inputs.report-file != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: odata-compliance-report
+        path: ${{ inputs.report-file }}
+        if-no-files-found: warn
