@@ -881,17 +881,17 @@ func main() {
 		"11.2.9_lambda_operators":                       {framework.Require(framework.CapFilter, "Products")},
 		"11.2.5.11_query_select_with_navigation_filter": {framework.Require(framework.CapFilter, "Products")},
 		// v4.01 filter
-		"11.2.5.1_filter_in_operator":  {framework.Require(framework.CapFilter, "Products")},
-		"11.5.1.1_filter_divby_operator": {framework.Require(framework.CapFilter, "Products")},
+		"11.2.5.1_filter_in_operator":     {framework.Require(framework.CapFilter, "Products")},
+		"11.5.1.1_filter_divby_operator":  {framework.Require(framework.CapFilter, "Products")},
 		"11.5.3.3_filter_matches_pattern": {framework.Require(framework.CapFilter, "Products")},
 		// --- sort ---
 		"11.2.5.2_query_select_orderby":         {framework.Require(framework.CapSort, "Products")},
-		"5.2.2_complex_orderby":                  {framework.Require(framework.CapSort, "Products")},
-		"11.3.11_orderby_navigation_property":    {framework.Require(framework.CapSort, "Products")},
-		"11.2.5.11_orderby_computed_properties":  {framework.Require(framework.CapSort, "Products")},
+		"5.2.2_complex_orderby":                 {framework.Require(framework.CapSort, "Products")},
+		"11.3.11_orderby_navigation_property":   {framework.Require(framework.CapSort, "Products")},
+		"11.2.5.11_orderby_computed_properties": {framework.Require(framework.CapSort, "Products")},
 		// --- expand ---
-		"11.2.5.6_query_expand":          {framework.Require(framework.CapExpand, "Products")},
-		"11.2.5.9_nested_expand_options": {framework.Require(framework.CapExpand, "Products")},
+		"11.2.5.6_query_expand":           {framework.Require(framework.CapExpand, "Products")},
+		"11.2.5.9_nested_expand_options":  {framework.Require(framework.CapExpand, "Products")},
 		"11.2.5.9_nested_expand_advanced": {framework.Require(framework.CapExpand, "Products")},
 		// --- count ---
 		"11.2.5.5_query_count":   {framework.Require(framework.CapCount, "Products")},
@@ -899,7 +899,7 @@ func main() {
 		// --- search ---
 		"11.2.4.1_query_search": {framework.Require(framework.CapSearch, "Products")},
 		// --- top / skip ---
-		"11.2.5.3_query_top_skip":        {framework.Require(framework.CapTop, "Products"), framework.Require(framework.CapSkip, "Products")},
+		"11.2.5.3_query_top_skip":         {framework.Require(framework.CapTop, "Products"), framework.Require(framework.CapSkip, "Products")},
 		"11.2.5.7_query_skiptoken":        {framework.Require(framework.CapSkip, "Products")},
 		"11.2.5.12_pagination_edge_cases": {framework.Require(framework.CapTop, "Products"), framework.Require(framework.CapSkip, "Products")},
 		// --- insert ---
@@ -908,17 +908,17 @@ func main() {
 		"11.4.7_deep_insert":                      {framework.Require(framework.CapInsert, "Products")},
 		"11.4.6.1_navigation_property_operations": {framework.Require(framework.CapInsert, "Products")},
 		// --- update ---
-		"11.4.3_update_entity":     {framework.Require(framework.CapUpdate, "Products")},
+		"11.4.3_update_entity":        {framework.Require(framework.CapUpdate, "Products")},
 		"11.4.8_modify_relationships": {framework.Require(framework.CapUpdate, "Products")},
 		// --- upsert (insert + update) ---
 		"11.4.5_upsert": {framework.Require(framework.CapInsert, "Products"), framework.Require(framework.CapUpdate, "Products")},
 		// --- delete ---
 		"11.4.4_delete_entity": {framework.Require(framework.CapDelete, "Products")},
 		// --- batch ---
-		"11.4.9_batch_requests":              {framework.Require(framework.CapBatch, "")},
-		"11.4.9.1_batch_error_handling":      {framework.Require(framework.CapBatch, "")},
+		"11.4.9_batch_requests":                 {framework.Require(framework.CapBatch, "")},
+		"11.4.9.1_batch_error_handling":         {framework.Require(framework.CapBatch, "")},
 		"11.4.9.3_batch_content_id_referencing": {framework.Require(framework.CapBatch, "")},
-		"19_json_batch":                      {framework.Require(framework.CapBatch, "")},
+		"19_json_batch":                         {framework.Require(framework.CapBatch, "")},
 		// --- compute (v4.01; gated via SelectSupport.Computeable on entity set) ---
 		"11.2.5.8_query_compute": {framework.Require(framework.CapCompute, "Products")},
 		// --- returning results (Prefer: return=representation after mutations) ---
