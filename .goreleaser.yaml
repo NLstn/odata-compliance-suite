@@ -1,0 +1,66 @@
+# GoReleaser config — builds multi-arch static binaries, publishes them as raw
+# release assets, and builds + pushes a multi-arch Docker image to GHCR.
+# Run `goreleaser release --snapshot --clean` to dry-run without a tag/push.
+version: 2
+
+project_name: odata-compliance-suite
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: compliance-test
+    binary: compliance-test
+    main: .
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.buildVersion={{ .Version }}
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+# Publish raw binaries (not tarballs) so the composite Action can download an
+# asset and exec it directly with no extraction step. Asset names are stable:
+#   odata-compliance-suite_linux_amd64, _darwin_arm64, _windows_amd64.exe, ...
+archives:
+  - id: binaries
+    ids:
+      - compliance-test
+    formats:
+      - binary
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: checksums.txt
+
+dockers_v2:
+  - id: ghcr
+    ids:
+      - compliance-test
+    images:
+      - ghcr.io/nlstn/odata-compliance-suite
+    tags:
+      - "{{ .Version }}"
+      - "v{{ .Major }}"
+      - latest
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    dockerfile: Dockerfile
+    labels:
+      org.opencontainers.image.source: https://github.com/NLstn/odata-compliance-suite
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.licenses: MIT
+
+release:
+  github:
+    owner: NLstn
+    name: odata-compliance-suite

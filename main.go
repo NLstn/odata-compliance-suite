@@ -14,6 +14,10 @@ import (
 	"github.com/nlstn/odata-compliance-suite/tests/vocabularies/core"
 )
 
+// buildVersion is stamped at build time via -ldflags "-X main.buildVersion=...".
+// It defaults to "dev" for `go run` / `go build` without ldflags.
+var buildVersion = "dev"
+
 var (
 	serverURL = flag.String("server", "http://localhost:9090", "URL of the OData service under test")
 	version   = flag.String("version", "all", "OData version to test (4.0, 4.01, vocabularies, or all)")
@@ -37,6 +41,7 @@ func main() {
 	fmt.Println("║     OData v4 Compliance Test Suite                     ║")
 	fmt.Println("╚════════════════════════════════════════════════════════╝")
 	fmt.Println()
+	fmt.Printf("Suite Ver:  %s\n", buildVersion)
 	fmt.Printf("Server URL: %s\n", *serverURL)
 	fmt.Printf("Version:    %s\n", *version)
 	if *debug {
