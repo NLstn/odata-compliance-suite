@@ -151,13 +151,12 @@ func BinaryType() *framework.TestSuite {
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$filter=Data eq binary'!!!invalid!!!'")
 			if err != nil {
-				return nil // Connection error is acceptable
+				return err
 			}
-			// Should return 400 Bad Request for invalid base64
-			if resp.StatusCode == 200 {
-				return framework.NewError("Expected error for invalid base64 encoding")
-			}
-			return nil
+			// A syntactically invalid Edm.Binary literal must be rejected with
+			// 400 Bad Request, not silently ignored (200) or surfaced as a
+			// server error (5xx).
+			return ctx.AssertStatusCode(resp, 400)
 		},
 	)
 

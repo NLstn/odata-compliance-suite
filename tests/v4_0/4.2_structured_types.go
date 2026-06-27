@@ -1,10 +1,15 @@
 package v4_0
 
 import (
+	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
+
+// nullableAttrPattern extracts the value of every Nullable="..." facet in the CSDL.
+var nullableAttrPattern = regexp.MustCompile(`Nullable="([^"]*)"`)
 
 // StructuredTypes creates the 4.2 Structured Types test suite
 func StructuredTypes() *framework.TestSuite {
@@ -253,15 +258,26 @@ func StructuredTypes() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			if !strings.Contains(body, "Property") {
-				return framework.NewError("Metadata should have properties")
+			propertyCount := strings.Count(body, "<Property ")
+			if propertyCount == 0 {
+				return framework.NewError("metadata declares no structural properties")
 			}
 
-			// Properties are nullable by default, or explicitly nullable
-			hasNullable := strings.Contains(body, `Nullable="true"`) || !strings.Contains(body, `Nullable="false"`)
+			// Every Nullable facet must carry a valid boolean value (CSDL 6.2.2).
+			for _, m := range nullableAttrPattern.FindAllStringSubmatch(body, -1) {
+				if m[1] != "true" && m[1] != "false" {
+					return framework.NewError(fmt.Sprintf("Nullable facet has invalid boolean value %q", m[1]))
+				}
+			}
 
-			if !hasNullable {
-				return framework.NewError("At least some properties should be nullable")
+			// A structural property is nullable when its Nullable facet is absent
+			// (defaults to true) or explicitly "true". The reference model declares
+			// both nullable and non-nullable properties, so the number of explicitly
+			// non-nullable properties must be strictly fewer than the total — proving
+			// at least one nullable property exists.
+			nonNullable := strings.Count(body, `Nullable="false"`)
+			if nonNullable >= propertyCount {
+				return framework.NewError("expected at least one nullable structural property")
 			}
 
 			return nil

@@ -234,13 +234,12 @@ func DurationType() *framework.TestSuite {
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$filter=ShippingTime eq duration'invalid'")
 			if err != nil {
-				return nil // Connection error is acceptable
+				return err
 			}
-			// Should return 400 Bad Request for invalid format
-			if resp.StatusCode == 200 {
-				return framework.NewError("Expected error for invalid duration format")
-			}
-			return nil
+			// A syntactically invalid Edm.Duration literal must be rejected with
+			// 400 Bad Request, not silently ignored (200) or surfaced as a
+			// server error (5xx).
+			return ctx.AssertStatusCode(resp, 400)
 		},
 	)
 

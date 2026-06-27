@@ -1,10 +1,15 @@
 package v4_0
 
 import (
+	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
+
+// typeAttrPattern extracts the value of every Type="..." attribute in the CSDL.
+var typeAttrPattern = regexp.MustCompile(`Type="([^"]*)"`)
 
 // NominalTypes creates the 4.1 Nominal Types test suite
 func NominalTypes() *framework.TestSuite {
@@ -135,9 +140,24 @@ func NominalTypes() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			// Properties should use qualified type names (Edm.* or namespace.*)
-			if !strings.Contains(body, `Type="Edm.`) && !strings.Contains(body, `Type="`) {
-				return framework.NewError("Properties must use qualified type names")
+			// Every Type attribute must reference a qualified name: either a
+			// built-in Edm.* type or a schema-qualified <namespace>.<name>.
+			// A qualified name always contains a dot; an unqualified bare name
+			// such as Type="String" is non-conformant (CSDL 4.4).
+			matches := typeAttrPattern.FindAllStringSubmatch(body, -1)
+			if len(matches) == 0 {
+				return framework.NewError("metadata declares no Type attributes")
+			}
+			for _, m := range matches {
+				typeName := m[1]
+				// Unwrap Collection(<inner>) and validate the element type.
+				inner := typeName
+				if strings.HasPrefix(inner, "Collection(") && strings.HasSuffix(inner, ")") {
+					inner = inner[len("Collection(") : len(inner)-1]
+				}
+				if !strings.Contains(inner, ".") {
+					return framework.NewError(fmt.Sprintf("type %q is not a qualified name", typeName))
+				}
 			}
 
 			return nil
