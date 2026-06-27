@@ -86,10 +86,14 @@ func HeaderODataVersion() *framework.TestSuite {
 		},
 	)
 
-	// Test 4: Service should reject request with OData-MaxVersion: 3.0
+	// Test 4: Service should reject a request it cannot satisfy with OData-MaxVersion: 3.0.
+	// The spec mandates the service respond with the greatest supported version <=
+	// OData-MaxVersion (§8.2.6); when none exists (3.0 < 4.0) it must reject, but the
+	// spec does not pin a specific status. Both 406 Not Acceptable and 400 Bad Request
+	// are accepted; the request must not succeed.
 	suite.AddTest(
 		"test_maxversion_30",
-		"Service rejects OData-MaxVersion: 3.0 with 406 Not Acceptable",
+		"Service rejects OData-MaxVersion: 3.0 (406 or 400)",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/",
 				framework.Header{Key: "OData-MaxVersion", Value: "3.0"},
@@ -98,7 +102,10 @@ func HeaderODataVersion() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, 406)
+			if resp.StatusCode != 406 && resp.StatusCode != 400 {
+				return framework.NewError(fmt.Sprintf("expected 406 or 400 for unsatisfiable OData-MaxVersion: 3.0, got %d", resp.StatusCode))
+			}
+			return nil
 		},
 	)
 

@@ -56,8 +56,8 @@ func registerHeaderMaxVersionTests(suite *framework.TestSuite) {
 	)
 
 	suite.AddTest(
-		"Unsupported OData-MaxVersion returns 406",
-		"Request with OData-MaxVersion below 4.0 should return 406 Not Acceptable",
+		"Unsupported OData-MaxVersion is rejected",
+		"Request with OData-MaxVersion below 4.0 should be rejected (406 or 400)",
 		func(ctx *framework.TestContext) error {
 			productPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
@@ -71,9 +71,10 @@ func registerHeaderMaxVersionTests(suite *framework.TestSuite) {
 				return err
 			}
 
-			// OData spec says service should reject if it cannot satisfy the version constraint
-			if resp.StatusCode != 406 {
-				return fmt.Errorf("expected HTTP 406 Not Acceptable, got %d", resp.StatusCode)
+			// The service must reject a version constraint it cannot satisfy, but
+			// the spec (§8.2.6) does not mandate a specific status. Accept 406 or 400.
+			if resp.StatusCode != 406 && resp.StatusCode != 400 {
+				return fmt.Errorf("expected HTTP 406 or 400 for unsatisfiable OData-MaxVersion: 3.0, got %d", resp.StatusCode)
 			}
 
 			return nil

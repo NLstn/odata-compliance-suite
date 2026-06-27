@@ -558,9 +558,9 @@ func (c *TestContext) AssertODataError(resp *HTTPResponse, expectedStatus int, m
 	if !ok || strings.TrimSpace(code) == "" {
 		return fmt.Errorf("error object must include a non-empty code")
 	}
-	if code != fmt.Sprintf("%d", expectedStatus) {
-		return fmt.Errorf("error code mismatch: got %q, expected %d", code, expectedStatus)
-	}
+	// Per OData-JSON Format §19, "code" is a service-defined, language-independent
+	// string (e.g. "EntityNotFound"); it is NOT required to equal the HTTP status
+	// code. We only require it to be present and non-empty.
 
 	messages, err := collectODataErrorMessages(errObj)
 	if err != nil {
