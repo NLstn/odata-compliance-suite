@@ -20,9 +20,13 @@ func DataValidation() *framework.TestSuite {
 		"test_missing_required_field",
 		"Missing required field returns 400",
 		func(ctx *framework.TestContext) error {
+			categoryID, err := firstEntityID(ctx, "Categories")
+			if err != nil {
+				return err
+			}
 			payload := map[string]interface{}{
 				"Price":      99.99,
-				"CategoryID": 1,
+				"CategoryID": categoryID,
 			}
 
 			resp, err := ctx.POST("/Products", payload, framework.Header{Key: "Content-Type", Value: "application/json"})
@@ -39,10 +43,14 @@ func DataValidation() *framework.TestSuite {
 		"test_invalid_data_type",
 		"Invalid data type returns 400",
 		func(ctx *framework.TestContext) error {
+			categoryID, err := firstEntityID(ctx, "Categories")
+			if err != nil {
+				return err
+			}
 			payload := map[string]interface{}{
 				"Name":       "Test Product",
 				"Price":      "not-a-number",
-				"CategoryID": 1,
+				"CategoryID": categoryID,
 				"Status":     1,
 			}
 
@@ -74,7 +82,12 @@ func DataValidation() *framework.TestSuite {
 		"test_missing_content_type",
 		"Missing Content-Type returns 415",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.POSTRaw("/Products", []byte(`{"Name":"Test","Price":99.99,"CategoryID":1,"Status":1}`), "")
+			categoryID, err := firstEntityID(ctx, "Categories")
+			if err != nil {
+				return err
+			}
+			body := fmt.Sprintf(`{"Name":"Test","Price":99.99,"CategoryID":"%s","Status":1}`, categoryID)
+			resp, err := ctx.POSTRaw("/Products", []byte(body), "")
 			if err != nil {
 				return err
 			}

@@ -18,11 +18,11 @@ func HeaderODataEntityId() *framework.TestSuite {
 		"test_odata_entityid_header",
 		"OData-EntityId header for created entity",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.POST("/Products", map[string]interface{}{
-				"Name":       "EntityId Test",
-				"Price":      99.99,
-				"CategoryID": 1,
-			})
+			payload, err := buildProductPayload(ctx, "EntityId Test", 99.99)
+			if err != nil {
+				return err
+			}
+			resp, err := ctx.POST("/Products", payload)
 			if err != nil {
 				return err
 			}
