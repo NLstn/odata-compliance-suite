@@ -36,11 +36,9 @@ func AsynchronousRequests() *framework.TestSuite {
 		"test_async_post",
 		"Async POST request is handled",
 		func(ctx *framework.TestContext) error {
-			payload := map[string]interface{}{
-				"Name":       "Async Test Product",
-				"Price":      99.99,
-				"CategoryID": 1,
-				"Status":     1,
+			payload, err := buildProductPayload(ctx, "Async Test Product", 99.99)
+			if err != nil {
+				return err
 			}
 
 			resp, err := ctx.POST("/Products", payload,
