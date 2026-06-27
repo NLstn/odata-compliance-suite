@@ -15,12 +15,12 @@ func AddressingOperations() *framework.TestSuite {
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part2-url-conventions/odata-v4.0-errata03-os-part2-url-conventions-complete.html#sec_AddressingOperations",
 	)
 
-	// Test 1: Unbound function is addressable
+	// Test 1: Bound collection function is addressable
 	suite.AddTest(
-		"test_unbound_function",
-		"Unbound function is addressable",
+		"test_bound_collection_function",
+		"Bound collection function is addressable",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/GetTopProducts()")
+			resp, err := ctx.GET("/Products/GetTopProducts()")
 			if err != nil {
 				return err
 			}
@@ -37,12 +37,12 @@ func AddressingOperations() *framework.TestSuite {
 		},
 	)
 
-	// Test 2: Unbound function with parameters
+	// Test 2: Bound collection function with parameters
 	suite.AddTest(
-		"test_unbound_function_params",
-		"Unbound function with parameters",
+		"test_bound_collection_function_params",
+		"Bound collection function with parameters",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/GetTopProducts(count=5)")
+			resp, err := ctx.GET("/Products/GetTopProducts(count=5)")
 			if err != nil {
 				return err
 			}
