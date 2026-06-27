@@ -151,42 +151,50 @@ func FunctionActionOverloading() *framework.TestSuite {
 		return nil
 	}
 
-	// Test 1: Function overload with different parameter counts
+	// Test 1: Bound collection function overload with different parameter counts
 	suite.AddTest(
-		"test_function_overload_param_count",
-		"Function overload with different parameter counts",
+		"test_bound_collection_function_overload_param_count",
+		"Bound collection function overload with different parameter counts",
 		func(ctx *framework.TestContext) error {
 			doc, err := getMetadata(ctx)
 			if err != nil {
 				return err
 			}
 
-			_, err = requireDeclaredSignatures(ctx, doc, "GetTopProducts", false, "Function", [][]string{{}, {"count"}})
+			_, err = requireDeclaredSignatures(ctx, doc, "GetTopProducts", true, "Function", [][]string{{}, {"count"}, {"category", "count"}})
 			if err != nil {
 				return err
 			}
 
-			resp1, err := ctx.GET("/GetTopProducts()")
+			resp1, err := ctx.GET("/Products/GetTopProducts()")
 			if err != nil {
 				return err
 			}
-			if err := assertSuccessNoErrorPayload(resp1, "GetTopProducts() overload without parameters"); err != nil {
+			if err := assertSuccessNoErrorPayload(resp1, "Products/GetTopProducts() overload without parameters"); err != nil {
 				return err
 			}
 
-			resp2, err := ctx.GET("/GetTopProducts()?count=5")
+			resp2, err := ctx.GET("/Products/GetTopProducts(count=5)")
 			if err != nil {
 				return err
 			}
-			if err := assertSuccessNoErrorPayload(resp2, "GetTopProducts() overload with count"); err != nil {
+			if err := assertSuccessNoErrorPayload(resp2, "Products/GetTopProducts(count=5) overload with count"); err != nil {
 				return err
 			}
 
-			invalidResp, err := ctx.GET("/GetTopProducts()?__invalid=1")
+			resp3, err := ctx.GET("/Products/GetTopProducts(count=5,category='Electronics')")
 			if err != nil {
 				return err
 			}
-			return assertClientError(invalidResp, "GetTopProducts() invalid signature")
+			if err := assertSuccessNoErrorPayload(resp3, "Products/GetTopProducts(count=5,category='Electronics') overload with count and category"); err != nil {
+				return err
+			}
+
+			invalidResp, err := ctx.GET("/Products/GetTopProducts(category='Electronics')")
+			if err != nil {
+				return err
+			}
+			return assertClientError(invalidResp, "Products/GetTopProducts(category='Electronics') invalid signature")
 		},
 	)
 
@@ -204,27 +212,27 @@ func FunctionActionOverloading() *framework.TestSuite {
 				return err
 			}
 
-			resp1, err := ctx.GET("/Convert()?input=hello")
+			resp1, err := ctx.GET("/Convert(input='hello')")
 			if err != nil {
 				return err
 			}
-			if err := assertSuccessNoErrorPayload(resp1, "Convert() overload with input"); err != nil {
+			if err := assertSuccessNoErrorPayload(resp1, "Convert(input='hello') overload with input"); err != nil {
 				return err
 			}
 
-			resp2, err := ctx.GET("/Convert()?number=5")
+			resp2, err := ctx.GET("/Convert(number=5)")
 			if err != nil {
 				return err
 			}
-			if err := assertSuccessNoErrorPayload(resp2, "Convert() overload with number"); err != nil {
+			if err := assertSuccessNoErrorPayload(resp2, "Convert(number=5) overload with number"); err != nil {
 				return err
 			}
 
-			invalidResp, err := ctx.GET("/Convert()?input=hello&number=5")
+			invalidResp, err := ctx.GET("/Convert(input='hello',number=5)")
 			if err != nil {
 				return err
 			}
-			return assertClientError(invalidResp, "Convert() ambiguous/invalid signature")
+			return assertClientError(invalidResp, "Convert(input='hello',number=5) ambiguous/invalid signature")
 		},
 	)
 
@@ -242,27 +250,27 @@ func FunctionActionOverloading() *framework.TestSuite {
 				return err
 			}
 
-			resp1, err := ctx.GET("/Calculate()?value=5")
+			resp1, err := ctx.GET("/Calculate(value=5)")
 			if err != nil {
 				return err
 			}
-			if err := assertSuccessNoErrorPayload(resp1, "Calculate() overload with value"); err != nil {
+			if err := assertSuccessNoErrorPayload(resp1, "Calculate(value=5) overload with value"); err != nil {
 				return err
 			}
 
-			resp2, err := ctx.GET("/Calculate()?a=3&b=7")
+			resp2, err := ctx.GET("/Calculate(a=3,b=7)")
 			if err != nil {
 				return err
 			}
-			if err := assertSuccessNoErrorPayload(resp2, "Calculate() overload with a,b"); err != nil {
+			if err := assertSuccessNoErrorPayload(resp2, "Calculate(a=3,b=7) overload with a,b"); err != nil {
 				return err
 			}
 
-			invalidResp, err := ctx.GET("/Calculate()?a=3")
+			invalidResp, err := ctx.GET("/Calculate(a=3)")
 			if err != nil {
 				return err
 			}
-			return assertClientError(invalidResp, "Calculate() invalid signature")
+			return assertClientError(invalidResp, "Calculate(a=3) invalid signature")
 		},
 	)
 
@@ -330,16 +338,16 @@ func FunctionActionOverloading() *framework.TestSuite {
 		return productPath, nil
 	}
 
-	// Test 5: Bound function overload on different entity sets
+	// Test 5: Bound entity function overload with different parameter counts
 	suite.AddTest(
-		"test_bound_function_overload",
-		"Bound function overload on different entity sets",
+		"test_bound_entity_function_overload_param_count",
+		"Bound entity function overload with different parameter counts",
 		func(ctx *framework.TestContext) error {
 			doc, err := getMetadata(ctx)
 			if err != nil {
 				return err
 			}
-			sigs, err := requireDeclaredSignatures(ctx, doc, "GetInfo", true, "Function", [][]string{{"format"}})
+			sigs, err := requireDeclaredSignatures(ctx, doc, "CalculatePrice", true, "Function", [][]string{{"discount"}, {"discount", "tax"}})
 			if err != nil {
 				return err
 			}
@@ -349,23 +357,31 @@ func FunctionActionOverloading() *framework.TestSuite {
 				return err
 			}
 
-			resp, err := ctx.GET(path + "/GetInfo?format=json")
+			resp, err := ctx.GET(path + "/CalculatePrice(discount=10.0)")
 			if err != nil {
 				return err
 			}
-			if err := assertSuccessNoErrorPayload(resp, "bound GetInfo overload with format"); err != nil {
+			if err := assertSuccessNoErrorPayload(resp, "bound CalculatePrice(discount=10.0) overload"); err != nil {
 				return err
 			}
 
-			invalidParams := []string{"__invalid"}
-			if _, exists := sigs[paramKey(invalidParams)]; exists {
-				return framework.NewError("test setup error: invalid signature marker unexpectedly declared")
-			}
-			invalidResp, err := ctx.GET(path + "/GetInfo?__invalid=1")
+			resp2, err := ctx.GET(path + "/CalculatePrice(discount=10.0,tax=5.0)")
 			if err != nil {
 				return err
 			}
-			return assertClientError(invalidResp, "bound GetInfo invalid signature")
+			if err := assertSuccessNoErrorPayload(resp2, "bound CalculatePrice(discount=10.0,tax=5.0) overload"); err != nil {
+				return err
+			}
+
+			invalidParams := []string{"tax"}
+			if _, exists := sigs[paramKey(invalidParams)]; exists {
+				return framework.NewError("test setup error: invalid signature marker unexpectedly declared")
+			}
+			invalidResp, err := ctx.GET(path + "/CalculatePrice(tax=5.0)")
+			if err != nil {
+				return err
+			}
+			return assertClientError(invalidResp, "bound CalculatePrice(tax=5.0) invalid signature")
 		},
 	)
 
