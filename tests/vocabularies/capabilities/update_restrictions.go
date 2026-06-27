@@ -38,8 +38,8 @@ func UpdateRestrictions() *framework.TestSuite {
 	)
 
 	suite.AddTest(
-		"updatable_entity_set_accepts_patch",
-		"PATCH to entity in updatable entity set succeeds",
+		"non_updatable_entity_set_rejects_patch",
+		"PATCH to entity in an entity set with Updatable=false returns appropriate error",
 		func(ctx *framework.TestContext) error {
 			metadataXML, err := fetchMetadata(ctx)
 			if err != nil {
@@ -72,6 +72,31 @@ func UpdateRestrictions() *framework.TestSuite {
 				if resp.StatusCode < 400 || resp.StatusCode >= 500 {
 					return fmt.Errorf("expected 4xx for non-updatable entity set %s, got %d: %s", setInfo.name, resp.StatusCode, string(resp.Body))
 				}
+			}
+
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"updatable_entity_set_accepts_patch",
+		"PATCH to entity in an updatable (unrestricted) entity set succeeds",
+		func(ctx *framework.TestContext) error {
+			entity, err := fetchFirstEntity(ctx, "Products")
+			if err != nil {
+				return err
+			}
+			id, ok := entity["ID"].(string)
+			if !ok || id == "" {
+				return fmt.Errorf("could not determine Products key from entity")
+			}
+
+			resp, err := ctx.PATCH(fmt.Sprintf("/Products(%s)", id), map[string]interface{}{"Description": "Capabilities updatable test"})
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				return fmt.Errorf("expected 2xx PATCH on updatable entity set Products, got %d: %s", resp.StatusCode, string(resp.Body))
 			}
 
 			return nil

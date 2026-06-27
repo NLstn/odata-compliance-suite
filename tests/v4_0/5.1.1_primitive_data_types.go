@@ -80,7 +80,10 @@ func PrimitiveDataTypes() *framework.TestSuite {
 		"test_datetime_type",
 		"Edm.DateTimeOffset type handles datetime values",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=CreatedAt lt '2025-12-31T23:59:59Z'")
+			// Edm.DateTimeOffset literals in a URL are written bare, NOT single-quoted
+			// (single quotes would make it an Edm.String literal). See OData Part 2
+			// URL Conventions §5.1.1.6 / ABNF dateTimeOffsetValue.
+			resp, err := ctx.GET("/Products?$filter=CreatedAt lt 2099-12-31T23:59:59Z")
 			if err != nil {
 				return err
 			}
