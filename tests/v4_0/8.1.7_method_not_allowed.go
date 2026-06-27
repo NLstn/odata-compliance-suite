@@ -1,6 +1,8 @@
 package v4_0
 
 import (
+	"strings"
+
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
 
@@ -122,6 +124,27 @@ func MethodNotAllowed() *framework.TestSuite {
 			}
 
 			return ctx.AssertStatusCode(resp, 405)
+		},
+	)
+
+	suite.AddTest(
+		"test_405_includes_allow_header",
+		"405 Method Not Allowed response includes the Allow header",
+		func(ctx *framework.TestContext) error {
+			// A 405 response MUST include an Allow header listing the methods the
+			// resource supports (RFC 7231 §6.5.5, referenced by OData Part 1 §8.1.5).
+			resp, err := ctx.PUT("/$metadata", []byte(`{}`))
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 405); err != nil {
+				return err
+			}
+
+			if strings.TrimSpace(resp.Headers.Get("Allow")) == "" {
+				return framework.NewError("405 response is missing the required Allow header listing the permitted methods (RFC 7231 §6.5.5)")
+			}
+			return nil
 		},
 	)
 
