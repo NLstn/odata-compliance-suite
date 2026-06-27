@@ -273,5 +273,97 @@ func QueryFilter() *framework.TestSuite {
 		},
 	)
 
+	suite.AddTest(
+		"test_filter_escaped_single_quote_literal",
+		"$filter accepts escaped single quotes in string literals",
+		func(ctx *framework.TestContext) error {
+			filter := url.QueryEscape("contains(Name,'''')")
+			resp, err := ctx.GET("/Products?$filter=" + filter)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			return ctx.AssertAllEntitiesSatisfy(items, "contains(Name,'''')", func(entity map[string]interface{}) (bool, string) {
+				name, ok := entity["Name"].(string)
+				if !ok {
+					return false, "Name field is missing or not a string"
+				}
+				if strings.Contains(name, "'") {
+					return true, ""
+				}
+				return false, fmt.Sprintf("Name=%q does not contain a single quote", name)
+			})
+		},
+	)
+
+	suite.AddTest(
+		"test_filter_negative_numeric_literal",
+		"$filter accepts negative numeric literals",
+		func(ctx *framework.TestContext) error {
+			filter := url.QueryEscape("Price gt -1")
+			resp, err := ctx.GET("/Products?$filter=" + filter)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
+			}
+			return ctx.AssertAllEntitiesSatisfy(items, "Price gt -1", func(entity map[string]interface{}) (bool, string) {
+				priceRaw, ok := entity["Price"]
+				if !ok {
+					return false, "Entity must have Price field"
+				}
+				priceValue, err := parsePrice(priceRaw)
+				if err != nil {
+					return false, err.Error()
+				}
+				if priceValue <= -1 {
+					return false, fmt.Sprintf("Found entity with Price=%v which is not > -1", priceValue)
+				}
+				return true, ""
+			})
+		},
+	)
+
+	suite.AddTest(
+		"test_filter_type_mismatch_rejected",
+		"$filter rejects incompatible literal types",
+		func(ctx *framework.TestContext) error {
+			filter := url.QueryEscape("Name eq 1")
+			resp, err := ctx.GET("/Products?$filter=" + filter)
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
+	suite.AddTest(
+		"test_filter_empty_expression_rejected",
+		"$filter with empty expression returns 400",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products?$filter=")
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
 	return suite
 }

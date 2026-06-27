@@ -242,5 +242,51 @@ func FilterComparisonOperators() *framework.TestSuite {
 		},
 	)
 
+	suite.AddTest(
+		"test_ne_null_returns_only_non_null_values",
+		"ne null returns only entities where the property is non-null",
+		func(ctx *framework.TestContext) error {
+			items, err := fetchComparisonItems(ctx, "Description ne null")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return fmt.Errorf("Description ne null returned no items: %w", err)
+			}
+			return ctx.AssertAllEntitiesSatisfy(items, "Description ne null", func(entity map[string]interface{}) (bool, string) {
+				if value, ok := entity["Description"]; !ok || value == nil {
+					return false, "Description is missing or null"
+				}
+				return true, ""
+			})
+		},
+	)
+
+	suite.AddTest(
+		"test_string_numeric_type_mismatch_returns_error",
+		"comparison between string property and numeric literal returns 400",
+		func(ctx *framework.TestContext) error {
+			filter := url.QueryEscape("Name gt 10")
+			resp, err := ctx.GET("/Products?$filter=" + filter)
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
+	suite.AddTest(
+		"test_numeric_string_type_mismatch_returns_error",
+		"comparison between numeric property and string literal returns 400",
+		func(ctx *framework.TestContext) error {
+			filter := url.QueryEscape("Price lt 'expensive'")
+			resp, err := ctx.GET("/Products?$filter=" + filter)
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
 	return suite
 }

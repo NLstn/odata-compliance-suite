@@ -99,13 +99,10 @@ func ComplexTypes() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-
-			// Optional feature
-			if resp.StatusCode == 200 || resp.StatusCode == 400 || resp.StatusCode == 404 {
-				return nil
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return fmt.Errorf("complex type selection returned %d; declared complex properties must be addressable", resp.StatusCode)
 			}
-
-			return fmt.Errorf("unexpected status: %d (should not be 500)", resp.StatusCode)
+			return ctx.AssertStatusCode(resp, 200)
 		},
 	)
 
@@ -141,13 +138,10 @@ func ComplexTypes() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-
-			// Optional feature
-			if resp.StatusCode == 200 || resp.StatusCode == 400 || resp.StatusCode == 404 {
-				return nil
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return fmt.Errorf("null filtering on complex properties returned %d; declared complex properties must be queryable", resp.StatusCode)
 			}
-
-			return fmt.Errorf("unexpected status: %d (should not be 500)", resp.StatusCode)
+			return ctx.AssertStatusCode(resp, 200)
 		},
 	)
 
@@ -159,13 +153,10 @@ func ComplexTypes() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-
-			// Optional feature
-			if resp.StatusCode == 200 || resp.StatusCode == 400 || resp.StatusCode == 404 {
-				return nil
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return fmt.Errorf("orderby on complex properties returned %d; declared complex properties must be queryable", resp.StatusCode)
 			}
-
-			return fmt.Errorf("unexpected status: %d (should not be 500)", resp.StatusCode)
+			return ctx.AssertStatusCode(resp, 200)
 		},
 	)
 

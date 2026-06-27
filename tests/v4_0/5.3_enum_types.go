@@ -49,13 +49,10 @@ func EnumTypes() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-
-			// Enum filtering may not be supported
-			if resp.StatusCode == 200 || resp.StatusCode == 400 || resp.StatusCode == 404 {
-				return nil
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return fmt.Errorf("enum filtering returned %d; enum properties declared in metadata must be queryable", resp.StatusCode)
 			}
-
-			return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+			return ctx.AssertStatusCode(resp, 200)
 		},
 	)
 
@@ -67,13 +64,10 @@ func EnumTypes() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-
-			// Optional feature
-			if resp.StatusCode == 200 || resp.StatusCode == 400 || resp.StatusCode == 404 {
-				return nil
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return fmt.Errorf("enum comparison filtering returned %d; enum properties declared in metadata must be queryable", resp.StatusCode)
 			}
-
-			return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+			return ctx.AssertStatusCode(resp, 200)
 		},
 	)
 
@@ -85,13 +79,10 @@ func EnumTypes() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-
-			// Optional feature
-			if resp.StatusCode == 200 || resp.StatusCode == 400 || resp.StatusCode == 404 {
-				return nil
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return fmt.Errorf("enum selection returned %d; enum properties declared in metadata must be selectable", resp.StatusCode)
 			}
-
-			return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+			return ctx.AssertStatusCode(resp, 200)
 		},
 	)
 
@@ -103,13 +94,10 @@ func EnumTypes() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-
-			// Optional feature
-			if resp.StatusCode == 200 || resp.StatusCode == 400 || resp.StatusCode == 404 {
-				return nil
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return fmt.Errorf("enum ordering returned %d; enum properties declared in metadata must support ordering", resp.StatusCode)
 			}
-
-			return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+			return ctx.AssertStatusCode(resp, 200)
 		},
 	)
 
@@ -121,13 +109,10 @@ func EnumTypes() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-
-			// Optional feature
-			if resp.StatusCode == 200 || resp.StatusCode == 400 || resp.StatusCode == 404 {
-				return nil
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return fmt.Errorf("null enum filtering returned %d; enum properties declared in metadata must be queryable", resp.StatusCode)
 			}
-
-			return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+			return ctx.AssertStatusCode(resp, 200)
 		},
 	)
 

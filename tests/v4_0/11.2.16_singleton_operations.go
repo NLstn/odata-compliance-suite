@@ -272,8 +272,8 @@ func SingletonOperations() *framework.TestSuite {
 				return nil
 			}
 
-			if resp.StatusCode == 404 {
-				return framework.NewError("singleton properties not implemented (optional feature)")
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return framework.NewError("singleton property access is not implemented; declared singleton properties must be addressable")
 			}
 
 			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)

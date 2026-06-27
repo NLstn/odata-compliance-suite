@@ -277,5 +277,44 @@ func FilterLogicalOperators() *framework.TestSuite {
 		},
 	)
 
+	suite.AddTest(
+		"test_and_precedence_over_or",
+		"AND binds more tightly than OR",
+		func(ctx *framework.TestContext) error {
+			items, err := fetchLogicalOperatorItems(ctx, "Name eq 'Coffee Mug' or Name eq 'Laptop' and Price gt 1000")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return fmt.Errorf("precedence filter returned no items: %w", err)
+			}
+			return ctx.AssertAllEntitiesSatisfy(items, "Name eq 'Coffee Mug' or Name eq 'Laptop' and Price gt 1000", func(item map[string]interface{}) (bool, string) {
+				name, ok := item["Name"].(string)
+				if !ok {
+					return false, "Name field is missing or not a string"
+				}
+				if name != "Coffee Mug" {
+					return false, fmt.Sprintf("expected only Coffee Mug when AND binds before OR, got %q", name)
+				}
+				return true, ""
+			})
+		},
+	)
+
+	suite.AddTest(
+		"test_parentheses_override_and_or_precedence",
+		"Parentheses override default AND/OR precedence",
+		func(ctx *framework.TestContext) error {
+			items, err := fetchLogicalOperatorItems(ctx, "(Name eq 'Coffee Mug' or Name eq 'Laptop') and Price gt 1000")
+			if err != nil {
+				return err
+			}
+			if len(items) != 0 {
+				return fmt.Errorf("expected no items when parentheses apply Price gt 1000 to both products, got %d", len(items))
+			}
+			return nil
+		},
+	)
+
 	return suite
 }
