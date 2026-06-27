@@ -241,5 +241,85 @@ func QuerySelectOrderby() *framework.TestSuite {
 		},
 	)
 
+	// Test 7: $orderby on a nullable property places nulls consistently.
+	// The relative ordering of null vs non-null is service-defined, but nulls
+	// form a single sort rank: they must be grouped together at one end of the
+	// result (all first or all last), never interleaved with non-null values,
+	// and the non-null values must themselves be correctly ordered (Part 2 §5.1.4).
+	suite.AddTest(
+		"test_orderby_nullable_property",
+		"$orderby on a nullable property groups nulls and orders non-nulls",
+		func(ctx *framework.TestContext) error {
+			orderby := url.QueryEscape("ReleaseDate asc")
+			resp, err := ctx.GET("/Products?$orderby=" + orderby + "&$select=ReleaseDate")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertMinCollectionSize(items, 2); err != nil {
+				return err
+			}
+
+			// Classify each row as null (property absent or JSON null) or its value.
+			isNull := make([]bool, len(items))
+			values := make([]string, len(items))
+			nullCount := 0
+			for i, obj := range items {
+				raw, present := obj["ReleaseDate"]
+				if !present || raw == nil {
+					isNull[i] = true
+					nullCount++
+					continue
+				}
+				s, ok := raw.(string)
+				if !ok {
+					return fmt.Errorf("item %d ReleaseDate is not a string, got %T", i, raw)
+				}
+				values[i] = s
+			}
+
+			// Need a mix of null and non-null for this to be meaningful.
+			if nullCount == 0 || nullCount == len(items) {
+				return ctx.Skip("ReleaseDate has no mix of null and non-null seed values to test null ordering")
+			}
+
+			// Nulls must be contiguous at one end: scanning the result, the
+			// null/non-null boundary may be crossed exactly once.
+			transitions := 0
+			for i := 1; i < len(items); i++ {
+				if isNull[i] != isNull[i-1] {
+					transitions++
+				}
+			}
+			if transitions != 1 {
+				return fmt.Errorf("null ReleaseDate values are not grouped at one end (interleaved with non-null values); boundary transitions=%d", transitions)
+			}
+
+			// The non-null ReleaseDate values (Edm.Date, ISO-8601 YYYY-MM-DD) must
+			// be ascending; lexicographic comparison is valid for that format.
+			var prev string
+			havePrev := false
+			for i := range items {
+				if isNull[i] {
+					continue
+				}
+				if havePrev && values[i] < prev {
+					return fmt.Errorf("non-null ReleaseDate values not ascending: %q after %q", values[i], prev)
+				}
+				prev = values[i]
+				havePrev = true
+			}
+
+			return nil
+		},
+	)
+
 	return suite
 }
