@@ -8,7 +8,11 @@ import (
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
 
-// nullableAttrPattern extracts the value of every Nullable="..." facet in the CSDL.
+// propertyTagPattern matches each structural <Property ...> opening tag (not
+// <NavigationProperty>, <Parameter>, or <ReturnType>).
+var propertyTagPattern = regexp.MustCompile(`<Property\s[^>]*>`)
+
+// nullableAttrPattern extracts the value of a Nullable="..." facet.
 var nullableAttrPattern = regexp.MustCompile(`Nullable="([^"]*)"`)
 
 // StructuredTypes creates the 4.2 Structured Types test suite
@@ -258,25 +262,28 @@ func StructuredTypes() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			propertyCount := strings.Count(body, "<Property ")
-			if propertyCount == 0 {
+			propertyTags := propertyTagPattern.FindAllString(body, -1)
+			if len(propertyTags) == 0 {
 				return framework.NewError("metadata declares no structural properties")
 			}
 
-			// Every Nullable facet must carry a valid boolean value (CSDL 6.2.2).
-			for _, m := range nullableAttrPattern.FindAllStringSubmatch(body, -1) {
-				if m[1] != "true" && m[1] != "false" {
-					return framework.NewError(fmt.Sprintf("Nullable facet has invalid boolean value %q", m[1]))
+			// A structural property is nullable when its Nullable facet is absent
+			// (defaults to true) or explicitly "true". Scope the check to each
+			// <Property> tag so Nullable facets on Parameter/ReturnType/Navigation
+			// elements don't skew the result. Also validate the facet is a valid
+			// boolean (CSDL 6.2.2).
+			hasNullable := false
+			for _, tag := range propertyTags {
+				if m := nullableAttrPattern.FindStringSubmatch(tag); m != nil {
+					if m[1] != "true" && m[1] != "false" {
+						return framework.NewError(fmt.Sprintf("Nullable facet has invalid boolean value %q", m[1]))
+					}
+				}
+				if !strings.Contains(tag, `Nullable="false"`) {
+					hasNullable = true
 				}
 			}
-
-			// A structural property is nullable when its Nullable facet is absent
-			// (defaults to true) or explicitly "true". The reference model declares
-			// both nullable and non-nullable properties, so the number of explicitly
-			// non-nullable properties must be strictly fewer than the total — proving
-			// at least one nullable property exists.
-			nonNullable := strings.Count(body, `Nullable="false"`)
-			if nonNullable >= propertyCount {
+			if !hasNullable {
 				return framework.NewError("expected at least one nullable structural property")
 			}
 
