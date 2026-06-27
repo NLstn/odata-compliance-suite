@@ -20,12 +20,12 @@ func Operations() *framework.TestSuite {
 		return firstEntityPath(ctx, "Products")
 	}
 
-	// Test 1: Bound collection function invocation
+	// Test 1: Unbound function invocation
 	suite.AddTest(
-		"test_bound_collection_function",
-		"Bound collection function invocation",
+		"test_unbound_function",
+		"Unbound function invocation",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products/GetTopProducts()")
+			resp, err := ctx.GET("/GetTopProducts()")
 			if err != nil {
 				return err
 			}
@@ -36,21 +36,21 @@ func Operations() *framework.TestSuite {
 				return ctx.AssertJSONField(resp, "value")
 			}
 
-			// 404 indicates function not defined on the Products collection
+			// 404 indicates function not defined
 			if resp.StatusCode == 404 {
-				return framework.NewError("Bound collection function not defined for Products")
+				return framework.NewError("Unbound function not defined in service")
 			}
 
-			return fmt.Errorf("Unexpected status code %d for bound collection function", resp.StatusCode)
+			return fmt.Errorf("Unexpected status code %d for unbound function", resp.StatusCode)
 		},
 	)
 
-	// Test 2: Bound collection function with parameters
+	// Test 2: Unbound function with parameters
 	suite.AddTest(
-		"test_bound_collection_function_parameters",
-		"Bound collection function with parameters",
+		"test_unbound_function_parameters",
+		"Unbound function with parameters",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products/GetTopProducts(count=3)")
+			resp, err := ctx.GET("/GetTopProducts(count=3)")
 			if err != nil {
 				return err
 			}
@@ -60,12 +60,12 @@ func Operations() *framework.TestSuite {
 				return ctx.AssertJSONField(resp, "value")
 			}
 
-			// 404 indicates function not defined on the Products collection
+			// 404 indicates function not defined
 			if resp.StatusCode == 404 {
-				return framework.NewError("Bound collection function with parameters not defined for Products")
+				return framework.NewError("Unbound function with parameters not defined in service")
 			}
 
-			return fmt.Errorf("Unexpected status code %d for bound collection function with parameters", resp.StatusCode)
+			return fmt.Errorf("Unexpected status code %d for function with parameters", resp.StatusCode)
 		},
 	)
 
@@ -191,7 +191,7 @@ func Operations() *framework.TestSuite {
 		"test_operation_returns_collection",
 		"Operation returns collection",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products/GetTopProducts()")
+			resp, err := ctx.GET("/GetTopProducts()")
 			if err != nil {
 				return err
 			}
@@ -206,7 +206,7 @@ func Operations() *framework.TestSuite {
 
 			// 404 indicates operation not defined
 			if resp.StatusCode == 404 {
-				return framework.NewError("Collection operation not defined for Products")
+				return framework.NewError("Operation not defined in service")
 			}
 
 			return fmt.Errorf("Unexpected status code %d", resp.StatusCode)
