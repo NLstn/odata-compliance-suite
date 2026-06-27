@@ -3,6 +3,7 @@ package v4_0
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -26,6 +27,40 @@ func numericField(item map[string]interface{}, key string) (float64, error) {
 		return 0, fmt.Errorf("item missing %s field or %s is not numeric", key, key)
 	}
 	return v, nil
+}
+
+// productStatusNames maps ProductStatus member names to their integer values.
+var productStatusNames = map[string]int{
+	"None":         0,
+	"InStock":      1,
+	"OnSale":       2,
+	"Discontinued": 4,
+	"Featured":     8,
+}
+
+// enumStatusValue returns the integer value of the Status field.
+// It accepts both the OData-compliant string format ("InStock,Featured")
+// and the legacy numeric format (9).
+func enumStatusValue(item map[string]interface{}) (int, error) {
+	val, ok := item["Status"]
+	if !ok {
+		return 0, fmt.Errorf("item missing Status field")
+	}
+	switch v := val.(type) {
+	case float64:
+		return int(v), nil
+	case string:
+		result := 0
+		for _, name := range strings.Split(v, ",") {
+			n, ok := productStatusNames[strings.TrimSpace(name)]
+			if !ok {
+				return 0, fmt.Errorf("unknown Status member name %q", strings.TrimSpace(name))
+			}
+			result |= n
+		}
+		return result, nil
+	}
+	return 0, fmt.Errorf("Status field has unexpected type %T", val)
 }
 
 // FilterLogicalOperators creates the 11.3.5 Logical Operators test suite
@@ -128,12 +163,12 @@ func FilterLogicalOperators() *framework.TestSuite {
 				if err != nil {
 					return false, err.Error()
 				}
-				status, err := numericField(item, "Status")
+				status, err := enumStatusValue(item)
 				if err != nil {
 					return false, err.Error()
 				}
 				if !((price < 10 || price > 100) && status == 9) {
-					return false, fmt.Sprintf("Price=%.2f Status=%.0f does not satisfy expression", price, status)
+					return false, fmt.Sprintf("Price=%.2f Status=%d does not satisfy expression", price, status)
 				}
 				return true, ""
 			})
@@ -157,12 +192,12 @@ func FilterLogicalOperators() *framework.TestSuite {
 				if err != nil {
 					return false, err.Error()
 				}
-				status, err := numericField(item, "Status")
+				status, err := enumStatusValue(item)
 				if err != nil {
 					return false, err.Error()
 				}
 				if !(price > 10 && price < 100 && status == 1) {
-					return false, fmt.Sprintf("Price=%.2f Status=%.0f does not satisfy expression", price, status)
+					return false, fmt.Sprintf("Price=%.2f Status=%d does not satisfy expression", price, status)
 				}
 				return true, ""
 			})
@@ -182,12 +217,12 @@ func FilterLogicalOperators() *framework.TestSuite {
 				return fmt.Errorf("multiple OR filter returned no items: %w", err)
 			}
 			return ctx.AssertAllEntitiesSatisfy(items, "Status eq 1 or Status eq 2 or Status eq 3", func(item map[string]interface{}) (bool, string) {
-				status, err := numericField(item, "Status")
+				status, err := enumStatusValue(item)
 				if err != nil {
 					return false, err.Error()
 				}
 				if !(status == 1 || status == 2 || status == 3) {
-					return false, fmt.Sprintf("Status=%.0f does not satisfy expression", status)
+					return false, fmt.Sprintf("Status=%d does not satisfy expression", status)
 				}
 				return true, ""
 			})
@@ -211,12 +246,12 @@ func FilterLogicalOperators() *framework.TestSuite {
 				if err != nil {
 					return false, err.Error()
 				}
-				status, err := numericField(item, "Status")
+				status, err := enumStatusValue(item)
 				if err != nil {
 					return false, err.Error()
 				}
 				if price > 50 && status == 1 {
-					return false, fmt.Sprintf("Price=%.2f Status=%.0f violates expression", price, status)
+					return false, fmt.Sprintf("Price=%.2f Status=%d violates expression", price, status)
 				}
 				return true, ""
 			})
@@ -240,12 +275,12 @@ func FilterLogicalOperators() *framework.TestSuite {
 				if err != nil {
 					return false, err.Error()
 				}
-				status, err := numericField(item, "Status")
+				status, err := enumStatusValue(item)
 				if err != nil {
 					return false, err.Error()
 				}
 				if !(price > 10 && (status == 1 || status == 2)) {
-					return false, fmt.Sprintf("Price=%.2f Status=%.0f does not satisfy expression", price, status)
+					return false, fmt.Sprintf("Price=%.2f Status=%d does not satisfy expression", price, status)
 				}
 				return true, ""
 			})

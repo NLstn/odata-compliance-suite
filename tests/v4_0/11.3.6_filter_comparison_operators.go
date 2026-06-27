@@ -51,12 +51,18 @@ func FilterComparisonOperators() *framework.TestSuite {
 				return err
 			}
 			return ctx.AssertAllEntitiesSatisfy(items, "Status ne 0", func(entity map[string]interface{}) (bool, string) {
-				statusFloat, ok := entity["Status"].(float64)
-				if !ok {
-					return false, "Status field is missing or non-numeric"
-				}
-				if int(statusFloat) == 0 {
-					return false, "found Status=0"
+				// Status may be a numeric value (legacy) or an OData enum string (e.g. "InStock").
+				switch v := entity["Status"].(type) {
+				case float64:
+					if int(v) == 0 {
+						return false, "found Status=0"
+					}
+				case string:
+					if v == "None" || v == "0" {
+						return false, "found Status=None"
+					}
+				default:
+					return false, fmt.Sprintf("Status field has unexpected type %T", entity["Status"])
 				}
 				return true, ""
 			})
