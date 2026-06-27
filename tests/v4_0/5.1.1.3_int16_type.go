@@ -1,7 +1,6 @@
 package v4_0
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -36,73 +35,67 @@ func Int16Type() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_int16_zero_value",
-		"Edm.Int16 handles zero value",
+		"Edm.Int16 filter eq 0 returns only entities where Quantity is zero",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Quantity eq 0")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Quantity eq 0", func(p map[string]interface{}) bool {
+				q, ok := productFloat(p, "Quantity")
+				return ok && q == 0
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_int16_positive_value",
-		"Edm.Int16 handles positive values",
+		"Edm.Int16 filter gt large value returns correct set",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Quantity gt 1000")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Quantity gt 1000", func(p map[string]interface{}) bool {
+				q, ok := productFloat(p, "Quantity")
+				return ok && q > 1000
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_int16_negative_value",
-		"Edm.Int16 handles negative values",
+		"Edm.Int16 filter lt negative value returns correct set",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Quantity lt -1000")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Quantity lt -1000", func(p map[string]interface{}) bool {
+				q, ok := productFloat(p, "Quantity")
+				return ok && q < -1000
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_int16_min_boundary",
-		"Edm.Int16 handles minimum value (-32768)",
+		"Edm.Int16 filter ge -32768 matches all entities (minimum boundary)",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Quantity ge -32768")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Quantity ge -32768", func(p map[string]interface{}) bool {
+				q, ok := productFloat(p, "Quantity")
+				return ok && q >= -32768
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_int16_max_boundary",
-		"Edm.Int16 handles maximum value (32767)",
+		"Edm.Int16 filter le 32767 matches all entities (maximum boundary)",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Quantity le 32767")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Quantity le 32767", func(p map[string]interface{}) bool {
+				q, ok := productFloat(p, "Quantity")
+				return ok && q <= 32767
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_int16_arithmetic",
-		"Edm.Int16 supports arithmetic operations",
+		"Edm.Int16 arithmetic: Quantity mul 2 gt 100 returns correct set",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Quantity mul 2 gt 100")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Quantity mul 2 gt 100", func(p map[string]interface{}) bool {
+				q, ok := productFloat(p, "Quantity")
+				return ok && (q*2) > 100
+			})
 		},
 	)
 
@@ -110,7 +103,7 @@ func Int16Type() *framework.TestSuite {
 		"test_int16_cast",
 		"cast() function supports Edm.Int16",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=cast(Price, 'Edm.Int16') eq 100")
+			resp, err := ctx.GET("/Products?$filter=cast(Quantity,'Edm.Int16') gt 0")
 			if err != nil {
 				return err
 			}
@@ -120,38 +113,50 @@ func Int16Type() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_int16_orderby",
-		"Edm.Int16 supports orderby",
+		"Edm.Int16 orderby returns entities in ascending order by Quantity",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$orderby=Quantity")
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, 200)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			return ctx.AssertEntitiesSortedByFloat(items, "Quantity", true)
 		},
 	)
 
 	suite.AddTest(
 		"test_int16_in_response",
-		"Int16 values are correctly serialized in response",
+		"Int16 values are serialized as numbers within the valid range [-32768, 32767]",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=1")
+			resp, err := ctx.GET("/Products?$top=10&$select=ID,Name,Quantity")
 			if err != nil {
 				return err
 			}
-
 			if err := ctx.AssertStatusCode(resp, 200); err != nil {
 				return err
 			}
-
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
 			}
-
-			if _, hasValue := result["value"]; !hasValue {
-				return framework.NewError("Response missing value field")
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
 			}
-
+			for _, item := range items {
+				q, ok := productFloat(item, "Quantity")
+				if !ok {
+					return framework.NewError("Quantity field is missing or not a number")
+				}
+				if q < -32768 || q > 32767 {
+					return fmt.Errorf("Quantity value %v is outside Edm.Int16 range [-32768, 32767]", q)
+				}
+			}
 			return nil
 		},
 	)

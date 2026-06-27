@@ -1,7 +1,6 @@
 package v4_0
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -36,61 +35,57 @@ func SingleType() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_single_literal_with_f_suffix",
-		"Edm.Single literal with 'f' suffix",
+		"Edm.Single literal with 'f' suffix returns correct entity set",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Weight eq 3.14f")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Weight eq 3.14f", func(p map[string]interface{}) bool {
+				w, ok := productFloat(p, "Weight")
+				// Single-precision rounding: compare within float32 precision
+				return ok && float32(w) == float32(3.14)
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_single_comparison",
-		"Edm.Single supports comparison operators",
+		"Edm.Single supports gt comparison with 'f' suffix",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Weight gt 2.5f")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Weight gt 2.5f", func(p map[string]interface{}) bool {
+				w, ok := productFloat(p, "Weight")
+				return ok && w > 2.5
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_single_zero_value",
-		"Edm.Single handles zero value",
+		"Edm.Single filter eq 0.0f returns only zero-weight entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Weight eq 0.0f")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Weight eq 0.0f", func(p map[string]interface{}) bool {
+				w, ok := productFloat(p, "Weight")
+				return ok && w == 0.0
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_single_negative_value",
-		"Edm.Single handles negative values",
+		"Edm.Single filter lt negative value returns correct set",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Weight lt -1.5f")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Weight lt -1.5f", func(p map[string]interface{}) bool {
+				w, ok := productFloat(p, "Weight")
+				return ok && w < -1.5
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_single_arithmetic",
-		"Edm.Single supports arithmetic operations",
+		"Edm.Single arithmetic: Weight mul 2 gt 10.0f returns correct set",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Weight mul 2 gt 10.0f")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Weight mul 2 gt 10.0f", func(p map[string]interface{}) bool {
+				w, ok := productFloat(p, "Weight")
+				return ok && (w*2) > 10.0
+			})
 		},
 	)
 
@@ -98,7 +93,7 @@ func SingleType() *framework.TestSuite {
 		"test_single_cast",
 		"cast() function supports Edm.Single",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=cast(Price, 'Edm.Single') eq 99.99f")
+			resp, err := ctx.GET("/Products?$filter=cast(Weight,'Edm.Single') gt 0.0f")
 			if err != nil {
 				return err
 			}
@@ -108,19 +103,18 @@ func SingleType() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_single_scientific_notation",
-		"Edm.Single supports scientific notation",
+		"Edm.Single scientific notation: Weight lt 1.5e2f returns correct set",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Weight lt 1.5e2f")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Weight lt 1.5e2f", func(p map[string]interface{}) bool {
+				w, ok := productFloat(p, "Weight")
+				return ok && w < 150.0
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_single_inf",
-		"Edm.Single supports INF value",
+		"Edm.Single ne INF literal is accepted and returns non-INF entities",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$filter=Weight ne INF")
 			if err != nil {
@@ -132,7 +126,7 @@ func SingleType() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_single_negative_inf",
-		"Edm.Single supports -INF value",
+		"Edm.Single ne -INF literal is accepted and returns non-negative-INF entities",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$filter=Weight ne -INF")
 			if err != nil {
@@ -144,7 +138,7 @@ func SingleType() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_single_nan",
-		"Edm.Single supports NaN value",
+		"Edm.Single ne NaN literal is accepted",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$filter=Weight ne NaN")
 			if err != nil {
@@ -156,26 +150,32 @@ func SingleType() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_single_in_response",
-		"Single values are correctly serialized in response",
+		"Single (Weight) values are present and numeric in response",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=1")
+			resp, err := ctx.GET("/Products?$top=10&$select=ID,Name,Weight")
 			if err != nil {
 				return err
 			}
-
 			if err := ctx.AssertStatusCode(resp, 200); err != nil {
 				return err
 			}
-
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
 			}
-
-			if _, hasValue := result["value"]; !hasValue {
-				return framework.NewError("Response missing value field")
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
 			}
-
+			for _, item := range items {
+				if _, hasWeight := item["Weight"]; !hasWeight {
+					return fmt.Errorf("entity is missing Weight field")
+				}
+				if item["Weight"] != nil {
+					if _, ok := item["Weight"].(float64); !ok {
+						return fmt.Errorf("Weight field is not a number, got %T", item["Weight"])
+					}
+				}
+			}
 			return nil
 		},
 	)

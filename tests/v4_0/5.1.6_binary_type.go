@@ -1,7 +1,6 @@
 package v4_0
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -36,62 +35,58 @@ func BinaryType() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_binary_literal_format",
-		"Binary literal with binary'base64' format",
+		"Binary literal binary'base64' returns entities whose Data matches",
 		func(ctx *framework.TestContext) error {
-			// base64 encoding of "test"
-			resp, err := ctx.GET("/Products?$filter=Data eq binary'dGVzdA=='")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			// base64 of "test" is "dGVzdA=="
+			return assertProductFilter(ctx, "Data eq binary'dGVzdA=='", func(p map[string]interface{}) bool {
+				return productString(p, "Data") == "dGVzdA=="
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_binary_empty_value",
-		"Binary handles empty byte array",
+		"Binary empty literal binary'' returns entities with empty Data",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Data eq binary''")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Data eq binary''", func(p map[string]interface{}) bool {
+				d, ok := p["Data"]
+				return ok && d != nil && productString(p, "Data") == ""
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_binary_equality",
-		"Binary supports equality comparison",
+		"Binary equality comparison returns exactly matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Data eq binary'AQID'")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Data eq binary'AQID'", func(p map[string]interface{}) bool {
+				return productString(p, "Data") == "AQID"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_binary_inequality",
-		"Binary supports inequality comparison",
+		"Binary ne comparison returns entities where Data differs",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Data ne binary'AQID'")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Data ne binary'AQID'", func(p map[string]interface{}) bool {
+				d, ok := p["Data"]
+				if !ok || d == nil {
+					return false // null values excluded by OData three-valued logic
+				}
+				return productString(p, "Data") != "AQID"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_binary_null_comparison",
-		"Binary supports null comparison",
+		"Binary ne null returns only entities with a non-null Data field",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Data ne null")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Data ne null", func(p map[string]interface{}) bool {
+				d, ok := p["Data"]
+				return ok && d != nil
+			})
 		},
 	)
 
@@ -99,7 +94,7 @@ func BinaryType() *framework.TestSuite {
 		"test_binary_cast",
 		"cast() function supports Edm.Binary",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=cast(Data, 'Edm.Binary') ne null")
+			resp, err := ctx.GET("/Products?$filter=cast(Data,'Edm.Binary') ne null")
 			if err != nil {
 				return err
 			}
@@ -111,7 +106,7 @@ func BinaryType() *framework.TestSuite {
 		"test_binary_isof",
 		"isof() function supports Edm.Binary",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=isof(Data, 'Edm.Binary')")
+			resp, err := ctx.GET("/Products?$filter=isof(Data,'Edm.Binary')")
 			if err != nil {
 				return err
 			}
@@ -121,33 +116,45 @@ func BinaryType() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_binary_in_response",
-		"Binary values are base64-encoded in JSON response",
+		"Non-null Binary values are base64-encoded strings in the JSON response",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=1")
+			resp, err := ctx.GET("/Products?$top=10&$select=ID,Name,Data")
 			if err != nil {
 				return err
 			}
-
 			if err := ctx.AssertStatusCode(resp, 200); err != nil {
 				return err
 			}
-
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
 			}
-
-			if _, hasValue := result["value"]; !hasValue {
-				return framework.NewError("Response missing value field")
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
 			}
-
+			for _, item := range items {
+				d, ok := item["Data"]
+				if !ok || d == nil {
+					continue // null is allowed
+				}
+				s, isStr := d.(string)
+				if !isStr {
+					return fmt.Errorf("Data value is non-null but not a string (got %T); Edm.Binary must be base64-encoded in JSON", d)
+				}
+				// Validate that the string contains only base64 characters
+				for _, ch := range s {
+					if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '+' || ch == '/' || ch == '-' || ch == '_' || ch == '=') {
+						return fmt.Errorf("Data value %q contains non-base64 character %q", s, ch)
+					}
+				}
+			}
 			return nil
 		},
 	)
 
 	suite.AddTest(
 		"test_binary_invalid_base64",
-		"Invalid base64 encoding returns error",
+		"Invalid base64 encoding returns 400 Bad Request",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$filter=Data eq binary'!!!invalid!!!'")
 			if err != nil {
@@ -162,10 +169,9 @@ func BinaryType() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_binary_large_value",
-		"Binary handles large byte arrays",
+		"Binary filter with large base64 payload is accepted",
 		func(ctx *framework.TestContext) error {
-			// 100 bytes of data in base64 (approximately)
-			largeBase64 := strings.Repeat("AQIDBAUG", 16) // ~128 chars
+			largeBase64 := strings.Repeat("AQIDBAUG", 16)
 			resp, err := ctx.GET("/Products?$filter=Data ne binary'" + largeBase64 + "'")
 			if err != nil {
 				return err

@@ -14,73 +14,67 @@ func TemporalDataTypes() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_datetime_offset_support",
-		"Edm.DateTimeOffset type is supported",
+		"year() function on Edm.DateTimeOffset returns matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=year(CreatedAt) eq 2024")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "year(CreatedAt) eq 2024", func(p map[string]interface{}) bool {
+				t, ok := productTime(p, "CreatedAt")
+				return ok && t.Year() == 2024
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_date_literal",
-		"Date literal in YYYY-MM-DD format",
+		"date() function on DateTimeOffset eq Date literal returns matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=date(CreatedAt) eq 2024-01-15")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "date(CreatedAt) eq 2024-01-15", func(p map[string]interface{}) bool {
+				t, ok := productTime(p, "CreatedAt")
+				return ok && t.Format("2006-01-02") == "2024-01-15"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_time_literal",
-		"Time literal in HH:MM:SS format",
+		"time() function on DateTimeOffset eq TimeOfDay literal returns matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=time(CreatedAt) eq 14:30:00")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "time(CreatedAt) eq 14:30:00", func(p map[string]interface{}) bool {
+				t, ok := productTime(p, "CreatedAt")
+				return ok && t.Format("15:04:05") == "14:30:00"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_date_comparison",
-		"Date comparison with gt/lt operators",
+		"date() function gt Date literal returns entities after that date",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=date(CreatedAt) gt 2024-01-01")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "date(CreatedAt) gt 2024-01-01", func(p map[string]interface{}) bool {
+				t, ok := productTime(p, "CreatedAt")
+				return ok && t.Format("2006-01-02") > "2024-01-01"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_time_comparison",
-		"Time comparison with operators",
+		"time() function lt TimeOfDay literal returns entities before that time",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=time(CreatedAt) lt 12:00:00")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "time(CreatedAt) lt 12:00:00", func(p map[string]interface{}) bool {
+				t, ok := productTime(p, "CreatedAt")
+				return ok && t.Format("15:04:05") < "12:00:00"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_date_time_combination",
-		"Combine date() and time() functions",
+		"Combined date() and time() functions return correctly filtered entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=date(CreatedAt) eq 2024-01-15 and time(CreatedAt) gt 10:00:00")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "date(CreatedAt) eq 2024-01-15 and time(CreatedAt) gt 10:00:00", func(p map[string]interface{}) bool {
+				t, ok := productTime(p, "CreatedAt")
+				return ok && t.Format("2006-01-02") == "2024-01-15" && t.Format("15:04:05") > "10:00:00"
+			})
 		},
 	)
 
