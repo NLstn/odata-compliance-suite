@@ -243,19 +243,19 @@ func FilterComparisonOperators() *framework.TestSuite {
 	)
 
 	suite.AddTest(
-		"test_ne_null_returns_only_non_null_values",
-		"ne null returns only entities where the property is non-null",
+		"test_ne_null_on_non_nullable_property_returns_only_non_null_values",
+		"ne null returns only entities where a populated property is non-null",
 		func(ctx *framework.TestContext) error {
-			items, err := fetchComparisonItems(ctx, "Description ne null")
+			items, err := fetchComparisonItems(ctx, "Name ne null")
 			if err != nil {
 				return err
 			}
 			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
-				return fmt.Errorf("Description ne null returned no items: %w", err)
+				return fmt.Errorf("Name ne null returned no items: %w", err)
 			}
-			return ctx.AssertAllEntitiesSatisfy(items, "Description ne null", func(entity map[string]interface{}) (bool, string) {
-				if value, ok := entity["Description"]; !ok || value == nil {
-					return false, "Description is missing or null"
+			return ctx.AssertAllEntitiesSatisfy(items, "Name ne null", func(entity map[string]interface{}) (bool, string) {
+				if value, ok := entity["Name"]; !ok || value == nil {
+					return false, "Name is missing or null"
 				}
 				return true, ""
 			})
