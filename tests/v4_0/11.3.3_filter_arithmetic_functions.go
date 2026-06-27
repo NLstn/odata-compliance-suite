@@ -1,14 +1,16 @@
 package v4_0
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/url"
+	"math"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
 
-// FilterArithmeticFunctions creates the 11.3.3 Arithmetic Functions test suite
+// FilterArithmeticFunctions creates the 11.3.3 Arithmetic Functions test suite.
+//
+// Each test verifies the operator/function's actual numeric result: the filtered
+// set is compared against an oracle computed in Go from a full fetch (see
+// assertProductFilter), not merely checked for HTTP 200.
 func FilterArithmeticFunctions() *framework.TestSuite {
 	suite := framework.NewTestSuite(
 		"11.3.3 Arithmetic Functions in $filter",
@@ -16,195 +18,85 @@ func FilterArithmeticFunctions() *framework.TestSuite {
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part2-url-conventions/odata-v4.0-errata03-os-part2-url-conventions-complete.html#sec_BuiltinFilterOperations",
 	)
 
-	// Test 1: add operator
-	suite.AddTest(
-		"test_add_operator",
-		"add operator performs addition",
+	suite.AddTest("test_add_operator", "add performs addition",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("Price add 10 gt 100")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
+			return assertProductFilter(ctx, "Price add 10 gt 100", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price+10 > 100
+			})
+		})
 
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse JSON: %w", err)
-			}
-
-			if _, ok := result["value"]; !ok {
-				return fmt.Errorf("response missing 'value' property")
-			}
-
-			return nil
-		},
-	)
-
-	// Test 2: sub operator
-	suite.AddTest(
-		"test_sub_operator",
-		"sub operator performs subtraction",
+	suite.AddTest("test_sub_operator", "sub performs subtraction",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("Price sub 50 lt 100")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-			return nil
-		},
-	)
+			return assertProductFilter(ctx, "Price sub 50 lt 100", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price-50 < 100
+			})
+		})
 
-	// Test 3: mul operator
-	suite.AddTest(
-		"test_mul_operator",
-		"mul operator performs multiplication",
+	suite.AddTest("test_mul_operator", "mul performs multiplication",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("Price mul 2 gt 200")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-			return nil
-		},
-	)
+			return assertProductFilter(ctx, "Price mul 2 gt 200", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price*2 > 200
+			})
+		})
 
-	// Test 4: div operator
-	suite.AddTest(
-		"test_div_operator",
-		"div operator performs division",
+	suite.AddTest("test_div_operator", "div performs division",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("Price div 2 lt 100")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-			return nil
-		},
-	)
+			return assertProductFilter(ctx, "Price div 2 lt 100", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price/2 < 100
+			})
+		})
 
-	// Test 5: mod operator
-	suite.AddTest(
-		"test_mod_operator",
-		"mod operator performs modulo",
+	suite.AddTest("test_mod_operator", "mod computes the remainder",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("Price mod 10 eq 0")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
+			return assertProductFilter(ctx, "Rating mod 2 eq 0", func(p map[string]interface{}) bool {
+				rating, ok := productFloat(p, "Rating")
+				return ok && int(rating)%2 == 0
+			})
+		})
 
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse JSON: %w", err)
-			}
-
-			if _, ok := result["value"]; !ok {
-				return fmt.Errorf("response missing 'value' property")
-			}
-
-			return nil
-		},
-	)
-
-	// Test 6: ceiling function
-	suite.AddTest(
-		"test_ceiling_function",
-		"ceiling() function rounds up",
+	suite.AddTest("test_ceiling_function", "ceiling() rounds toward positive infinity",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("ceiling(Price) eq 100")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-			return nil
-		},
-	)
+			return assertProductFilter(ctx, "ceiling(Price) eq 1000", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && math.Ceil(price) == 1000
+			})
+		})
 
-	// Test 7: floor function
-	suite.AddTest(
-		"test_floor_function",
-		"floor() function rounds down",
+	suite.AddTest("test_floor_function", "floor() rounds toward negative infinity",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("floor(Price) eq 99")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-			return nil
-		},
-	)
+			return assertProductFilter(ctx, "floor(Price) eq 999", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && math.Floor(price) == 999
+			})
+		})
 
-	// Test 8: round function
-	suite.AddTest(
-		"test_round_function",
-		"round() function rounds to nearest integer",
+	suite.AddTest("test_round_function", "round() rounds to the nearest integer",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("round(Price) eq 100")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-			return nil
-		},
-	)
+			return assertProductFilter(ctx, "round(Price) eq 1000", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && math.Round(price) == 1000
+			})
+		})
 
-	// Test 9: Combined arithmetic operations
-	suite.AddTest(
-		"test_combined_arithmetic",
-		"Combined arithmetic operations work",
+	suite.AddTest("test_combined_arithmetic", "operators chain with correct precedence",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("Price mul 2 sub 100 gt 0")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-			return nil
-		},
-	)
+			return assertProductFilter(ctx, "Price mul 2 sub 100 gt 0", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price*2-100 > 0
+			})
+		})
 
-	// Test 10: Arithmetic with comparison
-	suite.AddTest(
-		"test_arithmetic_comparison",
-		"Arithmetic comparisons (ge, le) work",
+	suite.AddTest("test_arithmetic_comparison", "ge and le bound a numeric range",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("Price ge 50 and Price le 150")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-			return nil
-		},
-	)
+			return assertProductFilter(ctx, "Price ge 50 and Price le 150", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price >= 50 && price <= 150
+			})
+		})
 
 	return suite
 }

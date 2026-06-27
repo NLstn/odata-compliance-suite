@@ -2,12 +2,16 @@ package v4_0
 
 import (
 	"fmt"
-	"net/url"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
 
-// FilterTypeFunctions creates the 11.3.4 Type Functions test suite
+// FilterTypeFunctions creates the 11.3.4 Type Functions test suite.
+//
+// Tests verify the actual semantics of isof()/cast(): the filtered set is
+// compared against an oracle computed in Go from a full fetch (the discriminator
+// property ProductType identifies the derived SpecialProduct rows), not merely
+// checked for HTTP 200.
 func FilterTypeFunctions() *framework.TestSuite {
 	suite := framework.NewTestSuite(
 		"11.3.4 Type Functions in $filter",
@@ -15,90 +19,66 @@ func FilterTypeFunctions() *framework.TestSuite {
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part2-url-conventions/odata-v4.0-errata03-os-part2-url-conventions-complete.html#sec_BuiltinFilterOperations",
 	)
 
-	// Test 1: isof function with property
-	suite.AddTest(
-		"test_isof_function_property",
-		"isof() function checks property type",
+	// isof() against the derived type returns exactly the SpecialProduct rows.
+	suite.AddTest("test_isof_derived_type", "isof() selects entities of a derived type",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("isof(Price,Edm.Decimal)")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
+			ns, err := schemaNamespace(ctx)
 			if err != nil {
 				return err
 			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			if ns == "" {
+				return ctx.Skip("could not determine the schema namespace")
 			}
-			return nil
-		},
-	)
+			return assertProductFilter(ctx, fmt.Sprintf("isof(%s.SpecialProduct)", ns), func(p map[string]interface{}) bool {
+				return productString(p, "ProductType") == "SpecialProduct"
+			})
+		})
 
-	// Test 2: isof function with entity type
-	suite.AddTest(
-		"test_isof_function_entity",
-		"isof() function checks entity type",
+	// not isof() is the complement: every non-derived row.
+	suite.AddTest("test_isof_derived_type_negated", "not isof() selects entities not of a derived type",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("isof('Product')")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
+			ns, err := schemaNamespace(ctx)
 			if err != nil {
 				return err
 			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			if ns == "" {
+				return ctx.Skip("could not determine the schema namespace")
 			}
-			return nil
-		},
-	)
+			return assertProductFilter(ctx, fmt.Sprintf("not isof(%s.SpecialProduct)", ns), func(p map[string]interface{}) bool {
+				return productString(p, "ProductType") != "SpecialProduct"
+			})
+		})
 
-	// Test 3: cast function
-	suite.AddTest(
-		"test_cast_function",
-		"cast() function casts to specified type",
+	// isof() against the property's own primitive type holds for every row.
+	suite.AddTest("test_isof_primitive_type", "isof() holds for a property of the named primitive type",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("cast(Status,Edm.String) eq '1'")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-			return nil
-		},
-	)
+			return assertProductFilter(ctx, "isof(Price,Edm.Double)", func(p map[string]interface{}) bool {
+				_, ok := productFloat(p, "Price")
+				return ok
+			})
+		})
 
-	// Test 4: isof with null check
-	suite.AddTest(
-		"test_isof_null_check",
-		"isof() with null check returns true",
+	// cast() to a numeric type, compared against a value.
+	suite.AddTest("test_cast_to_numeric", "cast() converts a value for numeric comparison",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("isof(Name,Edm.String) eq true")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-			return nil
-		},
-	)
+			return assertProductFilter(ctx, "cast(Rating,Edm.Int32) eq 200", func(p map[string]interface{}) bool {
+				rating, ok := productFloat(p, "Rating")
+				return ok && int(rating) == 200
+			})
+		})
 
-	// Test 5: Negative isof test
-	suite.AddTest(
-		"test_isof_negative",
-		"isof() returns false for wrong type",
+	// cast() to Edm.String, compared against a string literal. Uses Rating
+	// (Edm.Byte) rather than the flags enum Status: casting an enum to Edm.String
+	// yields member names ("InStock,Featured"), not the underlying number, so a
+	// numeric literal would be representation-dependent. A numeric type's string
+	// form is unambiguous.
+	suite.AddTest("test_cast_to_string", "cast() converts a value to Edm.String",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("isof(Price,Edm.String) eq false")
-			resp, err := ctx.GET("/Products?$filter=" + filter)
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-			return nil
-		},
-	)
+			return assertProductFilter(ctx, "cast(Rating,Edm.String) eq '200'", func(p map[string]interface{}) bool {
+				rating, ok := productFloat(p, "Rating")
+				return ok && int(rating) == 200
+			})
+		})
 
 	return suite
 }

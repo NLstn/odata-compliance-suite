@@ -38,8 +38,8 @@ func DeleteRestrictions() *framework.TestSuite {
 	)
 
 	suite.AddTest(
-		"deletable_entity_accepts_delete",
-		"DELETE request to entity in deletable entity set succeeds",
+		"non_deletable_entity_rejects_delete",
+		"DELETE request to entity in an entity set with Deletable=false returns appropriate error",
 		func(ctx *framework.TestContext) error {
 			metadataXML, err := fetchMetadata(ctx)
 			if err != nil {
@@ -72,6 +72,41 @@ func DeleteRestrictions() *framework.TestSuite {
 				if resp.StatusCode < 400 || resp.StatusCode >= 500 {
 					return fmt.Errorf("expected 4xx for non-deletable entity set %s, got %d: %s", setInfo.name, resp.StatusCode, string(resp.Body))
 				}
+			}
+
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"deletable_entity_accepts_delete",
+		"DELETE request to entity in a deletable (unrestricted) entity set succeeds",
+		func(ctx *framework.TestContext) error {
+			// Create a disposable entity in the unrestricted Products set so the
+			// delete does not depend on (or destroy) seed data other tests rely on.
+			createResp, err := ctx.POST("/Products", map[string]interface{}{"Name": "Capabilities deletable test", "Price": 1.0})
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(createResp, 201); err != nil {
+				return fmt.Errorf("failed to create disposable Products entity: %w", err)
+			}
+
+			var created map[string]interface{}
+			if err := ctx.GetJSON(createResp, &created); err != nil {
+				return err
+			}
+			id, ok := created["ID"].(string)
+			if !ok || id == "" {
+				return fmt.Errorf("created entity did not return an ID")
+			}
+
+			resp, err := ctx.DELETE(fmt.Sprintf("/Products(%s)", id))
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				return fmt.Errorf("expected 2xx DELETE on deletable entity set Products, got %d: %s", resp.StatusCode, string(resp.Body))
 			}
 
 			return nil

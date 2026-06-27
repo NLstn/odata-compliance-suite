@@ -88,13 +88,18 @@ func Upsert() *framework.TestSuite {
 		},
 	)
 
-	// Test 2: PUT to non-existent entity creates it (if supported)
+	// Test 2: PUT to a non-existent entity is an upsert.
+	// Per OData v4.01 Part 1 §11.4.3, a PUT/PATCH to a URL that does not identify
+	// an existing entity SHOULD create it (upsert -> 201 Created). A service that
+	// does not support upsert (or whose entity set is not insertable) instead
+	// rejects with 404. Both are conformant; we must NOT mandate one or the other.
 	suite.AddTest(
 		"test_put_create_nonexistent",
-		"PUT to non-existent entity (insert)",
+		"PUT to non-existent entity performs an upsert (201) or is rejected (404)",
 		func(ctx *framework.TestContext) error {
 			const nonexistentID = "00000000-0000-0000-0000-000000000000"
-			resp, err := ctx.PUT(fmt.Sprintf("/Products(%s)", nonexistentID), map[string]interface{}{
+			path := fmt.Sprintf("/Products(%s)", nonexistentID)
+			resp, err := ctx.PUT(path, map[string]interface{}{
 				"ID":          nonexistentID,
 				"Name":        "Upserted Product",
 				"Price":       299.99,
@@ -104,18 +109,31 @@ func Upsert() *framework.TestSuite {
 				return err
 			}
 
-			if err := ctx.AssertODataError(resp, 404, "does not exist"); err != nil {
-				return fmt.Errorf("expected PUT to non-existent entity to be rejected with strict 404 payload: %w", err)
+			switch resp.StatusCode {
+			case 201, 200, 204:
+				// Upsert supported: the entity must now be retrievable.
+				getResp, err := ctx.GET(path)
+				if err != nil {
+					return err
+				}
+				if err := ctx.AssertStatusCode(getResp, 200); err != nil {
+					return fmt.Errorf("PUT-upsert reported success (%d) but the entity is not retrievable: %w", resp.StatusCode, err)
+				}
+				return nil
+			case 404:
+				// Upsert not supported: rejection is conformant.
+				return nil
+			default:
+				return fmt.Errorf("expected 201/200/204 (upsert) or 404 (upsert unsupported), got %d", resp.StatusCode)
 			}
-
-			return nil
 		},
 	)
 
-	// Test 3: PUT with missing required fields should fail
+	// Test 3: PUT replaces the entity, resetting omitted non-key properties to
+	// their default/null values (full-replacement semantics, §11.4.3).
 	suite.AddTest(
 		"test_put_incomplete_entity",
-		"PUT with incomplete entity returns 400",
+		"PUT replace resets omitted properties to defaults",
 		func(ctx *framework.TestContext) error {
 			payload, err := buildProductPayload(ctx, "Test Product", 50.00)
 			if err != nil {

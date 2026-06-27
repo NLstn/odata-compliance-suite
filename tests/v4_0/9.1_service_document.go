@@ -211,5 +211,74 @@ func ServiceDocument() *framework.TestSuite {
 		},
 	)
 
+	// Test 7: Service document must enumerate every entity set and singleton in
+	// the container (Part 1 §11.1.1). Earlier tests only inspect the first item;
+	// this asserts the full reference model is advertised with a usable url.
+	suite.AddTest(
+		"test_service_document_completeness",
+		"Service document lists all reference entity sets and the singleton",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			var data map[string]interface{}
+			if err := ctx.GetJSON(resp, &data); err != nil {
+				return err
+			}
+			valueArray, ok := data["value"].([]interface{})
+			if !ok {
+				return framework.NewError("value must be an array")
+			}
+
+			// Index advertised items by name, capturing their kind (default
+			// "EntitySet" when omitted, per the JSON format) and url.
+			kinds := map[string]string{}
+			urls := map[string]string{}
+			for _, item := range valueArray {
+				m, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				name, _ := m["name"].(string)
+				if name == "" {
+					continue
+				}
+				kind, _ := m["kind"].(string)
+				if kind == "" {
+					kind = "EntitySet"
+				}
+				kinds[name] = kind
+				urls[name], _ = m["url"].(string)
+			}
+
+			expectedSets := []string{"Products", "Categories", "ProductDescriptions", "MediaItems", "ReadOnlyItems", "DecimalSamples"}
+			for _, name := range expectedSets {
+				kind, present := kinds[name]
+				if !present {
+					return framework.NewError("service document is missing entity set " + name)
+				}
+				if kind != "EntitySet" {
+					return framework.NewError("entity set " + name + " has kind " + kind + ", expected EntitySet")
+				}
+				if strings.TrimSpace(urls[name]) == "" {
+					return framework.NewError("entity set " + name + " has an empty url")
+				}
+			}
+
+			if kind, present := kinds["Company"]; !present {
+				return framework.NewError("service document is missing the Company singleton")
+			} else if kind != "Singleton" {
+				return framework.NewError("Company has kind " + kind + ", expected Singleton")
+			}
+
+			return nil
+		},
+	)
+
 	return suite
 }

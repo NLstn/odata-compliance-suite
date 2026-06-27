@@ -203,8 +203,8 @@ func registerErrorResponseTests(suite *framework.TestSuite) {
 	)
 
 	suite.AddTest(
-		"Unsupported version returns 406 with error",
-		"Unsupported OData version should return 406 with error",
+		"Unsupported version returns an error response",
+		"Unsupported OData version should be rejected (406 or 400) with an error body",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products", framework.Header{
 				Key:   "OData-MaxVersion",
@@ -214,14 +214,15 @@ func registerErrorResponseTests(suite *framework.TestSuite) {
 				return err
 			}
 
-			if resp.StatusCode == 406 {
-				if !strings.Contains(string(resp.Body), `"error"`) {
-					return fmt.Errorf("no error object")
-				}
-				return nil
+			// The spec (§8.2.6) does not pin a status for an unsatisfiable version;
+			// accept 406 or 400, but require an OData error object either way.
+			if resp.StatusCode != 406 && resp.StatusCode != 400 {
+				return fmt.Errorf("expected status 406 or 400, got %d", resp.StatusCode)
 			}
-
-			return fmt.Errorf("expected status 406, got %d", resp.StatusCode)
+			if !strings.Contains(string(resp.Body), `"error"`) {
+				return fmt.Errorf("no error object")
+			}
+			return nil
 		},
 	)
 
