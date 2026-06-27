@@ -189,6 +189,103 @@ func InOperator() *framework.TestSuite {
 	)
 
 	suite.AddTest(
+		"test_filter_in_empty_list_rejected",
+		"Empty in-list syntax returns 400",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products?$filter=Name in ()")
+			if err != nil {
+				return err
+			}
+
+			return ctx.AssertStatusCode(resp, http.StatusBadRequest)
+		},
+	)
+
+	suite.AddTest(
+		"test_filter_in_duplicate_members",
+		"Duplicate members in an in-list do not duplicate result entities",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products?$filter=Name in ('Laptop','Laptop')")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
+			}
+
+			entities, err := decodeCollectionAllowEmpty(resp)
+			if err != nil {
+				return err
+			}
+			if len(entities) != 1 {
+				return framework.NewError(fmt.Sprintf("expected duplicate in-list to return Laptop once, got %d entities", len(entities)))
+			}
+			name, ok := entities[0]["Name"].(string)
+			if !ok || name != "Laptop" {
+				return framework.NewError(fmt.Sprintf("expected only Laptop, got Name=%v", entities[0]["Name"]))
+			}
+
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_filter_not_in_expression",
+		"not applied to an in-expression excludes listed members",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products?$filter=not (Name in ('Laptop','Wireless Mouse'))")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
+			}
+
+			entities, err := decodeCollectionAllowEmpty(resp)
+			if err != nil {
+				return err
+			}
+			for i, entity := range entities {
+				name, ok := entity["Name"].(string)
+				if !ok {
+					return framework.NewError(fmt.Sprintf("entity %d missing string Name field", i))
+				}
+				if name == "Laptop" || name == "Wireless Mouse" {
+					return framework.NewError(fmt.Sprintf("entity %d has excluded Name=%q", i, name))
+				}
+			}
+
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_filter_in_null_member",
+		"Null members in an in-list match null property values",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products?$filter=Description in (null)")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
+			}
+
+			entities, err := decodeCollectionAllowEmpty(resp)
+			if err != nil {
+				return err
+			}
+			for i, entity := range entities {
+				if value, ok := entity["Description"]; ok && value != nil {
+					return framework.NewError(fmt.Sprintf("entity %d has non-null Description=%v", i, value))
+				}
+			}
+
+			return nil
+		},
+	)
+
+	suite.AddTest(
 		"test_filter_in_version_negotiation_4_01_vs_4_0",
 		"in-operator is accepted with OData-MaxVersion 4.01 and rejected when negotiated to 4.0",
 		func(ctx *framework.TestContext) error {

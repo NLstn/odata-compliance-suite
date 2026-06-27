@@ -250,5 +250,76 @@ func URLEncoding() *framework.TestSuite {
 		},
 	)
 
+	suite.AddTest(
+		"test_encoded_ampersand_stays_in_string_literal",
+		"Encoded ampersand inside a string literal is not treated as a query separator",
+		func(ctx *framework.TestContext) error {
+			path := "/Products?$filter=" + url.QueryEscape("Name eq 'Laptop & Mouse'")
+			resp, err := ctx.GET(path)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if len(items) != 0 {
+				return fmt.Errorf("expected no exact matches for encoded ampersand literal, got %d", len(items))
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_encoded_slash_stays_in_string_literal",
+		"Encoded slash inside a string literal is not treated as a path separator",
+		func(ctx *framework.TestContext) error {
+			path := "/Products?$filter=" + url.QueryEscape("Name eq 'Laptop/Tablet'")
+			resp, err := ctx.GET(path)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if len(items) != 0 {
+				return fmt.Errorf("expected no exact matches for encoded slash literal, got %d", len(items))
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_encoded_comma_in_select_list",
+		"Encoded comma separates $select properties correctly",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products?$select=ID%2CName&$top=1")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
+			}
+			return ctx.AssertEntityHasFields(items[0], "ID", "Name")
+		},
+	)
+
 	return suite
 }
