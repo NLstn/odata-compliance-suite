@@ -15,37 +15,56 @@ func PropertyValue() *framework.TestSuite {
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part2-url-conventions/odata-v4.0-errata03-os-part2-url-conventions-complete.html#sec_AddressingIndividualPropertiesofanEnt",
 	)
 
-	// Test 1: Access primitive property $value
+	// Test 1: Access primitive property $value and verify it matches the property
 	suite.AddTest(
 		"test_property_value",
-		"Access primitive property raw value",
+		"Access primitive property raw value matches the property value",
 		func(ctx *framework.TestContext) error {
 			productPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
 				return err
 			}
+
+			// Fetch the entity to learn the actual Name value.
+			entResp, err := ctx.GET(productPath)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(entResp, 200); err != nil {
+				return err
+			}
+			var entity map[string]interface{}
+			if err := ctx.GetJSON(entResp, &entity); err != nil {
+				return err
+			}
+			name, ok := entity["Name"].(string)
+			if !ok {
+				return fmt.Errorf("entity Name is missing or not a string")
+			}
+
 			resp, err := ctx.GET(productPath + "/Name/$value")
 			if err != nil {
 				return err
 			}
-
 			if resp.StatusCode != 200 {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
-			// Should return raw string value (not JSON)
-			if len(resp.Body) == 0 {
-				return fmt.Errorf("empty response")
+			// $value returns the raw value (no JSON wrapper, no quotes) and must
+			// equal the property's actual value.
+			got := strings.TrimSpace(string(resp.Body))
+			if got != name {
+				return fmt.Errorf("$value returned %q but the Name property is %q", got, name)
 			}
 
 			return nil
 		},
 	)
 
-	// Test 2: $value returns correct Content-Type
+	// Test 2: $value returns text/plain Content-Type for a string property
 	suite.AddTest(
 		"test_value_content_type",
-		"$value returns appropriate Content-Type header",
+		"$value returns a text/plain Content-Type for a string property",
 		func(ctx *framework.TestContext) error {
 			productPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
@@ -60,10 +79,11 @@ func PropertyValue() *framework.TestSuite {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
-			// Should return text/plain or appropriate media type
+			// The raw value of an Edm.String property is served as text/plain
+			// (OData Part 1 §11.2.3.1: $value uses the media type of the property).
 			contentType := resp.Headers.Get("Content-Type")
-			if contentType == "" {
-				return fmt.Errorf("no Content-Type header")
+			if !strings.Contains(strings.ToLower(contentType), "text/plain") {
+				return fmt.Errorf("expected Content-Type text/plain for a string $value, got %q", contentType)
 			}
 
 			return nil
