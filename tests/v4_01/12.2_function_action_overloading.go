@@ -151,50 +151,50 @@ func FunctionActionOverloading() *framework.TestSuite {
 		return nil
 	}
 
-	// Test 1: Bound collection function overload with different parameter counts
+	// Test 1: Function overload with different parameter counts
 	suite.AddTest(
-		"test_bound_collection_function_overload_param_count",
-		"Bound collection function overload with different parameter counts",
+		"test_function_overload_param_count",
+		"Function overload with different parameter counts",
 		func(ctx *framework.TestContext) error {
 			doc, err := getMetadata(ctx)
 			if err != nil {
 				return err
 			}
 
-			_, err = requireDeclaredSignatures(ctx, doc, "GetTopProducts", true, "Function", [][]string{{}, {"count"}, {"category", "count"}})
+			_, err = requireDeclaredSignatures(ctx, doc, "GetTopProducts", false, "Function", [][]string{{}, {"count"}, {"category", "count"}})
 			if err != nil {
 				return err
 			}
 
-			resp1, err := ctx.GET("/Products/GetTopProducts()")
+			resp1, err := ctx.GET("/GetTopProducts()")
 			if err != nil {
 				return err
 			}
-			if err := assertSuccessNoErrorPayload(resp1, "Products/GetTopProducts() overload without parameters"); err != nil {
+			if err := assertSuccessNoErrorPayload(resp1, "GetTopProducts() overload without parameters"); err != nil {
 				return err
 			}
 
-			resp2, err := ctx.GET("/Products/GetTopProducts(count=5)")
+			resp2, err := ctx.GET("/GetTopProducts(count=5)")
 			if err != nil {
 				return err
 			}
-			if err := assertSuccessNoErrorPayload(resp2, "Products/GetTopProducts(count=5) overload with count"); err != nil {
+			if err := assertSuccessNoErrorPayload(resp2, "GetTopProducts(count=5) overload with count"); err != nil {
 				return err
 			}
 
-			resp3, err := ctx.GET("/Products/GetTopProducts(count=5,category='Electronics')")
+			resp3, err := ctx.GET("/GetTopProducts(count=5,category='Electronics')")
 			if err != nil {
 				return err
 			}
-			if err := assertSuccessNoErrorPayload(resp3, "Products/GetTopProducts(count=5,category='Electronics') overload with count and category"); err != nil {
+			if err := assertSuccessNoErrorPayload(resp3, "GetTopProducts(count=5,category='Electronics') overload with count and category"); err != nil {
 				return err
 			}
 
-			invalidResp, err := ctx.GET("/Products/GetTopProducts(category='Electronics')")
+			invalidResp, err := ctx.GET("/GetTopProducts(category='Electronics')")
 			if err != nil {
 				return err
 			}
-			return assertClientError(invalidResp, "Products/GetTopProducts(category='Electronics') invalid signature")
+			return assertClientError(invalidResp, "GetTopProducts(category='Electronics') invalid signature")
 		},
 	)
 
