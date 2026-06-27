@@ -18,10 +18,10 @@ func CountSegment() *framework.TestSuite {
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part2-url-conventions/odata-v4.0-errata03-os-part2-url-conventions-complete.html#sec_Count",
 	)
 
-	// Test 1: $count on entity set returns text/plain integer
+	// Test 1: $count on entity set returns text/plain integer matching the size
 	suite.AddTest(
 		"test_entityset_count_segment",
-		"$count on entity set returns text/plain integer",
+		"$count on entity set returns text/plain integer matching @odata.count",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products/$count")
 			if err != nil {
@@ -33,9 +33,31 @@ func CountSegment() *framework.TestSuite {
 			if err := ctx.AssertHeaderContains(resp, "Content-Type", "text/plain"); err != nil {
 				return err
 			}
-			if _, err := parseCountBody(resp.Body); err != nil {
+			segmentCount, err := parseCountBody(resp.Body)
+			if err != nil {
 				return err
 			}
+
+			// The $count segment must agree with the $count=true annotation.
+			queryResp, err := ctx.GET("/Products?$count=true")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(queryResp, 200); err != nil {
+				return err
+			}
+			var body map[string]interface{}
+			if err := json.Unmarshal(queryResp.Body, &body); err != nil {
+				return fmt.Errorf("failed to parse JSON: %w", err)
+			}
+			countFloat, ok := body["@odata.count"].(float64)
+			if !ok {
+				return fmt.Errorf("@odata.count missing or not a number in $count=true response")
+			}
+			if segmentCount != int(countFloat) {
+				return fmt.Errorf("/Products/$count=%d does not match @odata.count=%d", segmentCount, int(countFloat))
+			}
+
 			return nil
 		},
 	)
@@ -108,8 +130,32 @@ func CountSegment() *framework.TestSuite {
 			if err := ctx.AssertHeaderContains(resp, "Content-Type", "text/plain"); err != nil {
 				return err
 			}
-			if _, err := parseCountBody(resp.Body); err != nil {
+			segmentCount, err := parseCountBody(resp.Body)
+			if err != nil {
 				return err
+			}
+
+			// Cross-check the navigation $count against the actual related collection.
+			collResp, err := ctx.GET(productPath + "/Descriptions")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(collResp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(collResp)
+			if err != nil {
+				return err
+			}
+			var coll map[string]interface{}
+			if err := json.Unmarshal(collResp.Body, &coll); err != nil {
+				return fmt.Errorf("failed to parse Descriptions collection: %w", err)
+			}
+			if segmentCount < len(items) {
+				return fmt.Errorf("Descriptions/$count=%d is smaller than the %d related entities returned", segmentCount, len(items))
+			}
+			if _, paged := coll["@odata.nextLink"]; !paged && segmentCount != len(items) {
+				return fmt.Errorf("Descriptions/$count=%d but the (unpaged) collection has %d entities", segmentCount, len(items))
 			}
 			return nil
 		},
