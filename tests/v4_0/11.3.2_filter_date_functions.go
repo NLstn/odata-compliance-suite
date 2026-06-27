@@ -14,7 +14,7 @@ import (
 func FilterDateFunctions() *framework.TestSuite {
 	suite := framework.NewTestSuite(
 		"11.3.2 Date and Time Functions in $filter",
-		"Tests date/time functions (year, month, day, hour, minute, second, fractionalseconds, date, time, now, mindatetime, maxdatetime, totaloffsetminutes) in filter expressions",
+		"Tests date/time functions (year, month, day, hour, minute, second, fractionalseconds, date, time, now, mindatetime, maxdatetime, totaloffsetminutes, totalseconds) in filter expressions",
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part2-url-conventions/odata-v4.0-errata03-os-part2-url-conventions-complete.html#sec_BuiltinFilterOperations",
 	)
 
@@ -123,6 +123,14 @@ func FilterDateFunctions() *framework.TestSuite {
 			return assertProductFilter(ctx, "CreatedAt lt maxdatetime()", func(p map[string]interface{}) bool {
 				_, ok := productTime(p, "CreatedAt")
 				return ok
+			})
+		})
+
+	suite.AddTest("test_totalseconds_function", "totalseconds() returns an Edm.Duration's length in seconds",
+		func(ctx *framework.TestContext) error {
+			return assertProductFilter(ctx, "totalseconds(ShippingTime) gt 90000", func(p map[string]interface{}) bool {
+				secs, ok := productDurationSeconds(p, "ShippingTime")
+				return ok && secs > 90000
 			})
 		})
 

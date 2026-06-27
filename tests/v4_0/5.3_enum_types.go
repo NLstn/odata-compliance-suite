@@ -116,6 +116,46 @@ func EnumTypes() *framework.TestSuite {
 		},
 	)
 
+	// The 'has' operator tests flags-enum membership. ProductStatus is a flags
+	// enum (None=0, InStock=1, OnSale=2, Discontinued=4, Featured=8); 'Status has
+	// X' selects rows whose Status includes the X bit. Results are verified with an
+	// oracle (Status BAND member-value != 0).
+	suite.AddTest(
+		"test_enum_has_flag_featured",
+		"has operator selects entities whose flags enum includes 'Featured'",
+		func(ctx *framework.TestContext) error {
+			ns, err := schemaNamespace(ctx)
+			if err != nil {
+				return err
+			}
+			if ns == "" {
+				return ctx.Skip("could not determine the schema namespace")
+			}
+			return assertProductFilter(ctx, fmt.Sprintf("Status has %s.ProductStatus'Featured'", ns), func(p map[string]interface{}) bool {
+				status, ok := productFloat(p, "Status")
+				return ok && int(status)&8 != 0 // Featured = 8
+			})
+		},
+	)
+
+	suite.AddTest(
+		"test_enum_has_flag_onsale",
+		"has operator selects entities whose flags enum includes 'OnSale'",
+		func(ctx *framework.TestContext) error {
+			ns, err := schemaNamespace(ctx)
+			if err != nil {
+				return err
+			}
+			if ns == "" {
+				return ctx.Skip("could not determine the schema namespace")
+			}
+			return assertProductFilter(ctx, fmt.Sprintf("Status has %s.ProductStatus'OnSale'", ns), func(p map[string]interface{}) bool {
+				status, ok := productFloat(p, "Status")
+				return ok && int(status)&2 != 0 // OnSale = 2
+			})
+		},
+	)
+
 	suite.AddTest(
 		"test_enum_in_metadata",
 		"Enum type in metadata document",

@@ -4,10 +4,16 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
+
+// iso8601DurationPattern parses an Edm.Duration literal (e.g. "P1DT2H30M",
+// "PT2H", "-P1D"). Only day/hour/minute/second components are supported, which
+// covers the reference model's values.
+var iso8601DurationPattern = regexp.MustCompile(`^(-)?P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$`)
 
 // productTypeNamespacePattern captures the schema namespace from the Products
 // entity set's qualified EntityType (e.g. EntityType="ComplianceService.Product").
@@ -142,6 +148,33 @@ func productTime(p map[string]interface{}, field string) (t time.Time, ok bool) 
 func productFloat(p map[string]interface{}, field string) (float64, bool) {
 	f, ok := p[field].(float64)
 	return f, ok
+}
+
+// productDurationSeconds reads an Edm.Duration field and returns its length in
+// seconds. ok is false when the field is null/absent/unparseable.
+func productDurationSeconds(p map[string]interface{}, field string) (float64, bool) {
+	s, isStr := p[field].(string)
+	if !isStr || s == "" {
+		return 0, false
+	}
+	m := iso8601DurationPattern.FindStringSubmatch(s)
+	if m == nil {
+		return 0, false
+	}
+	var total float64
+	for i, unit := range []float64{86400, 3600, 60, 1} { // D, H, M, S
+		if m[i+2] != "" {
+			v, err := strconv.ParseFloat(m[i+2], 64)
+			if err != nil {
+				return 0, false
+			}
+			total += v * unit
+		}
+	}
+	if m[1] == "-" {
+		total = -total
+	}
+	return total, true
 }
 
 // productString reads a string field; returns "" when null/absent.

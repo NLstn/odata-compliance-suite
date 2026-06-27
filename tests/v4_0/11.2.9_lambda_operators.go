@@ -102,6 +102,21 @@ func RegisterLambdaOperatorsTests(suite *framework.TestSuite) {
 				})
 		})
 
+	// any() with a disjunction inside the lambda: the or must be evaluated per
+	// range-variable iteration, not lifted out of the lambda scope.
+	suite.AddTest(
+		"Lambda any with disjunction",
+		"any() with an or predicate inside the lambda",
+		func(ctx *framework.TestContext) error {
+			return assertProductLambdaFilter(ctx, "Descriptions/any(d: d/LanguageKey eq 'EN' or d/LanguageKey eq 'ES')",
+				func(p map[string]interface{}) bool {
+					return hasDescription(p, func(d map[string]interface{}) bool {
+						lk := productString(d, "LanguageKey")
+						return lk == "EN" || lk == "ES"
+					})
+				})
+		})
+
 	// any() referencing a nullable related property (CustomName).
 	suite.AddTest(
 		"Lambda any with custom column mapping",
