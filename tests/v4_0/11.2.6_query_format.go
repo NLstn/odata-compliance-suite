@@ -113,22 +113,28 @@ func QueryFormat() *framework.TestSuite {
 		},
 	)
 
-	// Test 4: $format=atom returns Atom/XML for collection
+	// Test 4: $format=atom returns Atom/XML for collection.
+	// The Atom format is OPTIONAL: per OData v4.0 Part 1 §3.1 a service MUST
+	// support JSON and MAY support additional formats. A JSON-only service is
+	// fully conformant and must reject an unsupported $format with 415 (or 406).
+	// We therefore accept either a valid Atom feed or a clean rejection — but
+	// NOT a 200 JSON response (that would mean the service ignored $format).
 	suite.AddTest(
 		"test_format_atom_collection",
-		"$format=atom returns Atom/XML for entity collection",
+		"$format=atom returns Atom/XML for entity collection, or rejects cleanly if unsupported",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$format=atom")
 			if err != nil {
 				return err
 			}
+
 			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+				return assertFormatUnsupported(resp)
 			}
 
 			contentType := resp.Headers.Get("Content-Type")
 			if !strings.Contains(strings.ToLower(contentType), "application/atom+xml") {
-				return fmt.Errorf("expected Content-Type to contain 'application/atom+xml', got: %s", contentType)
+				return fmt.Errorf("service returned 200 for $format=atom but Content-Type is %q; a service that does not support Atom must reject with 415/406 rather than return another format", contentType)
 			}
 
 			// Validate well-formed XML
@@ -193,12 +199,12 @@ func QueryFormat() *framework.TestSuite {
 				return err
 			}
 			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+				return assertFormatUnsupported(resp)
 			}
 
 			contentType := resp.Headers.Get("Content-Type")
 			if !strings.Contains(strings.ToLower(contentType), "application/atom+xml") {
-				return fmt.Errorf("expected Content-Type to contain 'application/atom+xml', got: %s", contentType)
+				return fmt.Errorf("service returned 200 for $format=atom but Content-Type is %q; a service that does not support Atom must reject with 415/406 rather than return another format", contentType)
 			}
 
 			// Validate well-formed XML
@@ -216,10 +222,13 @@ func QueryFormat() *framework.TestSuite {
 		},
 	)
 
-	// Test 6: Accept: application/atom+xml returns Atom/XML
+	// Test 6: Accept: application/atom+xml returns Atom/XML, or 406 if unsupported.
+	// Atom is optional (see Test 4); a JSON-only service must answer an
+	// Accept: application/atom+xml request with 406 Not Acceptable rather than
+	// silently returning JSON.
 	suite.AddTest(
 		"test_accept_atom_xml",
-		"Accept: application/atom+xml header returns Atom/XML for entity collection",
+		"Accept: application/atom+xml returns Atom/XML, or 406 if Atom is unsupported",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GETWithHeaders("/Products", map[string]string{
 				"Accept": "application/atom+xml",
@@ -227,13 +236,17 @@ func QueryFormat() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
+
 			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+				if resp.StatusCode == 406 {
+					return nil
+				}
+				return fmt.Errorf("expected 200 (Atom) or 406 (Atom unsupported), got %d", resp.StatusCode)
 			}
 
 			contentType := resp.Headers.Get("Content-Type")
 			if !strings.Contains(strings.ToLower(contentType), "application/atom+xml") {
-				return fmt.Errorf("expected Content-Type to contain 'application/atom+xml', got: %s", contentType)
+				return fmt.Errorf("service returned 200 for Accept: application/atom+xml but Content-Type is %q; a service that does not support Atom must respond 406 rather than return another format", contentType)
 			}
 
 			// Validate well-formed XML
@@ -246,4 +259,15 @@ func QueryFormat() *framework.TestSuite {
 	)
 
 	return suite
+}
+
+// assertFormatUnsupported validates that a non-200 response to an unsupported
+// $format value is a clean rejection. Per OData v4.0 Part 1 §11.2.10.2, an
+// unsupported $format yields 415 Unsupported Media Type; 406 Not Acceptable is
+// also accepted as a defensible alternative.
+func assertFormatUnsupported(resp *framework.HTTPResponse) error {
+	if resp.StatusCode == 415 || resp.StatusCode == 406 {
+		return nil
+	}
+	return fmt.Errorf("expected 200 (format supported) or 415/406 (format unsupported), got %d", resp.StatusCode)
 }
