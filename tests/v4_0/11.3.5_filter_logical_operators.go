@@ -38,29 +38,35 @@ var productStatusNames = map[string]int{
 	"Featured":     8,
 }
 
-// enumStatusValue returns the integer value of the Status field.
-// It accepts both the OData-compliant string format ("InStock,Featured")
-// and the legacy numeric format (9).
+// enumStatusValue returns the integer value of the flags-enum Status field.
+//
+// Per OData JSON Format §7.1, an enumeration value MUST be serialized as a JSON
+// string containing the member name(s) — for a flags enum, a comma-separated
+// list (e.g. "InStock,Featured"). This helper strictly requires that
+// representation; a numeric Status is treated as non-compliant and produces an
+// error so the test fails rather than silently accepting the legacy format.
 func enumStatusValue(item map[string]interface{}) (int, error) {
 	val, ok := item["Status"]
 	if !ok {
 		return 0, fmt.Errorf("item missing Status field")
 	}
-	switch v := val.(type) {
-	case float64:
-		return int(v), nil
-	case string:
-		result := 0
-		for _, name := range strings.Split(v, ",") {
-			n, ok := productStatusNames[strings.TrimSpace(name)]
-			if !ok {
-				return 0, fmt.Errorf("unknown Status member name %q", strings.TrimSpace(name))
-			}
-			result |= n
-		}
-		return result, nil
+	s, ok := val.(string)
+	if !ok {
+		return 0, fmt.Errorf("Status must be serialized as an OData enum member-name string, got %T (%v)", val, val)
 	}
-	return 0, fmt.Errorf("Status field has unexpected type %T", val)
+	result := 0
+	for _, name := range strings.Split(s, ",") {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		n, ok := productStatusNames[name]
+		if !ok {
+			return 0, fmt.Errorf("unknown ProductStatus member name %q", name)
+		}
+		result |= n
+	}
+	return result, nil
 }
 
 // FilterLogicalOperators creates the 11.3.5 Logical Operators test suite

@@ -51,18 +51,13 @@ func FilterComparisonOperators() *framework.TestSuite {
 				return err
 			}
 			return ctx.AssertAllEntitiesSatisfy(items, "Status ne 0", func(entity map[string]interface{}) (bool, string) {
-				// Status may be a numeric value (legacy) or an OData enum string (e.g. "InStock").
-				switch v := entity["Status"].(type) {
-				case float64:
-					if int(v) == 0 {
-						return false, "found Status=0"
-					}
-				case string:
-					if v == "None" || v == "0" {
-						return false, "found Status=None"
-					}
-				default:
-					return false, fmt.Sprintf("Status field has unexpected type %T", entity["Status"])
+				// Status must be an OData enum member-name string; value 0 is "None".
+				status, err := enumStatusValue(entity)
+				if err != nil {
+					return false, err.Error()
+				}
+				if status == 0 {
+					return false, "found Status=None (value 0)"
 				}
 				return true, ""
 			})
