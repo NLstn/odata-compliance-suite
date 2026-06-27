@@ -15,10 +15,10 @@ func QueryCount() *framework.TestSuite {
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part1-protocol/odata-v4.0-errata03-os-part1-protocol-complete.html#sec_SystemQueryOptioncount",
 	)
 
-	// Test 1: $count=true includes @odata.count in response
+	// Test 1: $count=true includes @odata.count and reports the true collection size
 	suite.AddTest(
 		"test_count_true",
-		"$count=true includes @odata.count in response",
+		"$count=true includes @odata.count matching the collection size",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$count=true")
 			if err != nil {
@@ -33,9 +33,34 @@ func QueryCount() *framework.TestSuite {
 				return fmt.Errorf("failed to parse JSON: %w", err)
 			}
 
-			// Verify @odata.count is present
-			if _, ok := result["@odata.count"]; !ok {
+			// @odata.count must be present and a non-negative integer.
+			countVal, ok := result["@odata.count"]
+			if !ok {
 				return fmt.Errorf("@odata.count field is missing")
+			}
+			countFloat, ok := countVal.(float64)
+			if !ok {
+				return fmt.Errorf("@odata.count is not a number, got %T", countVal)
+			}
+			count := int(countFloat)
+			if count < 0 {
+				return fmt.Errorf("@odata.count must be non-negative, got %d", count)
+			}
+
+			value, ok := result["value"].([]interface{})
+			if !ok {
+				return fmt.Errorf("response missing 'value' array")
+			}
+
+			// @odata.count is the TOTAL count and must never be smaller than the
+			// number of items in the current page.
+			if count < len(value) {
+				return fmt.Errorf("@odata.count=%d is smaller than the %d items returned", count, len(value))
+			}
+			// Without a next link the full collection is in this page, so the count
+			// must equal the number of items returned (Part 1 §11.2.5.5).
+			if _, paged := result["@odata.nextLink"]; !paged && count != len(value) {
+				return fmt.Errorf("@odata.count=%d but the (unpaged) response contains %d items", count, len(value))
 			}
 
 			return nil

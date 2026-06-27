@@ -3,6 +3,7 @@ package v4_0
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -15,12 +16,18 @@ func QueryTopSkip() *framework.TestSuite {
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part1-protocol/odata-v4.0-errata03-os-part1-protocol-complete.html#sec_SystemQueryOptionstopandskip",
 	)
 
-	// Test 1: $top limits the number of items returned
+	// Test 1: $top returns exactly min($top, total) items
 	suite.AddTest(
 		"test_top_limit",
-		"$top limits number of items",
+		"$top returns exactly min($top, total) items",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=2")
+			total, err := collectionSize(ctx, "/Products")
+			if err != nil {
+				return err
+			}
+
+			const top = 2
+			resp, err := ctx.GET(fmt.Sprintf("/Products?$top=%d", top))
 			if err != nil {
 				return err
 			}
@@ -37,16 +44,24 @@ func QueryTopSkip() *framework.TestSuite {
 			if !ok {
 				return fmt.Errorf("response missing 'value' array")
 			}
-
 			count := len(value)
-			// $top=2 should return at most 2 items
-			if count > 2 {
-				return fmt.Errorf("returned %d items, expected max 2", count)
+
+			expected := top
+			if total < top {
+				expected = total
 			}
 
-			// Verify we got at least 1 item (assuming Products collection is not empty)
-			if count < 1 {
-				return fmt.Errorf("returned %d items, expected at least 1", count)
+			// $top must never return more than the limit.
+			if count > top {
+				return fmt.Errorf("returned %d items, $top=%d must return at most %d", count, top, top)
+			}
+			// It must return exactly the expected page size, unless the service is
+			// applying server-driven paging (which it signals with @odata.nextLink).
+			if count != expected {
+				if _, paged := result["@odata.nextLink"]; paged && count < expected {
+					return nil
+				}
+				return fmt.Errorf("returned %d items for $top=%d with total=%d; expected %d", count, top, total, expected)
 			}
 
 			return nil
@@ -155,33 +170,21 @@ func QueryTopSkip() *framework.TestSuite {
 		},
 	)
 
-	// Test 4: Combine $skip and $top for paging
+	// Test 4: Combine $skip and $top for paging, verifying the exact page slice
 	suite.AddTest(
 		"test_skip_top_paging",
-		"Combine $skip and $top for paging",
+		"$skip and $top return the exact ordered page",
 		func(ctx *framework.TestContext) error {
-			// First get all products to understand the collection
-			allResp, err := ctx.GET("/Products")
+			// Use $orderby=ID so the ordering is deterministic and the page can be
+			// compared against the corresponding slice of the full ordered list.
+			allIDs, err := orderedProductIDs(ctx, "/Products?$orderby=ID")
 			if err != nil {
 				return err
 			}
-			if allResp.StatusCode != 200 {
-				return fmt.Errorf("failed to get all products: status %d", allResp.StatusCode)
-			}
+			totalCount := len(allIDs)
 
-			var allResult map[string]interface{}
-			if err := json.Unmarshal(allResp.Body, &allResult); err != nil {
-				return fmt.Errorf("failed to parse all products JSON: %w", err)
-			}
-
-			allValue, ok := allResult["value"].([]interface{})
-			if !ok {
-				return fmt.Errorf("all products response missing 'value' array")
-			}
-			totalCount := len(allValue)
-
-			// Test $skip=2&$top=3
-			resp, err := ctx.GET("/Products?$skip=2&$top=3")
+			const skip, top = 2, 3
+			resp, err := ctx.GET(fmt.Sprintf("/Products?$orderby=ID&$skip=%d&$top=%d", skip, top))
 			if err != nil {
 				return err
 			}
@@ -189,35 +192,29 @@ func QueryTopSkip() *framework.TestSuite {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse JSON: %w", err)
+			pageIDs, err := pageProductIDs(resp)
+			if err != nil {
+				return err
 			}
 
-			value, ok := result["value"].([]interface{})
-			if !ok {
-				return fmt.Errorf("response missing 'value' array")
+			// Expected slice: full ordered IDs[skip : skip+top] (clamped to length).
+			start := skip
+			if start > totalCount {
+				start = totalCount
 			}
-
-			count := len(value)
-
-			// Should return at most 3 items
-			if count > 3 {
-				return fmt.Errorf("returned %d items, expected max 3", count)
+			end := start + top
+			if end > totalCount {
+				end = totalCount
 			}
+			expected := allIDs[start:end]
 
-			// Calculate expected max: min(3, total - 2)
-			expectedMax := totalCount - 2
-			if expectedMax > 3 {
-				expectedMax = 3
+			if len(pageIDs) != len(expected) {
+				return fmt.Errorf("$skip=%d&$top=%d returned %d items, expected %d (total=%d)", skip, top, len(pageIDs), len(expected), totalCount)
 			}
-			if expectedMax < 0 {
-				expectedMax = 0
-			}
-
-			// Verify count is reasonable
-			if count > expectedMax {
-				return fmt.Errorf("returned %d items, expected max %d (total=%d, skip=2, top=3)", count, expectedMax, totalCount)
+			for i := range expected {
+				if pageIDs[i] != expected[i] {
+					return fmt.Errorf("page item %d has ID %q, expected %q (page does not match the ordered slice)", i, pageIDs[i], expected[i])
+				}
 			}
 
 			return nil
@@ -225,4 +222,85 @@ func QueryTopSkip() *framework.TestSuite {
 	)
 
 	return suite
+}
+
+// collectionSize returns the number of entities in a collection using the
+// $count=true annotation (the true total, independent of server-driven paging).
+func collectionSize(ctx *framework.TestContext, path string) (int, error) {
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&"
+	}
+	resp, err := ctx.GET(path + sep + "$count=true")
+	if err != nil {
+		return 0, err
+	}
+	if resp.StatusCode != 200 {
+		return 0, fmt.Errorf("expected status 200 fetching count, got %d", resp.StatusCode)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return 0, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+	count, ok := result["@odata.count"].(float64)
+	if !ok {
+		return 0, fmt.Errorf("@odata.count missing or not a number")
+	}
+	return int(count), nil
+}
+
+// orderedProductIDs fetches the full ordered list of product IDs, following any
+// server-driven paging next links so the complete order is captured.
+func orderedProductIDs(ctx *framework.TestContext, path string) ([]string, error) {
+	ids := []string{}
+	next := path
+	for next != "" {
+		resp, err := ctx.GET(next)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != 200 {
+			return nil, fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+		}
+		pageIDs, err := pageProductIDs(resp)
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, pageIDs...)
+
+		var result map[string]interface{}
+		if err := json.Unmarshal(resp.Body, &result); err != nil {
+			return nil, fmt.Errorf("failed to parse JSON: %w", err)
+		}
+		nextLink, _ := result["@odata.nextLink"].(string)
+		next = ""
+		if nextLink != "" {
+			next = nextLink
+			if strings.HasPrefix(next, ctx.ServerURL()) {
+				next = strings.TrimPrefix(next, ctx.ServerURL())
+			}
+		}
+	}
+	return ids, nil
+}
+
+// pageProductIDs extracts the ID values, in order, from a single response page.
+func pageProductIDs(resp *framework.HTTPResponse) ([]string, error) {
+	var result map[string]interface{}
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+	value, ok := result["value"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("response missing 'value' array")
+	}
+	ids := make([]string, 0, len(value))
+	for i, v := range value {
+		item, ok := v.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("item %d is not an object", i)
+		}
+		ids = append(ids, fmt.Sprint(item["ID"]))
+	}
+	return ids, nil
 }
