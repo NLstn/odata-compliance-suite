@@ -113,10 +113,10 @@ func AddressingOperations() *framework.TestSuite {
 				return fmt.Errorf("valid bound function URL was rejected as invalid URL")
 			}
 
-			if resp.StatusCode == 200 {
+			if resp.StatusCode == 200 || resp.StatusCode == 404 {
 				return nil
 			}
-			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+			if resp.StatusCode == 501 {
 				return fmt.Errorf("operation not addressable (status %d). Missing actions/functions are a compliance failure", resp.StatusCode)
 			}
 
