@@ -14,145 +14,141 @@ func NumericEdgeCases() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_large_integer",
-		"Very large integer values in filter",
+		"Very large integer values in filter return empty set",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Status gt 999999")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Price gt 999999", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price > 999999
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_zero_value",
-		"Zero value in numeric comparison",
+		"Zero value in numeric comparison returns matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Price eq 0")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Price eq 0", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price == 0
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_negative_numbers",
-		"Negative numbers in filter",
+		"Negative numbers in filter match all positive-price entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Price gt -1")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Price gt -1", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price > -1
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_decimal_precision",
-		"Decimal precision with many places",
+		"Decimal precision: exact match on high-precision literal returns correct set",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Price eq 999.9999999")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Price eq 999.9999999", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price == 999.9999999
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_small_decimals",
-		"Very small decimal values",
+		"Very small decimal values match all entities above threshold",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Price gt 0.001")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Price gt 0.001", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price > 0.001
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_integer_division",
-		"Integer division behavior",
+		"Integer division (div) on Int16 field returns correct entity set",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Status div 2 eq 1")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Quantity div 10 gt 5", func(p map[string]interface{}) bool {
+				q, ok := productFloat(p, "Quantity")
+				return ok && int(q)/10 > 5
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_modulo_operation",
-		"Modulo operation",
+		"Modulo (mod) on Int16 field returns correct entity set",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Status mod 10 eq 0")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Quantity mod 10 eq 0", func(p map[string]interface{}) bool {
+				q, ok := productFloat(p, "Quantity")
+				return ok && int(q)%10 == 0
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_numeric_null_comparison",
-		"Numeric comparison with null values",
+		"Numeric comparison combined with ne null returns non-null, positive-price entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Price ne null and Price gt 0")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Price ne null and Price gt 0", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price > 0
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_complex_numeric_expression",
-		"Complex numeric expressions",
+		"Complex numeric expressions with mul and div return correct entity set",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=(Price mul 2) gt 1000 and (Price div 10) lt 200")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "(Price mul 2) gt 1000 and (Price div 10) lt 200", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && (price*2) > 1000 && (price/10) < 200
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_int32_max_boundary",
-		"Int32 maximum boundary value",
+		"Filter with Int32 max value matches all entities below boundary",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Status lt 2147483647")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Price lt 2147483647", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price < 2147483647
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_arithmetic_precision",
-		"Arithmetic precision maintained",
+		"Adding small increment always produces strictly larger value (arithmetic precision)",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Price add 0.01 gt Price")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Price add 0.01 gt Price", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && (price+0.01) > price
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_numeric_ordering",
-		"Numeric ordering with edge values",
+		"Orderby Price descending returns entities in correct descending order",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$orderby=Price desc")
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, 200)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			return ctx.AssertEntitiesSortedByFloat(items, "Price", false)
 		},
 	)
 

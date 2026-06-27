@@ -1,6 +1,8 @@
 package v4_0
 
 import (
+	"strings"
+
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
 
@@ -14,25 +16,59 @@ func CacheControlHeader() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_metadata_cacheable",
-		"Metadata document can be cached",
+		"Metadata document returns correct Content-Type and does not prohibit caching",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/$metadata")
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, 200)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			// $metadata MUST be served as application/xml per OData spec §11.1.2
+			ct := resp.Headers.Get("Content-Type")
+			if !strings.Contains(ct, "application/xml") {
+				return framework.NewError("$metadata response Content-Type must be application/xml, got: " + ct)
+			}
+
+			// If Cache-Control is present, it must not prohibit caching of the
+			// metadata document (which is a public, rarely-changing resource).
+			cc := resp.Headers.Get("Cache-Control")
+			if strings.Contains(cc, "no-store") {
+				return framework.NewError("$metadata Cache-Control must not contain 'no-store'; metadata should be cacheable")
+			}
+
+			return nil
 		},
 	)
 
 	suite.AddTest(
 		"test_service_doc_cacheable",
-		"Service document can be cached",
+		"Service document returns correct Content-Type and does not prohibit caching",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/")
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, 200)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			// Service document MUST be served as application/json per OData spec §11.1.1
+			ct := resp.Headers.Get("Content-Type")
+			if !strings.Contains(ct, "application/json") {
+				return framework.NewError("Service document Content-Type must contain application/json, got: " + ct)
+			}
+
+			// If Cache-Control is present, it must not prohibit caching of the
+			// service document (which is a public, stable resource).
+			cc := resp.Headers.Get("Cache-Control")
+			if strings.Contains(cc, "no-store") {
+				return framework.NewError("Service document Cache-Control must not contain 'no-store'; service document should be cacheable")
+			}
+
+			return nil
 		},
 	)
 

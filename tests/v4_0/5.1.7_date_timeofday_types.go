@@ -1,7 +1,6 @@
 package v4_0
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -17,6 +16,7 @@ func DateTimeOfDayTypes() *framework.TestSuite {
 	)
 
 	// Edm.Date tests
+
 	suite.AddTest(
 		"test_date_in_metadata",
 		"Edm.Date type appears in metadata",
@@ -37,89 +37,83 @@ func DateTimeOfDayTypes() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_date_literal_format",
-		"Date literal in YYYY-MM-DD format",
+		"Date literal YYYY-MM-DD returns exactly matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=ReleaseDate eq 2024-01-15")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "ReleaseDate eq 2024-01-15", func(p map[string]interface{}) bool {
+				t, ok := productTime(p, "ReleaseDate")
+				return ok && t.Format("2006-01-02") == "2024-01-15"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_date_comparison",
-		"Date supports comparison operators",
+		"Date gt comparison returns entities after the given date",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=ReleaseDate gt 2024-01-01")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "ReleaseDate gt 2024-01-01", func(p map[string]interface{}) bool {
+				t, ok := productTime(p, "ReleaseDate")
+				return ok && t.Format("2006-01-02") > "2024-01-01"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_date_year_function",
-		"year() function works with Date",
+		"year() function on Edm.Date returns entities matching that year",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=year(ReleaseDate) eq 2024")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "year(ReleaseDate) eq 2024", func(p map[string]interface{}) bool {
+				t, ok := productTime(p, "ReleaseDate")
+				return ok && t.Year() == 2024
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_date_month_function",
-		"month() function works with Date",
+		"month() function on Edm.Date returns entities matching that month",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=month(ReleaseDate) eq 1")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "month(ReleaseDate) eq 1", func(p map[string]interface{}) bool {
+				t, ok := productTime(p, "ReleaseDate")
+				return ok && int(t.Month()) == 1
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_date_day_function",
-		"day() function works with Date",
+		"day() function on Edm.Date returns entities matching that day",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=day(ReleaseDate) eq 15")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "day(ReleaseDate) eq 15", func(p map[string]interface{}) bool {
+				t, ok := productTime(p, "ReleaseDate")
+				return ok && t.Day() == 15
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_date_null_comparison",
-		"Date supports null comparison",
+		"Date ne null returns only entities with a non-null ReleaseDate",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=ReleaseDate ne null")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "ReleaseDate ne null", func(p map[string]interface{}) bool {
+				_, ok := productTime(p, "ReleaseDate")
+				return ok
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_date_cast",
-		"cast() function supports Edm.Date",
+		"cast(CreatedAt, 'Edm.Date') eq date literal returns matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=cast(CreatedAt, 'Edm.Date') eq 2024-01-15")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "cast(CreatedAt,'Edm.Date') eq 2024-01-15", func(p map[string]interface{}) bool {
+				t, ok := productTime(p, "CreatedAt")
+				return ok && t.Format("2006-01-02") == "2024-01-15"
+			})
 		},
 	)
 
 	// Edm.TimeOfDay tests
+
 	suite.AddTest(
 		"test_timeofday_in_metadata",
 		"Edm.TimeOfDay type appears in metadata",
@@ -140,146 +134,154 @@ func DateTimeOfDayTypes() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_timeofday_literal_format",
-		"TimeOfDay literal in HH:MM:SS format",
+		"TimeOfDay literal HH:MM:SS returns exactly matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=OpenTime eq 09:30:00")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "OpenTime eq 09:30:00", func(p map[string]interface{}) bool {
+				s := productString(p, "OpenTime")
+				return s == "09:30:00"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_timeofday_with_milliseconds",
-		"TimeOfDay supports fractional seconds",
+		"TimeOfDay with fractional seconds returns exactly matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=OpenTime eq 09:30:00.123")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "OpenTime eq 09:30:00.123", func(p map[string]interface{}) bool {
+				s := productString(p, "OpenTime")
+				return s == "09:30:00.123"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_timeofday_comparison",
-		"TimeOfDay supports comparison operators",
+		"TimeOfDay gt comparison returns entities after the given time",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=OpenTime gt 08:00:00")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "OpenTime gt 08:00:00", func(p map[string]interface{}) bool {
+				s := productString(p, "OpenTime")
+				return s != "" && s > "08:00:00"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_timeofday_hour_function",
-		"hour() function works with TimeOfDay",
+		"hour() function on Edm.TimeOfDay returns matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=hour(OpenTime) eq 9")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "hour(OpenTime) eq 9", func(p map[string]interface{}) bool {
+				s := productString(p, "OpenTime")
+				if len(s) < 2 {
+					return false
+				}
+				return s[:2] == "09"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_timeofday_minute_function",
-		"minute() function works with TimeOfDay",
+		"minute() function on Edm.TimeOfDay returns matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=minute(OpenTime) eq 30")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "minute(OpenTime) eq 30", func(p map[string]interface{}) bool {
+				s := productString(p, "OpenTime")
+				if len(s) < 5 {
+					return false
+				}
+				return s[3:5] == "30"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_timeofday_second_function",
-		"second() function works with TimeOfDay",
+		"second() function on Edm.TimeOfDay returns matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=second(OpenTime) eq 0")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "second(OpenTime) eq 0", func(p map[string]interface{}) bool {
+				s := productString(p, "OpenTime")
+				if len(s) < 8 {
+					return false
+				}
+				return s[6:8] == "00"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_timeofday_midnight",
-		"TimeOfDay handles midnight (00:00:00)",
+		"TimeOfDay eq 00:00:00 returns exactly matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=OpenTime eq 00:00:00")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "OpenTime eq 00:00:00", func(p map[string]interface{}) bool {
+				s := productString(p, "OpenTime")
+				return s == "00:00:00"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_timeofday_end_of_day",
-		"TimeOfDay handles end of day (23:59:59)",
+		"TimeOfDay le 23:59:59 returns all entities with a non-null OpenTime",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=OpenTime le 23:59:59")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "OpenTime le 23:59:59", func(p map[string]interface{}) bool {
+				s := productString(p, "OpenTime")
+				return s != "" && s <= "23:59:59"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_timeofday_null_comparison",
-		"TimeOfDay supports null comparison",
+		"TimeOfDay ne null returns only entities with a non-null OpenTime",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=OpenTime ne null")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "OpenTime ne null", func(p map[string]interface{}) bool {
+				return productString(p, "OpenTime") != ""
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_timeofday_cast",
-		"cast() function supports Edm.TimeOfDay",
+		"cast(CreatedAt, 'Edm.TimeOfDay') gt time literal returns matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=cast(CreatedAt, 'Edm.TimeOfDay') gt 09:00:00")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "cast(CreatedAt,'Edm.TimeOfDay') gt 09:00:00", func(p map[string]interface{}) bool {
+				t, ok := productTime(p, "CreatedAt")
+				return ok && t.Format("15:04:05") > "09:00:00"
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_date_and_timeofday_in_response",
-		"Date and TimeOfDay values are correctly serialized",
+		"Date and TimeOfDay values are serialized in their canonical wire formats",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=1")
+			resp, err := ctx.GET("/Products?$top=10&$select=ID,Name,ReleaseDate,OpenTime")
 			if err != nil {
 				return err
 			}
-
 			if err := ctx.AssertStatusCode(resp, 200); err != nil {
 				return err
 			}
-
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
 			}
-
-			if _, hasValue := result["value"]; !hasValue {
-				return framework.NewError("Response missing value field")
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
 			}
-
+			for _, item := range items {
+				if rd, ok := item["ReleaseDate"]; ok && rd != nil {
+					s, isStr := rd.(string)
+					if !isStr || len(s) < 10 || s[4] != '-' || s[7] != '-' {
+						return fmt.Errorf("ReleaseDate %q does not match YYYY-MM-DD format", rd)
+					}
+				}
+				if ot, ok := item["OpenTime"]; ok && ot != nil {
+					s, isStr := ot.(string)
+					if !isStr || len(s) < 8 || s[2] != ':' || s[5] != ':' {
+						return fmt.Errorf("OpenTime %q does not match HH:MM:SS format", ot)
+					}
+				}
+			}
 			return nil
 		},
 	)

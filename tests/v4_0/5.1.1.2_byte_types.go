@@ -1,7 +1,6 @@
 package v4_0
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -36,73 +35,67 @@ func ByteTypes() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_byte_zero_value",
-		"Edm.Byte handles zero value",
+		"Edm.Byte filter eq 0 returns only entities where Rating is zero",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Rating eq 0")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Rating eq 0", func(p map[string]interface{}) bool {
+				rating, ok := productFloat(p, "Rating")
+				return ok && rating == 0
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_byte_max_value",
-		"Edm.Byte handles maximum value (255)",
+		"Edm.Byte filter le 255 matches all entities (full range)",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Rating le 255")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Rating le 255", func(p map[string]interface{}) bool {
+				rating, ok := productFloat(p, "Rating")
+				return ok && rating <= 255
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_byte_comparison",
-		"Edm.Byte supports comparison operators",
+		"Edm.Byte filter gt threshold returns only entities above that value",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Rating gt 100")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Rating gt 100", func(p map[string]interface{}) bool {
+				rating, ok := productFloat(p, "Rating")
+				return ok && rating > 100
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_sbyte_negative_value",
-		"Edm.SByte handles negative values",
+		"Edm.SByte filter lt 0 returns only entities with negative Temperature",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Temperature lt 0")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Temperature lt 0", func(p map[string]interface{}) bool {
+				temp, ok := productFloat(p, "Temperature")
+				return ok && temp < 0
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_sbyte_min_max_range",
-		"Edm.SByte handles range -128 to 127",
+		"Edm.SByte full range filter [-128, 127] matches all entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Temperature ge -128 and Temperature le 127")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Temperature ge -128 and Temperature le 127", func(p map[string]interface{}) bool {
+				temp, ok := productFloat(p, "Temperature")
+				return ok && temp >= -128 && temp <= 127
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_byte_arithmetic",
-		"Edm.Byte supports arithmetic operations",
+		"Edm.Byte arithmetic: Rating add 10 gt 100 returns correct set",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Rating add 10 gt 100")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "Rating add 10 gt 100", func(p map[string]interface{}) bool {
+				rating, ok := productFloat(p, "Rating")
+				return ok && (rating+10) > 100
+			})
 		},
 	)
 
@@ -110,7 +103,7 @@ func ByteTypes() *framework.TestSuite {
 		"test_byte_cast",
 		"cast() function supports Edm.Byte",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=cast(Status, 'Edm.Byte') eq 1")
+			resp, err := ctx.GET("/Products?$filter=cast(Status,'Edm.Byte') eq 1")
 			if err != nil {
 				return err
 			}
@@ -122,7 +115,7 @@ func ByteTypes() *framework.TestSuite {
 		"test_sbyte_cast",
 		"cast() function supports Edm.SByte",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=cast(Status, 'Edm.SByte') eq -1")
+			resp, err := ctx.GET("/Products?$filter=cast(Temperature,'Edm.SByte') lt 0")
 			if err != nil {
 				return err
 			}
@@ -132,27 +125,38 @@ func ByteTypes() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_byte_in_response",
-		"Byte values are correctly serialized in response",
+		"Byte/SByte values are serialized as numbers within their valid ranges",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=1")
+			resp, err := ctx.GET("/Products?$top=10&$select=ID,Name,Rating,Temperature")
 			if err != nil {
 				return err
 			}
-
 			if err := ctx.AssertStatusCode(resp, 200); err != nil {
 				return err
 			}
-
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
 			}
-
-			// Verify response is valid JSON
-			if _, hasValue := result["value"]; !hasValue {
-				return framework.NewError("Response missing value field")
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
 			}
-
+			for _, item := range items {
+				rating, ok := productFloat(item, "Rating")
+				if !ok {
+					return framework.NewError("Rating field is missing or not a number")
+				}
+				if rating < 0 || rating > 255 {
+					return fmt.Errorf("Rating value %v is outside Edm.Byte range [0, 255]", rating)
+				}
+				temp, ok := productFloat(item, "Temperature")
+				if !ok {
+					return framework.NewError("Temperature field is missing or not a number")
+				}
+				if temp < -128 || temp > 127 {
+					return fmt.Errorf("Temperature value %v is outside Edm.SByte range [-128, 127]", temp)
+				}
+			}
 			return nil
 		},
 	)

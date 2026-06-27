@@ -364,5 +364,53 @@ func ConditionalRequests() *framework.TestSuite {
 		},
 	)
 
+	// Test 7: DELETE with matching If-Match should succeed
+	suite.AddTest(
+		"test_if_match_delete_matching",
+		"If-Match with matching ETag allows DELETE",
+		func(ctx *framework.TestContext) error {
+			path, etag, err := getProductAndETag(ctx)
+			if err != nil {
+				return err
+			}
+
+			if etag == "" {
+				return framework.NewError("No ETag support")
+			}
+
+			resp, err := ctx.DELETE(path,
+				framework.Header{Key: "If-Match", Value: etag})
+			if err != nil {
+				return err
+			}
+
+			return ctx.AssertStatusCode(resp, 204)
+		},
+	)
+
+	// Test 8: DELETE with non-matching If-Match should return 412
+	suite.AddTest(
+		"test_if_match_delete_non_matching",
+		"If-Match with non-matching ETag returns 412 on DELETE",
+		func(ctx *framework.TestContext) error {
+			path, etag, err := getProductAndETag(ctx)
+			if err != nil {
+				return err
+			}
+
+			if etag == "" {
+				return framework.NewError("No ETag support")
+			}
+
+			resp, err := ctx.DELETE(path,
+				framework.Header{Key: "If-Match", Value: `"wrong-etag"`})
+			if err != nil {
+				return err
+			}
+
+			return ctx.AssertStatusCode(resp, 412)
+		},
+	)
+
 	return suite
 }

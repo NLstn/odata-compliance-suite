@@ -1,12 +1,14 @@
 package v4_0
 
 import (
-	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
+
+var guidPattern = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 // GuidType creates the 5.1.5 GUID Type test suite
 func GuidType() *framework.TestSuite {
@@ -36,69 +38,59 @@ func GuidType() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_guid_literal_format",
-		"GUID literal in 8-4-4-4-12 format",
+		"GUID literal 8-4-4-4-12 format returns empty set for non-existent GUID",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=ID eq 12345678-1234-1234-1234-123456789012")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "ID eq 12345678-1234-1234-1234-123456789012", func(p map[string]interface{}) bool {
+				id := productString(p, "ID")
+				return strings.EqualFold(id, "12345678-1234-1234-1234-123456789012")
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_guid_case_insensitive",
-		"GUID literal is case-insensitive",
+		"GUID literal is case-insensitive: upper and lower case return identical result sets",
 		func(ctx *framework.TestContext) error {
-			resp1, err := ctx.GET("/Products?$filter=ID eq 12345678-ABCD-ABCD-ABCD-123456789ABC")
-			if err != nil {
+			upper := "12345678-ABCD-ABCD-ABCD-123456789ABC"
+			lower := "12345678-abcd-abcd-abcd-123456789abc"
+			if err := assertProductFilter(ctx, "ID eq "+upper, func(p map[string]interface{}) bool {
+				return strings.EqualFold(productString(p, "ID"), upper)
+			}); err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(resp1, 200); err != nil {
-				return err
-			}
-
-			resp2, err := ctx.GET("/Products?$filter=ID eq 12345678-abcd-abcd-abcd-123456789abc")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp2, 200)
+			return assertProductFilter(ctx, "ID eq "+lower, func(p map[string]interface{}) bool {
+				return strings.EqualFold(productString(p, "ID"), lower)
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_guid_equality",
-		"GUID supports equality comparison",
+		"GUID eq all-zeros returns empty set (no entity has this key)",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=ID eq 00000000-0000-0000-0000-000000000000")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "ID eq 00000000-0000-0000-0000-000000000000", func(p map[string]interface{}) bool {
+				return strings.EqualFold(productString(p, "ID"), "00000000-0000-0000-0000-000000000000")
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_guid_inequality",
-		"GUID supports inequality comparison",
+		"GUID ne all-zeros returns all entities (none have this key)",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=ID ne 00000000-0000-0000-0000-000000000000")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "ID ne 00000000-0000-0000-0000-000000000000", func(p map[string]interface{}) bool {
+				return !strings.EqualFold(productString(p, "ID"), "00000000-0000-0000-0000-000000000000")
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_guid_null_comparison",
-		"GUID supports null comparison",
+		"GUID ne null returns all entities (ID is a non-nullable key)",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=ID ne null")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			return assertProductFilter(ctx, "ID ne null", func(p map[string]interface{}) bool {
+				return productString(p, "ID") != ""
+			})
 		},
 	)
 
@@ -106,7 +98,7 @@ func GuidType() *framework.TestSuite {
 		"test_guid_cast",
 		"cast() function supports Edm.Guid",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=cast(ID, 'Edm.Guid') ne null")
+			resp, err := ctx.GET("/Products?$filter=cast(ID,'Edm.Guid') ne null")
 			if err != nil {
 				return err
 			}
@@ -118,7 +110,7 @@ func GuidType() *framework.TestSuite {
 		"test_guid_isof",
 		"isof() function supports Edm.Guid",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=isof(ID, 'Edm.Guid')")
+			resp, err := ctx.GET("/Products?$filter=isof(ID,'Edm.Guid')")
 			if err != nil {
 				return err
 			}
@@ -128,7 +120,7 @@ func GuidType() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_guid_in_key",
-		"GUID can be used as entity key",
+		"GUID can be used as entity key in URL path",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products(12345678-1234-1234-1234-123456789012)")
 			if err != nil {
@@ -145,33 +137,38 @@ func GuidType() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_guid_in_response",
-		"GUID values are correctly serialized in response",
+		"GUID values are serialized in 8-4-4-4-12 hex format in the response",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=1")
+			resp, err := ctx.GET("/Products?$top=5&$select=ID,Name")
 			if err != nil {
 				return err
 			}
-
 			if err := ctx.AssertStatusCode(resp, 200); err != nil {
 				return err
 			}
-
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
 			}
-
-			if _, hasValue := result["value"]; !hasValue {
-				return framework.NewError("Response missing value field")
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
 			}
-
+			for _, item := range items {
+				id := productString(item, "ID")
+				if id == "" {
+					return framework.NewError("entity is missing the ID field")
+				}
+				if !guidPattern.MatchString(id) {
+					return fmt.Errorf("ID value %q does not match 8-4-4-4-12 GUID format", id)
+				}
+			}
 			return nil
 		},
 	)
 
 	suite.AddTest(
 		"test_guid_format_validation",
-		"Invalid GUID format returns error",
+		"Invalid GUID format returns 400 Bad Request",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$filter=ID eq invalid-guid-format")
 			if err != nil {

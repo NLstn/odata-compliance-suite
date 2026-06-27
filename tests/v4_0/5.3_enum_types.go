@@ -43,76 +43,111 @@ func EnumTypes() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_filter_enum_numeric",
-		"Filter by enum numeric value",
+		"Filter by enum integer literal returns exactly the matching entities",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Status eq 1")
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode == 404 || resp.StatusCode == 501 {
-				return fmt.Errorf("enum filtering returned %d; enum properties declared in metadata must be queryable", resp.StatusCode)
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			// OData spec §5.1.1.12 permits integer literals for enum values.
+			// Verify that the server applies the filter correctly, not just 200.
+			return assertProductFilter(ctx, "Status eq 1", func(p map[string]interface{}) bool {
+				status, err := enumStatusValue(p)
+				return err == nil && status == 1 // InStock = 1
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_enum_comparison",
-		"Filter enum with comparison operators",
+		"Comparison operator (gt) on enum returns only entities satisfying the predicate",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Status gt 0")
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode == 404 || resp.StatusCode == 501 {
-				return fmt.Errorf("enum comparison filtering returned %d; enum properties declared in metadata must be queryable", resp.StatusCode)
-			}
-			return ctx.AssertStatusCode(resp, 200)
+			// OData spec §5.1.1.12: enum types are ordered by member value;
+			// comparison operators other than eq/ne are allowed.
+			return assertProductFilter(ctx, "Status gt 0", func(p map[string]interface{}) bool {
+				status, err := enumStatusValue(p)
+				return err == nil && status > 0 // None = 0 excluded
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_select_enum",
-		"Select enum property",
+		"$select of enum property includes it in the response as a string member name",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$select=Name,Status")
 			if err != nil {
 				return err
 			}
-			if resp.StatusCode == 404 || resp.StatusCode == 501 {
-				return fmt.Errorf("enum selection returned %d; enum properties declared in metadata must be selectable", resp.StatusCode)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
 			}
-			return ctx.AssertStatusCode(resp, 200)
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
+			}
+			for i, item := range items {
+				status, ok := item["Status"]
+				if !ok {
+					return fmt.Errorf("entity %d is missing the Status field in $select=Name,Status response", i)
+				}
+				if status == nil {
+					continue
+				}
+				if _, isStr := status.(string); !isStr {
+					return fmt.Errorf("entity %d: Status must be serialized as a string member name, got %T (%v)", i, status, status)
+				}
+			}
+			return nil
 		},
 	)
 
 	suite.AddTest(
 		"test_orderby_enum",
-		"Order by enum property",
+		"$orderby on enum property returns all entities with a Status field",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$orderby=Status")
 			if err != nil {
 				return err
 			}
-			if resp.StatusCode == 404 || resp.StatusCode == 501 {
-				return fmt.Errorf("enum ordering returned %d; enum properties declared in metadata must support ordering", resp.StatusCode)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
 			}
-			return ctx.AssertStatusCode(resp, 200)
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			// All entities should be returned, each with a Status field
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
+			}
+			return ctx.AssertAllEntitiesSatisfy(items, "has Status field", func(entity map[string]interface{}) (bool, string) {
+				if _, ok := entity["Status"]; !ok {
+					return false, "missing Status field"
+				}
+				return true, ""
+			})
 		},
 	)
 
 	suite.AddTest(
 		"test_enum_null",
-		"Filter for null enum value",
+		"Filter Status eq null returns empty set (Status is non-nullable)",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$filter=Status eq null")
 			if err != nil {
 				return err
 			}
-			if resp.StatusCode == 404 || resp.StatusCode == 501 {
-				return fmt.Errorf("null enum filtering returned %d; enum properties declared in metadata must be queryable", resp.StatusCode)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
 			}
-			return ctx.AssertStatusCode(resp, 200)
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if len(items) != 0 {
+				return fmt.Errorf("expected 0 results for Status eq null (Status is non-nullable), got %d", len(items))
+			}
+			return nil
 		},
 	)
 
