@@ -33,11 +33,11 @@ type csdlEntitySet struct {
 }
 
 type csdlEntityType struct {
-	Name                  string                  `xml:"Name,attr"`
-	BaseType              string                  `xml:"BaseType,attr"`
-	Properties            []csdlProperty          `xml:"Property"`
-	NavigationProperties  []csdlNavigationProperty `xml:"NavigationProperty"`
-	HasStream             string                  `xml:"HasStream,attr"`
+	Name                 string                   `xml:"Name,attr"`
+	BaseType             string                   `xml:"BaseType,attr"`
+	Properties           []csdlProperty           `xml:"Property"`
+	NavigationProperties []csdlNavigationProperty `xml:"NavigationProperty"`
+	HasStream            string                   `xml:"HasStream,attr"`
 }
 
 type csdlProperty struct {
@@ -51,13 +51,13 @@ type csdlNavigationProperty struct {
 }
 
 type csdlAnnotations struct {
-	Target      string              `xml:"Target,attr"`
-	Annotations []csdlAnnotation    `xml:"Annotation"`
+	Target      string           `xml:"Target,attr"`
+	Annotations []csdlAnnotation `xml:"Annotation"`
 }
 
 type csdlAnnotation struct {
-	Term       string           `xml:"Term,attr"`
-	Collection csdlCollection  `xml:"Collection"`
+	Term       string         `xml:"Term,attr"`
+	Collection csdlCollection `xml:"Collection"`
 }
 
 type csdlCollection struct {
