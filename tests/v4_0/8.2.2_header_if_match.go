@@ -36,8 +36,18 @@ func HeaderIfMatch() *framework.TestSuite {
 
 			etag := resp.Headers.Get("ETag")
 			if etag == "" {
-				// ETag is optional but recommended
-				return ctx.Skip("ETag header not supported by service")
+				// An ETag is optional in general, but when an entity declares an
+				// optimistic-concurrency token in $metadata the service MUST return
+				// one so clients can perform conditional updates (Part 1 §8.3.4,
+				// §11.4.1.1). Only skip when no such token is declared.
+				concurrency, cErr := entitySetConcurrencyDeclared(ctx, "Products")
+				if cErr != nil {
+					return cErr
+				}
+				if concurrency {
+					return fmt.Errorf("Products declares an optimistic-concurrency token in $metadata, so its GET response MUST include an ETag header, but none was present")
+				}
+				return ctx.Skip("ETag header not supported by service and no concurrency token declared")
 			}
 
 			// Validate ETag format - should be a quoted string

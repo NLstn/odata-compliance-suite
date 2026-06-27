@@ -91,6 +91,43 @@ Accept: application/json
 		},
 	)
 
+	// Test 2b: Batch response includes the OData-Version header.
+	// Per OData v4.0 Part 1 §8.1.5 a service MUST return OData-Version on every
+	// response, including the outer $batch response.
+	suite.AddTest(
+		"test_batch_response_odata_version",
+		"Batch response includes OData-Version header",
+		func(ctx *framework.TestContext) error {
+			segment, err := getProductSegment(ctx, 0)
+			if err != nil {
+				return err
+			}
+			batchBody := fmt.Sprintf(`--batch_boundary
+Content-Type: application/http
+Content-Transfer-Encoding: binary
+
+GET %s HTTP/1.1
+Accept: application/json
+
+
+--batch_boundary--`, segment)
+
+			resp, err := ctx.POSTRaw("/$batch", []byte(batchBody), "multipart/mixed; boundary=batch_boundary")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			if version := strings.TrimSpace(resp.Headers.Get("OData-Version")); version == "" {
+				return framework.NewError("batch response is missing the required OData-Version header")
+			}
+
+			return nil
+		},
+	)
+
 	// Test 3: Batch with multiple GET requests
 	suite.AddTest(
 		"test_batch_multiple_gets",
