@@ -1,7 +1,6 @@
 package v4_0
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 
@@ -48,44 +47,57 @@ func RegisterFilterOnSingleEntityNavigationPropertiesTests(suite *framework.Test
 }
 
 func testFilterBySingleEntityNavigationProperty(ctx *framework.TestContext) error {
-	// Test filtering by a property of a single-entity navigation property
-	// Example based on OData v4.01 spec section 5.1.1.15
-	// This simulates: /TeamMembers?$filter=Team/ClubID eq 'some-guid'
-
-	// Try with a generic entity set that likely has navigation properties
-	resp, err := ctx.GET("/Products?$filter=Category/Name eq 'Electronics'")
+	// Filter by a property of a single-entity navigation property and verify the
+	// filter was actually applied: every returned product must belong to the
+	// Electronics category (Part 2 §5.1.1.15). Expanding Category lets us check.
+	resp, err := ctx.GET("/Products?$filter=" + url.QueryEscape("Category/Name eq 'Electronics'") + "&$expand=Category")
 	if err != nil {
-		// If Products doesn't exist or doesn't have the right structure, fail
-		return framework.NewError("Products entity set not available or doesn't have Category navigation property")
+		return err
 	}
 
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("expected status 200, got %d. Body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result map[string]interface{}
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return fmt.Errorf("failed to parse response: %v", err)
+	items, err := ctx.ParseEntityCollection(resp)
+	if err != nil {
+		return err
+	}
+	if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+		return fmt.Errorf("seed data has Electronics products, expected at least one match: %w", err)
 	}
 
-	if _, ok := result["value"]; !ok {
-		return fmt.Errorf("response missing 'value' array")
-	}
-
-	return nil
+	return ctx.AssertAllEntitiesSatisfy(items, "Category/Name eq 'Electronics'", func(entity map[string]interface{}) (bool, string) {
+		cat, ok := entity["Category"].(map[string]interface{})
+		if !ok {
+			return false, "expanded Category is missing; cannot confirm the navigation-property filter was applied"
+		}
+		if cat["Name"] != "Electronics" {
+			return false, fmt.Sprintf("expected Category/Name 'Electronics', got %v", cat["Name"])
+		}
+		return true, ""
+	})
 }
 
 func testNavigationPropertyPathComparison(ctx *framework.TestContext) error {
-	// Test various comparison operators with navigation property paths
-	// This tests the spec requirement that navigation property paths work like regular properties
-
-	resp, err := ctx.GET("/Products?$filter=Category/Name eq 'Electronics'")
+	// A navigation-property path that matches nothing must return an empty set,
+	// not the whole collection. This catches a server that silently ignores a
+	// navigation-property filter (which would pass a status-only assertion).
+	resp, err := ctx.GET("/Products?$filter=" + url.QueryEscape("Category/Name eq 'NoSuchCategoryXYZ'"))
 	if err != nil {
-		return framework.NewError("Products entity set not available or doesn't have Category navigation property")
+		return err
 	}
 
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+
+	items, err := ctx.ParseEntityCollection(resp)
+	if err != nil {
+		return err
+	}
+	if len(items) != 0 {
+		return fmt.Errorf("filter on a non-existent category should return 0 products; got %d (server may be ignoring the navigation-property filter)", len(items))
 	}
 
 	return nil
@@ -129,23 +141,24 @@ func testCombineFilterAndExpandNavigation(ctx *framework.TestContext) error {
 		return fmt.Errorf("expected status 200, got %d. Body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result map[string]interface{}
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return fmt.Errorf("failed to parse response: %v", err)
+	items, err := ctx.ParseEntityCollection(resp)
+	if err != nil {
+		return err
+	}
+	if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+		return fmt.Errorf("expected at least one Electronics product when filtering and expanding Category: %w", err)
 	}
 
-	values, ok := result["value"].([]interface{})
-	if !ok {
-		return fmt.Errorf("response 'value' is not an array")
-	}
-
-	// Check that expanded navigation properties are included
-	if len(values) > 0 {
-		firstItem := values[0].(map[string]interface{})
-		if _, hasCategory := firstItem["Category"]; !hasCategory {
-			return fmt.Errorf("expected Category property to be expanded in response")
+	// Every returned product must both be in the Electronics category (filter
+	// applied) and carry the expanded Category object (expand applied).
+	return ctx.AssertAllEntitiesSatisfy(items, "Category/Name eq 'Electronics' with $expand=Category", func(entity map[string]interface{}) (bool, string) {
+		cat, ok := entity["Category"].(map[string]interface{})
+		if !ok {
+			return false, "expected Category navigation property to be expanded in response"
 		}
-	}
-
-	return nil
+		if cat["Name"] != "Electronics" {
+			return false, fmt.Sprintf("expected expanded Category/Name 'Electronics', got %v", cat["Name"])
+		}
+		return true, ""
+	})
 }
