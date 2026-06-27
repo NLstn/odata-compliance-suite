@@ -1,16 +1,16 @@
 package v4_0
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/url"
+	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
 
-const lambdaSkipReason = "Service does not implement $filter lambda operators (any/all)"
-
-// LambdaOperators creates a test suite for lambda operators
+// LambdaOperators creates a test suite for lambda operators.
+//
+// Each test verifies the lambda's actual semantics: the filtered set is compared
+// against an oracle computed in Go from the products' expanded Descriptions (see
+// assertProductLambdaFilter), not merely checked for HTTP 200.
 func LambdaOperators() *framework.TestSuite {
 	suite := framework.NewTestSuite(
 		"11.2.9 Lambda Operators (any, all)",
@@ -21,192 +21,97 @@ func LambdaOperators() *framework.TestSuite {
 	return suite
 }
 
+// hasDescription reports whether any of a product's descriptions satisfies pred.
+func hasDescription(p map[string]interface{}, pred func(d map[string]interface{}) bool) bool {
+	for _, d := range productDescriptions(p) {
+		if pred(d) {
+			return true
+		}
+	}
+	return false
+}
+
 // RegisterLambdaOperatorsTests registers tests for lambda operators (any, all)
 func RegisterLambdaOperatorsTests(suite *framework.TestSuite) {
+	// any(): at least one related description has LanguageKey 'EN'.
 	suite.AddTest(
 		"Lambda any operator with collection navigation",
-		"Filter entities using any() operator on collection navigation properties",
-		testLambdaAnyOperator,
-	)
+		"any() returns entities with at least one matching related entity",
+		func(ctx *framework.TestContext) error {
+			return assertProductLambdaFilter(ctx, "Descriptions/any(d: d/LanguageKey eq 'EN')",
+				func(p map[string]interface{}) bool {
+					return hasDescription(p, func(d map[string]interface{}) bool {
+						return productString(d, "LanguageKey") == "EN"
+					})
+				})
+		})
 
+	// all(): every related description satisfies the predicate; vacuously true for
+	// products with no descriptions.
 	suite.AddTest(
 		"Lambda all operator with collection navigation",
-		"Filter entities using all() operator on collection navigation properties",
-		testLambdaAllOperator,
-	)
+		"all() returns entities whose related entities all match (incl. empty collections)",
+		func(ctx *framework.TestContext) error {
+			return assertProductLambdaFilter(ctx, "Descriptions/all(d: d/LanguageKey ne 'XX')",
+				func(p map[string]interface{}) bool {
+					for _, d := range productDescriptions(p) {
+						if productString(d, "LanguageKey") == "XX" {
+							return false
+						}
+					}
+					return true
+				})
+		})
 
+	// any() with a compound boolean predicate inside the lambda.
 	suite.AddTest(
 		"Lambda any with complex condition",
-		"Use any() with compound boolean expressions",
-		testLambdaAnyComplex,
-	)
+		"any() with a compound boolean predicate inside the lambda",
+		func(ctx *framework.TestContext) error {
+			return assertProductLambdaFilter(ctx, "Descriptions/any(d: d/LanguageKey eq 'EN' and d/CustomName eq 'Promo')",
+				func(p map[string]interface{}) bool {
+					return hasDescription(p, func(d map[string]interface{}) bool {
+						return productString(d, "LanguageKey") == "EN" && productString(d, "CustomName") == "Promo"
+					})
+				})
+		})
 
+	// any() with a string function applied to a related property.
 	suite.AddTest(
 		"Lambda any with property comparison",
-		"Use any() to compare properties within navigation collection",
-		testLambdaAnyPropertyComparison,
-	)
+		"any() with a string function applied to a related property",
+		func(ctx *framework.TestContext) error {
+			return assertProductLambdaFilter(ctx, "Descriptions/any(d: contains(d/Description,'Ergonomic'))",
+				func(p map[string]interface{}) bool {
+					return hasDescription(p, func(d map[string]interface{}) bool {
+						return strings.Contains(productString(d, "Description"), "Ergonomic")
+					})
+				})
+		})
 
+	// Two any() predicates combined at the top level.
 	suite.AddTest(
 		"Nested lambda operators",
-		"Use nested any/all operators for multi-level filtering",
-		testNestedLambda,
-	)
+		"Two any() predicates combined with and at the top level",
+		func(ctx *framework.TestContext) error {
+			return assertProductLambdaFilter(ctx, "Descriptions/any(d: d/LanguageKey eq 'EN') and Descriptions/any(d: d/LanguageKey eq 'DE')",
+				func(p map[string]interface{}) bool {
+					hasEN := hasDescription(p, func(d map[string]interface{}) bool { return productString(d, "LanguageKey") == "EN" })
+					hasDE := hasDescription(p, func(d map[string]interface{}) bool { return productString(d, "LanguageKey") == "DE" })
+					return hasEN && hasDE
+				})
+		})
 
+	// any() referencing a nullable related property (CustomName).
 	suite.AddTest(
 		"Lambda any with custom column mapping",
-		"Use any() with navigation properties that map to custom column names",
-		testLambdaAnyCustomColumn,
-	)
-}
-
-func testLambdaAnyOperator(ctx *framework.TestContext) error {
-	// Test any() operator on collection navigation property
-	resp, err := executeLambdaFilter(ctx, "Descriptions/any(d: d/LanguageKey eq 'EN')")
-	if err != nil {
-		return err
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return fmt.Errorf("failed to parse response: %v", err)
-	}
-
-	if _, ok := result["value"]; !ok {
-		return fmt.Errorf("response missing 'value' array")
-	}
-
-	return nil
-}
-
-func testLambdaAllOperator(ctx *framework.TestContext) error {
-	// Test all() operator - all items must satisfy condition
-	resp, err := executeLambdaFilter(ctx, "Descriptions/all(d: d/LanguageKey ne 'XX')")
-	if err != nil {
-		return err
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return fmt.Errorf("failed to parse response: %v", err)
-	}
-
-	if _, ok := result["value"]; !ok {
-		return fmt.Errorf("response missing 'value' array")
-	}
-
-	return nil
-}
-
-func testLambdaAnyComplex(ctx *framework.TestContext) error {
-	// Test any() with complex boolean expression
-	resp, err := executeLambdaFilter(ctx, "Descriptions/any(d: d/LanguageKey eq 'EN' and contains(d/Description,'Laptop'))")
-	if err != nil {
-		return err
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return fmt.Errorf("failed to parse response: %v", err)
-	}
-
-	if _, ok := result["value"]; !ok {
-		return fmt.Errorf("response missing 'value' array")
-	}
-
-	return nil
-}
-
-func testLambdaAnyPropertyComparison(ctx *framework.TestContext) error {
-	// Test any() with string function on navigation property
-	resp, err := executeLambdaFilter(ctx, "Descriptions/any(d: contains(d/Description,'Gaming'))")
-	if err != nil {
-		return err
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return fmt.Errorf("failed to parse response: %v", err)
-	}
-
-	if _, ok := result["value"]; !ok {
-		return fmt.Errorf("response missing 'value' array")
-	}
-
-	return nil
-}
-
-func testNestedLambda(ctx *framework.TestContext) error {
-	// Test multiple any() operators in same filter
-	resp, err := executeLambdaFilter(ctx, "Descriptions/any(d: d/LanguageKey eq 'EN') and Descriptions/any(d: d/LanguageKey eq 'DE')")
-	if err != nil {
-		return err
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return fmt.Errorf("failed to parse response: %v", err)
-	}
-
-	if _, ok := result["value"]; !ok {
-		return fmt.Errorf("response missing 'value' array")
-	}
-
-	return nil
-}
-
-func testLambdaAnyCustomColumn(ctx *framework.TestContext) error {
-	resp, err := executeLambdaFilter(ctx, "Descriptions/any(d: d/CustomName eq 'Promo')")
-	if err != nil {
-		return err
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return fmt.Errorf("failed to parse response: %v", err)
-	}
-
-	value, ok := result["value"].([]interface{})
-	if !ok {
-		return fmt.Errorf("response missing 'value' array")
-	}
-
-	if len(value) == 0 {
-		return fmt.Errorf("expected at least one product with CustomName='Promo'")
-	}
-
-	for _, item := range value {
-		entry, ok := item.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("unexpected entry type in response")
-		}
-		name, ok := entry["Name"].(string)
-		if !ok {
-			return fmt.Errorf("response entry missing Name field")
-		}
-		if name != "Laptop" {
-			return fmt.Errorf("expected Name='Laptop' for CustomName filter, got '%s'", name)
-		}
-	}
-
-	return nil
-}
-
-func executeLambdaFilter(ctx *framework.TestContext, expression string) (*framework.HTTPResponse, error) {
-	filter := url.QueryEscape(expression)
-	resp, err := ctx.GET(fmt.Sprintf("/Products?$filter=%s", filter))
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != 200 {
-		switch resp.StatusCode {
-		case 400, 404, 500, 501:
-			return nil, framework.NewError(lambdaSkipReason)
-		default:
-			return nil, fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-		}
-	}
-
-	return resp, nil
+		"any() referencing a nullable related property",
+		func(ctx *framework.TestContext) error {
+			return assertProductLambdaFilter(ctx, "Descriptions/any(d: d/CustomName eq 'Promo')",
+				func(p map[string]interface{}) bool {
+					return hasDescription(p, func(d map[string]interface{}) bool {
+						return productString(d, "CustomName") == "Promo"
+					})
+				})
+		})
 }
