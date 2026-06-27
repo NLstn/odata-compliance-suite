@@ -67,12 +67,16 @@ func FilterTypeFunctions() *framework.TestSuite {
 			})
 		})
 
-	// cast() to Edm.String, compared against a string literal.
+	// cast() to Edm.String, compared against a string literal. Uses Rating
+	// (Edm.Byte) rather than the flags enum Status: casting an enum to Edm.String
+	// yields member names ("InStock,Featured"), not the underlying number, so a
+	// numeric literal would be representation-dependent. A numeric type's string
+	// form is unambiguous.
 	suite.AddTest("test_cast_to_string", "cast() converts a value to Edm.String",
 		func(ctx *framework.TestContext) error {
-			return assertProductFilter(ctx, "cast(Status,Edm.String) eq '9'", func(p map[string]interface{}) bool {
-				status, ok := productFloat(p, "Status")
-				return ok && int(status) == 9
+			return assertProductFilter(ctx, "cast(Rating,Edm.String) eq '200'", func(p map[string]interface{}) bool {
+				rating, ok := productFloat(p, "Rating")
+				return ok && int(rating) == 200
 			})
 		})
 

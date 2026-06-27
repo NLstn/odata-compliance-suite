@@ -132,8 +132,8 @@ func EnumTypes() *framework.TestSuite {
 				return ctx.Skip("could not determine the schema namespace")
 			}
 			return assertProductFilter(ctx, fmt.Sprintf("Status has %s.ProductStatus'Featured'", ns), func(p map[string]interface{}) bool {
-				status, ok := productFloat(p, "Status")
-				return ok && int(status)&8 != 0 // Featured = 8
+				status, err := enumStatusValue(p)
+				return err == nil && status&8 != 0 // Featured = 8
 			})
 		},
 	)
@@ -150,8 +150,8 @@ func EnumTypes() *framework.TestSuite {
 				return ctx.Skip("could not determine the schema namespace")
 			}
 			return assertProductFilter(ctx, fmt.Sprintf("Status has %s.ProductStatus'OnSale'", ns), func(p map[string]interface{}) bool {
-				status, ok := productFloat(p, "Status")
-				return ok && int(status)&2 != 0 // OnSale = 2
+				status, err := enumStatusValue(p)
+				return err == nil && status&2 != 0 // OnSale = 2
 			})
 		},
 	)
