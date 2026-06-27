@@ -147,6 +147,58 @@ func QuerySearch() *framework.TestSuite {
 		},
 	)
 
+	// Test 7: the NOT operator excludes products matching the negated term.
+	// Per the OData $search grammar (Part 1 §11.2.5.6 / ABNF searchExpr), a term
+	// preceded by NOT matches records that do NOT contain it; "A NOT B" is
+	// "A AND (NOT B)".
+	suite.AddTest(
+		"test_search_not_operator",
+		"$search with NOT excludes products matching the negated term",
+		func(ctx *framework.TestContext) error {
+			mouse, err := searchProductNames(ctx, "Mouse")
+			if err != nil {
+				return err
+			}
+			if !mouse["Wireless Mouse"] || !mouse["Gaming Mouse Ultra"] {
+				return fmt.Errorf("precondition: $search=Mouse should match both mice, got %v", keys(mouse))
+			}
+
+			names, err := searchProductNames(ctx, "Mouse NOT Wireless")
+			if err != nil {
+				return err
+			}
+			// "Wireless Mouse" matches "Wireless" and must be excluded.
+			if names["Wireless Mouse"] {
+				return fmt.Errorf("$search=\"Mouse NOT Wireless\" returned 'Wireless Mouse'; NOT did not exclude the negated term (got %v)", keys(names))
+			}
+			// "Gaming Mouse Ultra" matches "Mouse" and not "Wireless", so it must remain.
+			if !names["Gaming Mouse Ultra"] {
+				return fmt.Errorf("$search=\"Mouse NOT Wireless\" should still return 'Gaming Mouse Ultra'; got %v", keys(names))
+			}
+			return nil
+		},
+	)
+
+	// Test 8: a leading NOT term is valid and returns the complement set.
+	suite.AddTest(
+		"test_search_leading_not",
+		"$search with a leading NOT returns products not matching the term",
+		func(ctx *framework.TestContext) error {
+			names, err := searchProductNames(ctx, "NOT Laptop")
+			if err != nil {
+				return err
+			}
+			// Products whose name contains "Laptop" must be excluded; others remain.
+			if names["Laptop"] || names["Premium Laptop Pro"] {
+				return fmt.Errorf("$search=\"NOT Laptop\" returned a Laptop product; got %v", keys(names))
+			}
+			if !names["Wireless Mouse"] {
+				return fmt.Errorf("$search=\"NOT Laptop\" should return non-Laptop products such as 'Wireless Mouse'; got %v", keys(names))
+			}
+			return nil
+		},
+	)
+
 	// Test 6: $search combined with $filter applies both constraints
 	suite.AddTest(
 		"test_search_with_filter",
