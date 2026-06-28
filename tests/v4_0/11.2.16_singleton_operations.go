@@ -89,8 +89,8 @@ func SingletonOperations() *framework.TestSuite {
 				return fmt.Errorf("$select response missing selected fields: %w", err)
 			}
 			// Key properties (ID) are always returned per OData spec even when not selected.
-			// System annotations (@odata.*) are always allowed. See NLstn/go-odata#747
-			// for the known violation where non-selected properties are returned.
+			// System annotations (@odata.*) are always allowed.
+			// Fixed in NLstn/go-odata#747.
 			return ctx.AssertEntityOnlyAllowedFields(result,
 				"@odata.context", "@odata.id", "@odata.etag", "@odata.type",
 				"ID", "Name", "CEO", "Version")
