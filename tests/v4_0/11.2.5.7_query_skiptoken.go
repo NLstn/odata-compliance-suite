@@ -281,7 +281,16 @@ func QuerySkiptoken() *framework.TestSuite {
 		},
 	)
 
-	// Test 6: @odata.count from first page matches total entities across all pages
+	// Test 6: @odata.count from first page matches total entities across all pages.
+	//
+	// NOTE: The go-odata reference server currently fails this test due to a keyset
+	// pagination bug: when no $orderby is given the initial page is returned in
+	// insertion order, but subsequent pages use `WHERE id > cursor_id` which
+	// assumes ordering by primary key. Entities whose primary key sorts before the
+	// cursor value are permanently skipped, so the traversal total is less than
+	// @odata.count. A GitHub issue has been filed: NLstn/go-odata#758.
+	// This test is intentionally written to FAIL against that server to surface
+	// the non-compliance.
 	suite.AddTest(
 		"test_nextlink_count_consistency",
 		"@odata.count matches the total number of entities returned across all pages",
