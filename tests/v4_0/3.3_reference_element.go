@@ -1,6 +1,8 @@
 package v4_0
 
 import (
+	"encoding/xml"
+	"fmt"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -54,6 +56,96 @@ func ReferenceElement() *framework.TestSuite {
 				ctx.Log("Info: edmx:Reference should contain edmx:Include or edmx:IncludeAnnotations")
 			}
 
+			return nil
+		},
+	)
+
+	// Test: Verify each edmx:Reference has a non-empty Uri attribute (spec §3.3)
+	suite.AddTest(
+		"test_reference_has_uri",
+		"Each edmx:Reference MUST have a non-empty Uri attribute (spec §3.3)",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/$metadata", framework.Header{Key: "Accept", Value: "application/xml"})
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			if !strings.Contains(string(resp.Body), "<edmx:Reference") {
+				return ctx.Skip("no edmx:Reference elements in metadata")
+			}
+
+			type Reference struct {
+				Uri string `xml:"Uri,attr"`
+			}
+			type EdmxDoc struct {
+				XMLName    xml.Name    `xml:"Edmx"`
+				References []Reference `xml:"Reference"`
+			}
+			var doc EdmxDoc
+			if err := xml.Unmarshal(resp.Body, &doc); err != nil {
+				return framework.NewError(fmt.Sprintf("Failed to parse metadata XML: %v", err))
+			}
+
+			for i, ref := range doc.References {
+				if strings.TrimSpace(ref.Uri) == "" {
+					return framework.NewError(fmt.Sprintf(
+						"edmx:Reference[%d] is missing a non-empty Uri attribute (spec §3.3)",
+						i,
+					))
+				}
+			}
+			return nil
+		},
+	)
+
+	// Test: Verify each edmx:Reference contains at least one Include or IncludeAnnotations child (spec §3.3)
+	suite.AddTest(
+		"test_reference_contains_include",
+		"Each edmx:Reference MUST contain at least one edmx:Include or edmx:IncludeAnnotations child (spec §3.3)",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/$metadata", framework.Header{Key: "Accept", Value: "application/xml"})
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			if !strings.Contains(string(resp.Body), "<edmx:Reference") {
+				return ctx.Skip("no edmx:Reference elements in metadata")
+			}
+
+			type Include struct {
+				XMLName xml.Name `xml:"Include"`
+			}
+			type IncludeAnnotations struct {
+				XMLName xml.Name `xml:"IncludeAnnotations"`
+			}
+			type Reference struct {
+				Uri                string               `xml:"Uri,attr"`
+				Includes           []Include            `xml:"Include"`
+				IncludeAnnotations []IncludeAnnotations `xml:"IncludeAnnotations"`
+			}
+			type EdmxDoc struct {
+				XMLName    xml.Name    `xml:"Edmx"`
+				References []Reference `xml:"Reference"`
+			}
+			var doc EdmxDoc
+			if err := xml.Unmarshal(resp.Body, &doc); err != nil {
+				return framework.NewError(fmt.Sprintf("Failed to parse metadata XML: %v", err))
+			}
+
+			for i, ref := range doc.References {
+				if len(ref.Includes) == 0 && len(ref.IncludeAnnotations) == 0 {
+					return framework.NewError(fmt.Sprintf(
+						"edmx:Reference[%d] (Uri=%q) must contain at least one edmx:Include or edmx:IncludeAnnotations child (spec §3.3)",
+						i, ref.Uri,
+					))
+				}
+			}
 			return nil
 		},
 	)

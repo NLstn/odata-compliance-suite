@@ -1,6 +1,8 @@
 package v4_0
 
 import (
+	"encoding/xml"
+	"fmt"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -70,6 +72,93 @@ func DataServicesElement() *framework.TestSuite {
 				return framework.NewError("Schema should contain entity model elements")
 			}
 
+			return nil
+		},
+	)
+
+	// Test: Verify each Schema inside DataServices has a non-empty Namespace attribute (spec §5.1.1)
+	suite.AddTest(
+		"test_dataservices_has_schema_namespace",
+		"Each edm:Schema inside edmx:DataServices MUST have a non-empty Namespace attribute (spec §5.1.1)",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/$metadata", framework.Header{Key: "Accept", Value: "application/xml"})
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			// Parse Schema elements from the XML.
+			type Schema struct {
+				Namespace string `xml:"Namespace,attr"`
+			}
+			type DataServices struct {
+				Schemas []Schema `xml:"Schema"`
+			}
+			type EdmxDoc struct {
+				XMLName      xml.Name     `xml:"Edmx"`
+				DataServices DataServices `xml:"DataServices"`
+			}
+			var doc EdmxDoc
+			if err := xml.Unmarshal(resp.Body, &doc); err != nil {
+				return framework.NewError(fmt.Sprintf("Failed to parse metadata XML: %v", err))
+			}
+
+			if len(doc.DataServices.Schemas) == 0 {
+				return framework.NewError("edmx:DataServices must contain at least one Schema element")
+			}
+			for i, s := range doc.DataServices.Schemas {
+				if strings.TrimSpace(s.Namespace) == "" {
+					return framework.NewError(fmt.Sprintf(
+						"Schema[%d] is missing a non-empty Namespace attribute (spec §5.1.1)",
+						i,
+					))
+				}
+			}
+			return nil
+		},
+	)
+
+	// Test: Verify no Schema uses a reserved namespace (spec §5.1.1)
+	suite.AddTest(
+		"test_dataservices_schema_namespace_not_reserved",
+		"Schema Namespace MUST NOT use reserved values Edm, odata, system, or transient (spec §5.1.1)",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/$metadata", framework.Header{Key: "Accept", Value: "application/xml"})
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			type Schema struct {
+				Namespace string `xml:"Namespace,attr"`
+			}
+			type DataServices struct {
+				Schemas []Schema `xml:"Schema"`
+			}
+			type EdmxDoc struct {
+				XMLName      xml.Name     `xml:"Edmx"`
+				DataServices DataServices `xml:"DataServices"`
+			}
+			var doc EdmxDoc
+			if err := xml.Unmarshal(resp.Body, &doc); err != nil {
+				return framework.NewError(fmt.Sprintf("Failed to parse metadata XML: %v", err))
+			}
+
+			reserved := []string{"Edm", "odata", "system", "transient"}
+			for _, s := range doc.DataServices.Schemas {
+				for _, r := range reserved {
+					if s.Namespace == r || strings.HasPrefix(s.Namespace, r+".") {
+						return framework.NewError(fmt.Sprintf(
+							"Schema Namespace %q uses reserved prefix %q (spec §5.1.1)",
+							s.Namespace, r,
+						))
+					}
+				}
+			}
 			return nil
 		},
 	)
