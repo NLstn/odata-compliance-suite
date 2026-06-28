@@ -29,16 +29,18 @@ func PrimitiveDataTypes() *framework.TestSuite {
 				return err
 			}
 
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
 			}
 
-			if _, hasValue := result["value"]; !hasValue {
-				return framework.NewError("Response missing value field")
-			}
-
-			return nil
+			return ctx.AssertAllEntitiesSatisfy(items, "Name eq 'Laptop' filter", func(entity map[string]interface{}) (bool, string) {
+				name, _ := entity["Name"].(string)
+				if name != "Laptop" {
+					return false, fmt.Sprintf("entity Name=%q does not match filter 'Laptop'", name)
+				}
+				return true, ""
+			})
 		},
 	)
 
@@ -55,6 +57,14 @@ func PrimitiveDataTypes() *framework.TestSuite {
 				return err
 			}
 
+			var result map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
+			}
+			if _, ok := result["value"]; !ok {
+				return framework.NewError("Response missing value array")
+			}
+
 			return nil
 		},
 	)
@@ -63,7 +73,7 @@ func PrimitiveDataTypes() *framework.TestSuite {
 		"test_decimal_type",
 		"Edm.Decimal type handles decimal values",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$filter=Price eq 999.99")
+			resp, err := ctx.GET("/Products?$filter=Price gt 0")
 			if err != nil {
 				return err
 			}
@@ -72,7 +82,21 @@ func PrimitiveDataTypes() *framework.TestSuite {
 				return err
 			}
 
-			return nil
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+
+			return ctx.AssertAllEntitiesSatisfy(items, "Price gt 0 filter", func(entity map[string]interface{}) (bool, string) {
+				price, ok := entity["Price"].(float64)
+				if !ok {
+					return false, "entity missing numeric Price field"
+				}
+				if price <= 0 {
+					return false, fmt.Sprintf("entity Price=%v does not satisfy gt 0", price)
+				}
+				return true, ""
+			})
 		},
 	)
 
@@ -92,6 +116,10 @@ func PrimitiveDataTypes() *framework.TestSuite {
 				return err
 			}
 
+			if _, err := ctx.ParseEntityCollection(resp); err != nil {
+				return fmt.Errorf("DateTimeOffset filter response is not a valid collection: %w", err)
+			}
+
 			return nil
 		},
 	)
@@ -109,7 +137,17 @@ func PrimitiveDataTypes() *framework.TestSuite {
 				return err
 			}
 
-			return nil
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+
+			return ctx.AssertAllEntitiesSatisfy(items, "CategoryID ne null filter", func(entity map[string]interface{}) (bool, string) {
+				if entity["CategoryID"] == nil {
+					return false, "entity CategoryID is null but filter requires ne null"
+				}
+				return true, ""
+			})
 		},
 	)
 
@@ -126,7 +164,18 @@ func PrimitiveDataTypes() *framework.TestSuite {
 				return err
 			}
 
-			// Check that price field exists and has decimal precision
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if len(items) == 0 {
+				return nil
+			}
+
+			if _, ok := items[0]["Price"]; !ok {
+				return framework.NewError("entity missing Price field")
+			}
+
 			return nil
 		},
 	)
@@ -143,6 +192,10 @@ func PrimitiveDataTypes() *framework.TestSuite {
 
 			if err := ctx.AssertStatusCode(resp, 200); err != nil {
 				return err
+			}
+
+			if _, err := ctx.ParseEntityCollection(resp); err != nil {
+				return fmt.Errorf("special character filter response is not a valid collection: %w", err)
 			}
 
 			return nil
@@ -162,7 +215,18 @@ func PrimitiveDataTypes() *framework.TestSuite {
 				return err
 			}
 
-			return nil
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+
+			return ctx.AssertAllEntitiesSatisfy(items, "Name ne '' filter", func(entity map[string]interface{}) (bool, string) {
+				name, _ := entity["Name"].(string)
+				if name == "" {
+					return false, "entity Name is empty but filter requires ne ''"
+				}
+				return true, ""
+			})
 		},
 	)
 

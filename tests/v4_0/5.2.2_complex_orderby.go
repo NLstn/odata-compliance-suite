@@ -25,9 +25,8 @@ func ComplexOrderBy() *framework.TestSuite {
 			}
 
 			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				// Skip if server doesn't support ordering by complex properties
 				if resp.StatusCode == 400 || resp.StatusCode == 501 {
-					return framework.NewError("Server does not support $orderby on complex properties")
+					return ctx.Skip("server does not support $orderby on nested complex properties")
 				}
 				return err
 			}

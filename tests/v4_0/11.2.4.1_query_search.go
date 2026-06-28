@@ -208,6 +208,9 @@ func QuerySearch() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
+			if resp.StatusCode == 501 || resp.StatusCode == 404 {
+				return ctx.Skip("$search is an optional OData feature; not implemented by this service")
+			}
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("expected status 200 but received %d", resp.StatusCode)
 			}
@@ -242,6 +245,10 @@ func searchProductNames(ctx *framework.TestContext, search string) (map[string]b
 	resp, err := ctx.GET("/Products?$select=Name&$search=" + url.QueryEscape(search))
 	if err != nil {
 		return nil, err
+	}
+	// $search is an optional OData feature; skip rather than hard-fail when not implemented
+	if resp.StatusCode == 501 || resp.StatusCode == 404 {
+		return nil, ctx.Skip("$search is an optional OData feature; not implemented by this service")
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("$search=%q: expected 200, got %d: %s", search, resp.StatusCode, string(resp.Body))

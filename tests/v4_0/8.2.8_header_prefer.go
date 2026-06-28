@@ -28,21 +28,18 @@ func HeaderPrefer() *framework.TestSuite {
 			})
 			if err != nil {
 				return err
-			} // Must accept successful creation
-			if resp.StatusCode != 201 && resp.StatusCode != 204 && resp.StatusCode != 200 {
-				return fmt.Errorf("expected successful creation (200/201/204), got %d", resp.StatusCode)
+			}
+			// Per OData spec 11.4.2: POST MUST return 201 Created.
+			// With Prefer: return=minimal the server MAY return 204 No Content instead.
+			if resp.StatusCode != 201 && resp.StatusCode != 204 {
+				return fmt.Errorf("expected 201 Created or 204 No Content for return=minimal, got %d", resp.StatusCode)
 			}
 
-			// When return=minimal is honored, should return 204 No Content
-			// When not honored, may return 200/201 with content
-			// Both are valid per OData spec section 8.2.8
 			if resp.StatusCode == 204 {
-				// Honored: minimal response, no body
 				if len(resp.Body) > 0 {
 					return framework.NewError("return=minimal honored but body is not empty")
 				}
 			}
-			// If 200/201, server chose not to honor preference, which is acceptable
 
 			return nil
 		},
@@ -62,21 +59,17 @@ func HeaderPrefer() *framework.TestSuite {
 			})
 			if err != nil {
 				return err
-			} // Must accept successful creation
-			if resp.StatusCode != 201 && resp.StatusCode != 200 {
-				return fmt.Errorf("expected successful creation (200/201), got %d", resp.StatusCode)
+			}
+			// Per OData spec 11.4.2: POST MUST return 201 Created with entity representation.
+			if err := ctx.AssertStatusCode(resp, 201); err != nil {
+				return err
 			}
 
-			// When return=representation is honored, should return entity in response body
-			// Even if not explicitly honored, 201 Created should include representation
-			if resp.StatusCode == 200 || resp.StatusCode == 201 {
-				if len(resp.Body) == 0 {
-					return framework.NewError("expected entity representation in response body")
-				}
-				// Verify it's valid JSON with the entity
-				if err := ctx.AssertJSONField(resp, "Name"); err != nil {
-					return fmt.Errorf("response body should contain created entity: %v", err)
-				}
+			if len(resp.Body) == 0 {
+				return framework.NewError("expected entity representation in response body")
+			}
+			if err := ctx.AssertJSONField(resp, "Name"); err != nil {
+				return fmt.Errorf("response body should contain created entity: %v", err)
 			}
 
 			return nil

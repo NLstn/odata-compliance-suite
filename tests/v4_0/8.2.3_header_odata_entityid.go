@@ -27,8 +27,8 @@ func HeaderODataEntityId() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode != 201 && resp.StatusCode != 200 {
-				return nil // Creation not supported, skip
+			if err := ctx.AssertStatusCode(resp, 201); err != nil {
+				return err
 			}
 
 			// OData-EntityId is optional but recommended
