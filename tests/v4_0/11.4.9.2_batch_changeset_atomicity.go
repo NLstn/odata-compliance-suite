@@ -210,20 +210,29 @@ func BatchChangesetAtomicity() *framework.TestSuite {
 			productSegment := fmt.Sprintf("Products(%s)", ids[0])
 
 			// Batch: outer GET (must succeed) + failing changeset (empty body POST).
-			batchBody := fmt.Sprintf("--batch_outer\r\n"+
-				"Content-Type: application/http\r\n"+
-				"Content-Transfer-Encoding: binary\r\n\r\n"+
-				"GET %s HTTP/1.1\r\n"+
-				"Accept: application/json\r\n\r\n"+
-				"--batch_outer\r\n"+
-				"Content-Type: multipart/mixed; boundary=changeset_1\r\n\r\n"+
-				"--changeset_1\r\n"+
-				"Content-Type: application/http\r\n"+
-				"Content-Transfer-Encoding: binary\r\n\r\n"+
-				"POST Products HTTP/1.1\r\n"+
-				"Content-Type: application/json\r\n\r\n"+
-				"{}\r\n"+ // invalid — must fail
-				"--changeset_1--\r\n"+
+			// Use \n line endings (as in all other batch tests) so the MIME parser
+			// correctly identifies boundaries even for GET parts with no body.
+			batchBody := fmt.Sprintf("--batch_outer\n"+
+				"Content-Type: application/http\n"+
+				"Content-Transfer-Encoding: binary\n"+
+				"\n"+
+				"GET %s HTTP/1.1\n"+
+				"Accept: application/json\n"+
+				"\n"+
+				"\n"+
+				"--batch_outer\n"+
+				"Content-Type: multipart/mixed; boundary=changeset_1\n"+
+				"\n"+
+				"--changeset_1\n"+
+				"Content-Type: application/http\n"+
+				"Content-Transfer-Encoding: binary\n"+
+				"\n"+
+				"POST Products HTTP/1.1\n"+
+				"Content-Type: application/json\n"+
+				"\n"+
+				"{}\n"+ // invalid — must fail
+				"\n"+
+				"--changeset_1--\n"+
 				"--batch_outer--",
 				productSegment)
 
@@ -274,13 +283,18 @@ func BatchChangesetAtomicity() *framework.TestSuite {
 			}
 			productSegment := fmt.Sprintf("Products(%s)", ids[0])
 
-			batchBody := fmt.Sprintf("--batch_outer\r\nContent-Type: multipart/mixed; boundary=changeset_1\r\n\r\n"+
-				"--changeset_1\r\n"+
-				"Content-Type: application/http\r\n"+
-				"Content-Transfer-Encoding: binary\r\n\r\n"+
-				"GET %s HTTP/1.1\r\n"+
-				"Accept: application/json\r\n\r\n"+
-				"--changeset_1--\r\n"+
+			batchBody := fmt.Sprintf("--batch_outer\n"+
+				"Content-Type: multipart/mixed; boundary=changeset_1\n"+
+				"\n"+
+				"--changeset_1\n"+
+				"Content-Type: application/http\n"+
+				"Content-Transfer-Encoding: binary\n"+
+				"\n"+
+				"GET %s HTTP/1.1\n"+
+				"Accept: application/json\n"+
+				"\n"+
+				"\n"+
+				"--changeset_1--\n"+
 				"--batch_outer--",
 				productSegment)
 
