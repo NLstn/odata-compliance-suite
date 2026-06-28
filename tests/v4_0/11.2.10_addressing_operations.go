@@ -1,6 +1,7 @@
 package v4_0
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -26,7 +27,7 @@ func AddressingOperations() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
-				return nil
+				return assertCollectionResponse(resp)
 			}
 
 			if resp.StatusCode == 404 || resp.StatusCode == 501 {
@@ -48,7 +49,7 @@ func AddressingOperations() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
-				return nil
+				return assertCollectionResponse(resp)
 			}
 
 			if resp.StatusCode == 404 || resp.StatusCode == 501 {
@@ -74,7 +75,7 @@ func AddressingOperations() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
-				return nil
+				return assertCollectionResponse(resp)
 			}
 
 			if resp.StatusCode == 404 || resp.StatusCode == 501 {
@@ -134,8 +135,11 @@ func AddressingOperations() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode == 200 || resp.StatusCode == 204 {
+			if resp.StatusCode == 204 {
 				return nil
+			}
+			if resp.StatusCode == 200 {
+				return assertValidJSON(resp)
 			}
 
 			if resp.StatusCode == 404 || resp.StatusCode == 501 {
@@ -160,8 +164,11 @@ func AddressingOperations() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode == 200 || resp.StatusCode == 204 {
+			if resp.StatusCode == 204 {
 				return nil
+			}
+			if resp.StatusCode == 200 {
+				return assertValidJSON(resp)
 			}
 
 			if resp.StatusCode == 404 || resp.StatusCode == 501 {
@@ -183,7 +190,7 @@ func AddressingOperations() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
-				return nil
+				return assertCollectionResponse(resp)
 			}
 
 			if resp.StatusCode == 404 || resp.StatusCode == 501 {
@@ -211,7 +218,7 @@ func AddressingOperations() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
-				return nil
+				return assertPrimitiveValueResponse(resp)
 			}
 
 			if resp.StatusCode == 404 || resp.StatusCode == 501 {
@@ -233,7 +240,7 @@ func AddressingOperations() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
-				return nil
+				return assertPrimitiveValueResponse(resp)
 			}
 
 			if resp.StatusCode == 404 || resp.StatusCode == 501 {
@@ -254,8 +261,11 @@ func AddressingOperations() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode == 200 || resp.StatusCode == 204 {
+			if resp.StatusCode == 204 {
 				return nil
+			}
+			if resp.StatusCode == 200 {
+				return assertValidJSON(resp)
 			}
 
 			if resp.StatusCode == 404 || resp.StatusCode == 501 {
@@ -296,4 +306,47 @@ func AddressingOperations() *framework.TestSuite {
 	)
 
 	return suite
+}
+
+// assertCollectionResponse verifies the response body is a valid OData JSON collection
+// (a JSON object containing a "value" array).
+func assertCollectionResponse(resp *framework.HTTPResponse) error {
+	var body map[string]interface{}
+	if err := json.Unmarshal(resp.Body, &body); err != nil {
+		return fmt.Errorf("function response is not valid JSON: %w", err)
+	}
+	if _, ok := body["value"]; !ok {
+		return fmt.Errorf("function collection response missing 'value' array (got keys: %v)", mapKeys(body))
+	}
+	return nil
+}
+
+// assertPrimitiveValueResponse verifies the response body is a valid OData primitive
+// value response: a JSON object with a "value" field.
+func assertPrimitiveValueResponse(resp *framework.HTTPResponse) error {
+	var body map[string]interface{}
+	if err := json.Unmarshal(resp.Body, &body); err != nil {
+		return fmt.Errorf("function response is not valid JSON: %w", err)
+	}
+	if _, ok := body["value"]; !ok {
+		return fmt.Errorf("primitive function response missing 'value' field (got keys: %v)", mapKeys(body))
+	}
+	return nil
+}
+
+// assertValidJSON verifies the response body is valid JSON.
+func assertValidJSON(resp *framework.HTTPResponse) error {
+	var body interface{}
+	if err := json.Unmarshal(resp.Body, &body); err != nil {
+		return fmt.Errorf("action response is not valid JSON: %w", err)
+	}
+	return nil
+}
+
+func mapKeys(m map[string]interface{}) []string {
+	ks := make([]string, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
+	}
+	return ks
 }

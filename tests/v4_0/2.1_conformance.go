@@ -169,6 +169,13 @@ func Conformance() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
+				var entity map[string]interface{}
+				if err := ctx.GetJSON(resp, &entity); err != nil {
+					return fmt.Errorf("single entity response is not valid JSON: %w", err)
+				}
+				if _, ok := entity["@odata.context"]; !ok {
+					return fmt.Errorf("single entity response missing '@odata.context'")
+				}
 				return nil
 			}
 

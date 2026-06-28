@@ -1,6 +1,7 @@
 package v4_0
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -83,16 +84,17 @@ func Operations() *framework.TestSuite {
 				return err
 			}
 
-			// If bound function exists, must return valid result
 			if resp.StatusCode == 200 {
-				// Should return a value
-				if len(resp.Body) == 0 {
-					return framework.NewError("Bound function returned empty body")
+				var result map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &result); err != nil {
+					return fmt.Errorf("bound function response is not valid JSON: %w", err)
+				}
+				if _, ok := result["value"]; !ok {
+					return framework.NewError("Bound function response missing 'value' field")
 				}
 				return nil
 			}
 
-			// 404 indicates function not bound to this entity type
 			if resp.StatusCode == 404 {
 				return framework.NewError("Bound function not defined for this entity type")
 			}
@@ -111,15 +113,17 @@ func Operations() *framework.TestSuite {
 				return err
 			}
 
-			// If function exists, must work correctly
 			if resp.StatusCode == 200 {
-				if len(resp.Body) == 0 {
-					return framework.NewError("Collection-bound function returned empty body")
+				var result map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &result); err != nil {
+					return fmt.Errorf("collection-bound function response is not valid JSON: %w", err)
+				}
+				if _, ok := result["value"]; !ok {
+					return framework.NewError("Collection-bound function response missing 'value' field")
 				}
 				return nil
 			}
 
-			// 404 indicates function not bound to this collection
 			if resp.StatusCode == 404 {
 				return framework.NewError("Collection-bound function not defined for Products")
 			}
@@ -140,12 +144,17 @@ func Operations() *framework.TestSuite {
 				return err
 			}
 
-			// Actions must return success when invoked
-			if resp.StatusCode == 200 || resp.StatusCode == 204 {
+			if resp.StatusCode == 204 {
+				return nil
+			}
+			if resp.StatusCode == 200 {
+				var body interface{}
+				if err := json.Unmarshal(resp.Body, &body); err != nil {
+					return fmt.Errorf("unbound action response is not valid JSON: %w", err)
+				}
 				return nil
 			}
 
-			// 404 indicates action not defined
 			if resp.StatusCode == 404 {
 				return framework.NewError("Unbound action not defined in service")
 			}
@@ -172,12 +181,17 @@ func Operations() *framework.TestSuite {
 				return err
 			}
 
-			// Bound actions must work when defined
-			if resp.StatusCode == 200 || resp.StatusCode == 204 {
+			if resp.StatusCode == 204 {
+				return nil
+			}
+			if resp.StatusCode == 200 {
+				var body interface{}
+				if err := json.Unmarshal(resp.Body, &body); err != nil {
+					return fmt.Errorf("bound action response is not valid JSON: %w", err)
+				}
 				return nil
 			}
 
-			// 404 indicates action not bound to this entity type
 			if resp.StatusCode == 404 {
 				return framework.NewError("Bound action not defined for this entity type")
 			}

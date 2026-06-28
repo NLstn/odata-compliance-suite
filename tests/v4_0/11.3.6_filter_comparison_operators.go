@@ -2,6 +2,7 @@ package v4_0
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -183,11 +184,10 @@ func FilterComparisonOperators() *framework.TestSuite {
 		"test_decimal_comparison",
 		"Comparison operators work with decimal numbers",
 		func(ctx *framework.TestContext) error {
-			_, err := fetchComparisonItems(ctx, "Price eq 99.99")
-			if err != nil {
-				return err
-			}
-			return nil
+			return assertProductFilter(ctx, "Price eq 99.99", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && math.Abs(price-99.99) < 0.001
+			})
 		},
 	)
 
@@ -196,11 +196,10 @@ func FilterComparisonOperators() *framework.TestSuite {
 		"test_null_comparison",
 		"Comparison with null value",
 		func(ctx *framework.TestContext) error {
-			_, err := fetchComparisonItems(ctx, "CategoryID eq null")
-			if err != nil {
-				return err
-			}
-			return nil
+			return assertProductFilter(ctx, "CategoryID eq null", func(p map[string]interface{}) bool {
+				v, exists := p["CategoryID"]
+				return exists && v == nil
+			})
 		},
 	)
 

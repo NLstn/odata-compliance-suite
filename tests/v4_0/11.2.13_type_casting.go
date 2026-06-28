@@ -41,7 +41,17 @@ func TypeCasting() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
-				return nil
+				items, err := ctx.ParseEntityCollection(resp)
+				if err != nil {
+					return fmt.Errorf("isof filter returned invalid collection: %w", err)
+				}
+				return ctx.AssertAllEntitiesSatisfy(items, "isof filter", func(entity map[string]interface{}) (bool, string) {
+					pt, _ := entity["ProductType"].(string)
+					if pt != "SpecialProduct" {
+						return false, fmt.Sprintf("entity ProductType=%q does not match derived type", pt)
+					}
+					return true, ""
+				})
 			}
 
 			if resp.StatusCode == 400 || resp.StatusCode == 404 || resp.StatusCode == 501 {
@@ -70,6 +80,13 @@ func TypeCasting() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
+				var entity map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &entity); err != nil {
+					return fmt.Errorf("type cast response is not valid JSON: %w", err)
+				}
+				if _, ok := entity["@odata.context"]; !ok {
+					return fmt.Errorf("type cast entity response missing '@odata.context'")
+				}
 				return nil
 			}
 
@@ -95,7 +112,17 @@ func TypeCasting() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
-				return nil
+				items, err := ctx.ParseEntityCollection(resp)
+				if err != nil {
+					return fmt.Errorf("collection type cast returned invalid collection: %w", err)
+				}
+				return ctx.AssertAllEntitiesSatisfy(items, "collection type cast", func(entity map[string]interface{}) (bool, string) {
+					pt, _ := entity["ProductType"].(string)
+					if pt != "SpecialProduct" {
+						return false, fmt.Sprintf("entity ProductType=%q does not match derived type", pt)
+					}
+					return true, ""
+				})
 			}
 
 			if resp.StatusCode == 404 || resp.StatusCode == 400 || resp.StatusCode == 501 {
@@ -120,6 +147,9 @@ func TypeCasting() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
+				if _, err := ctx.ParseEntityCollection(resp); err != nil {
+					return fmt.Errorf("cast filter returned invalid collection response: %w", err)
+				}
 				return nil
 			}
 
@@ -149,6 +179,13 @@ func TypeCasting() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
+				var result map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &result); err != nil {
+					return fmt.Errorf("derived property response is not valid JSON: %w", err)
+				}
+				if _, ok := result["value"]; !ok {
+					return fmt.Errorf("derived property response missing 'value' field")
+				}
 				return nil
 			}
 
@@ -174,7 +211,21 @@ func TypeCasting() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
-				return nil
+				items, err := ctx.ParseEntityCollection(resp)
+				if err != nil {
+					return fmt.Errorf("isof+filter returned invalid collection: %w", err)
+				}
+				return ctx.AssertAllEntitiesSatisfy(items, "isof+price filter", func(entity map[string]interface{}) (bool, string) {
+					pt, _ := entity["ProductType"].(string)
+					if pt != "SpecialProduct" {
+						return false, fmt.Sprintf("entity ProductType=%q does not match derived type", pt)
+					}
+					price, ok := entity["Price"].(float64)
+					if !ok || price <= 100 {
+						return false, fmt.Sprintf("entity Price=%v does not satisfy gt 100", entity["Price"])
+					}
+					return true, ""
+				})
 			}
 
 			if resp.StatusCode == 400 || resp.StatusCode == 404 || resp.StatusCode == 501 {
@@ -199,6 +250,9 @@ func TypeCasting() *framework.TestSuite {
 				return fmt.Errorf("polymorphic entity set access failed (status: %d)", resp.StatusCode)
 			}
 
+			if _, err := ctx.ParseEntityCollection(resp); err != nil {
+				return fmt.Errorf("polymorphic query returned invalid collection: %w", err)
+			}
 			return nil
 		},
 	)
@@ -218,13 +272,15 @@ func TypeCasting() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
-				// Check for @odata.type annotation (optional in minimal metadata)
-				bodyStr := string(resp.Body)
-				if strings.Contains(bodyStr, "@odata.type") {
-					return nil
+				var entity map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &entity); err != nil {
+					return fmt.Errorf("entity response is not valid JSON: %w", err)
 				}
-				// Pass - optional in minimal metadata
-				ctx.Log("@odata.type not present (acceptable for minimal metadata)")
+				if _, ok := entity["@odata.context"]; !ok {
+					return fmt.Errorf("entity response missing '@odata.context'")
+				}
+				// @odata.type is optional in minimal metadata
+				ctx.Log("@odata.type present: " + fmt.Sprintf("%v", entity["@odata.type"] != nil))
 				return nil
 			}
 
@@ -284,6 +340,13 @@ func TypeCasting() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 201 || resp.StatusCode == 200 {
+				var created map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &created); err != nil {
+					return fmt.Errorf("create derived type response is not valid JSON: %w", err)
+				}
+				if pt, _ := created["ProductType"].(string); pt != "SpecialProduct" {
+					return fmt.Errorf("created entity ProductType=%q, expected SpecialProduct", pt)
+				}
 				return nil
 			}
 
@@ -313,6 +376,13 @@ func TypeCasting() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
+				var entity map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &entity); err != nil {
+					return fmt.Errorf("type cast navigation response is not valid JSON: %w", err)
+				}
+				if _, ok := entity["@odata.context"]; !ok {
+					return fmt.Errorf("type cast navigation response missing '@odata.context'")
+				}
 				return nil
 			}
 
