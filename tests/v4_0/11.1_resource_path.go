@@ -317,8 +317,10 @@ func ResourcePath() *framework.TestSuite {
 				if err := json.Unmarshal(resp.Body, &body); err != nil {
 					return fmt.Errorf("chained navigation response is not valid JSON: %w", err)
 				}
+				// Per OData §11.2.4.2, chained navigation must return the terminal collection.
+				// NLstn/go-odata#749: server returns the intermediate entity instead.
 				if _, ok := body["value"]; !ok {
-					return fmt.Errorf("chained navigation collection response missing 'value' array")
+					return framework.NewError("chained navigation returned intermediate entity instead of terminal collection (NLstn/go-odata#749)")
 				}
 				return nil
 			case 404, 501:
