@@ -45,6 +45,13 @@ func ResourcePath() *framework.TestSuite {
 			if resp.StatusCode != 200 {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &body); err != nil {
+				return fmt.Errorf("entity set response is not valid JSON: %w", err)
+			}
+			if _, ok := body["value"]; !ok {
+				return fmt.Errorf("entity set response missing 'value' array")
+			}
 			return nil
 		},
 	)
@@ -163,11 +170,20 @@ func ResourcePath() *framework.TestSuite {
 				return err
 			}
 
-			// Should return 200 with property value or 404 if not supported
-			if resp.StatusCode != 200 && resp.StatusCode != 404 {
-				return fmt.Errorf("property path should return 200 or 404 (got %d)", resp.StatusCode)
+			if resp.StatusCode == 200 {
+				var body map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &body); err != nil {
+					return fmt.Errorf("property response is not valid JSON: %w", err)
+				}
+				if _, ok := body["value"]; !ok {
+					return fmt.Errorf("property response missing 'value' field")
+				}
+				return nil
 			}
-			return nil
+			if resp.StatusCode == 404 {
+				return framework.NewError("property path not supported")
+			}
+			return fmt.Errorf("property path should return 200 or 404 (got %d)", resp.StatusCode)
 		},
 	)
 
@@ -246,10 +262,20 @@ func ResourcePath() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode != 200 && resp.StatusCode != 404 {
-				return fmt.Errorf("navigation property should return 200 or 404 (got %d)", resp.StatusCode)
+			if resp.StatusCode == 200 {
+				var body map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &body); err != nil {
+					return fmt.Errorf("navigation property response is not valid JSON: %w", err)
+				}
+				if _, ok := body["@odata.context"]; !ok {
+					return fmt.Errorf("navigation property response missing '@odata.context'")
+				}
+				return nil
 			}
-			return nil
+			if resp.StatusCode == 404 {
+				return framework.NewError("navigation property not supported")
+			}
+			return fmt.Errorf("navigation property should return 200 or 404 (got %d)", resp.StatusCode)
 		},
 	)
 
@@ -287,6 +313,13 @@ func ResourcePath() *framework.TestSuite {
 
 			switch resp.StatusCode {
 			case 200:
+				var body map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &body); err != nil {
+					return fmt.Errorf("chained navigation response is not valid JSON: %w", err)
+				}
+				if _, ok := body["value"]; !ok {
+					return fmt.Errorf("chained navigation collection response missing 'value' array")
+				}
 				return nil
 			case 404, 501:
 				return framework.NewError("chained navigation not implemented")
@@ -375,6 +408,13 @@ func ResourcePath() *framework.TestSuite {
 			}
 			if resp.StatusCode != 200 {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			}
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &body); err != nil {
+				return fmt.Errorf("response is not valid JSON: %w", err)
+			}
+			if _, ok := body["value"]; !ok {
+				return fmt.Errorf("collection response missing 'value' array")
 			}
 			return nil
 		},

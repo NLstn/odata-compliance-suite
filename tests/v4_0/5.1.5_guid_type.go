@@ -124,8 +124,7 @@ func GuidType() *framework.TestSuite {
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products(12345678-1234-1234-1234-123456789012)")
 			if err != nil {
-				// Entity may not exist, but request should be syntactically valid
-				return nil
+				return err
 			}
 			// Accept 200 (found) or 404 (not found) as valid responses
 			if resp.StatusCode != 200 && resp.StatusCode != 404 {

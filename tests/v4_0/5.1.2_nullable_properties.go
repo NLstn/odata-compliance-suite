@@ -48,20 +48,37 @@ func NullableProperties() *framework.TestSuite {
 		"test_filter_eq_null",
 		"Filter for entities where property eq null",
 		func(ctx *framework.TestContext) error {
-			// LongText is a nullable property
 			resp, err := ctx.GET("/ProductDescriptions?$filter=LongText eq null")
 			if err != nil {
 				return err
 			}
 
-			if resp.StatusCode == 200 {
-				return nil
-			}
 			if resp.StatusCode == 400 {
 				return framework.NewError("null literal handling in $filter not implemented")
 			}
+			if resp.StatusCode != 200 {
+				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			}
 
-			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &body); err != nil {
+				return fmt.Errorf("response is not valid JSON: %w", err)
+			}
+			items, ok := body["value"].([]interface{})
+			if !ok {
+				return fmt.Errorf("response missing 'value' array")
+			}
+			for i, item := range items {
+				entity, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				v, exists := entity["LongText"]
+				if exists && v != nil {
+					return fmt.Errorf("item %d: LongText eq null filter returned item with non-null LongText: %v", i, v)
+				}
+			}
+			return nil
 		},
 	)
 
@@ -70,20 +87,37 @@ func NullableProperties() *framework.TestSuite {
 		"test_filter_ne_null",
 		"Filter for entities where property ne null",
 		func(ctx *framework.TestContext) error {
-			// LongText is a nullable property
 			resp, err := ctx.GET("/ProductDescriptions?$filter=LongText ne null")
 			if err != nil {
 				return err
 			}
 
-			if resp.StatusCode == 200 {
-				return nil
-			}
 			if resp.StatusCode == 400 {
 				return framework.NewError("null literal handling in $filter not implemented")
 			}
+			if resp.StatusCode != 200 {
+				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			}
 
-			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &body); err != nil {
+				return fmt.Errorf("response is not valid JSON: %w", err)
+			}
+			items, ok := body["value"].([]interface{})
+			if !ok {
+				return fmt.Errorf("response missing 'value' array")
+			}
+			for i, item := range items {
+				entity, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				v, exists := entity["LongText"]
+				if exists && v == nil {
+					return fmt.Errorf("item %d: LongText ne null filter returned item with null LongText", i)
+				}
+			}
+			return nil
 		},
 	)
 
@@ -202,20 +236,37 @@ func NullableProperties() *framework.TestSuite {
 		"test_null_literal_url",
 		"Null literal in URL filter",
 		func(ctx *framework.TestContext) error {
-			// LongText is nullable
 			resp, err := ctx.GET("/ProductDescriptions?$filter=LongText eq null")
 			if err != nil {
 				return err
 			}
 
-			if resp.StatusCode == 200 {
-				return nil
-			}
 			if resp.StatusCode == 400 {
 				return framework.NewError("null literal handling in $filter not implemented")
 			}
+			if resp.StatusCode != 200 {
+				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			}
 
-			return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &body); err != nil {
+				return fmt.Errorf("response is not valid JSON: %w", err)
+			}
+			items, ok := body["value"].([]interface{})
+			if !ok {
+				return fmt.Errorf("response missing 'value' array")
+			}
+			for i, item := range items {
+				entity, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				v, exists := entity["LongText"]
+				if exists && v != nil {
+					return fmt.Errorf("item %d: LongText eq null filter returned item with non-null LongText: %v", i, v)
+				}
+			}
+			return nil
 		},
 	)
 

@@ -1,6 +1,7 @@
 package v4_0
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -50,6 +51,13 @@ func StreamProperties() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
+				var body map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &body); err != nil {
+					return fmt.Errorf("media entity response is not valid JSON: %w", err)
+				}
+				if _, ok := body["@odata.context"]; !ok {
+					return fmt.Errorf("media entity response missing '@odata.context'")
+				}
 				return nil
 			}
 
@@ -207,6 +215,13 @@ func StreamProperties() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
+				var body map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &body); err != nil {
+					return fmt.Errorf("media entity metadata response is not valid JSON: %w", err)
+				}
+				if _, ok := body["@odata.context"]; !ok {
+					return fmt.Errorf("media entity metadata response missing '@odata.context'")
+				}
 				return nil
 			}
 

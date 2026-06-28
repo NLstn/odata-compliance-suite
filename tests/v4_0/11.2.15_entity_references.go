@@ -144,6 +144,13 @@ func EntityReferences() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
+				var result map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &result); err != nil {
+					return fmt.Errorf("$ref?$filter returned non-JSON: %w", err)
+				}
+				if _, ok := result["value"]; !ok {
+					return fmt.Errorf("$ref?$filter response missing 'value' array")
+				}
 				return nil
 			}
 			if resp.StatusCode == 400 {
@@ -169,6 +176,17 @@ func EntityReferences() *framework.TestSuite {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
+			var result map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &result); err != nil {
+				return fmt.Errorf("$ref?$top returned non-JSON: %w", err)
+			}
+			refs, ok := result["value"].([]interface{})
+			if !ok {
+				return fmt.Errorf("$ref?$top response missing 'value' array")
+			}
+			if len(refs) > 3 {
+				return fmt.Errorf("$top=3 returned %d references (expected ≤ 3)", len(refs))
+			}
 			return nil
 		},
 	)
@@ -178,6 +196,19 @@ func EntityReferences() *framework.TestSuite {
 		"test_ref_with_skip",
 		"$ref with $skip",
 		func(ctx *framework.TestContext) error {
+			allResp, err := ctx.GET("/Products/$ref")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(allResp, 200); err != nil {
+				return err
+			}
+			var allResult map[string]interface{}
+			if err := json.Unmarshal(allResp.Body, &allResult); err != nil {
+				return fmt.Errorf("$ref returned non-JSON: %w", err)
+			}
+			allRefs, _ := allResult["value"].([]interface{})
+
 			resp, err := ctx.GET("/Products/$ref?$skip=2")
 			if err != nil {
 				return err
@@ -187,6 +218,21 @@ func EntityReferences() *framework.TestSuite {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
+			var result map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &result); err != nil {
+				return fmt.Errorf("$ref?$skip returned non-JSON: %w", err)
+			}
+			skippedRefs, ok := result["value"].([]interface{})
+			if !ok {
+				return fmt.Errorf("$ref?$skip response missing 'value' array")
+			}
+			expectedCount := len(allRefs) - 2
+			if expectedCount < 0 {
+				expectedCount = 0
+			}
+			if len(skippedRefs) != expectedCount {
+				return fmt.Errorf("$skip=2 from %d total: expected %d references, got %d", len(allRefs), expectedCount, len(skippedRefs))
+			}
 			return nil
 		},
 	)
@@ -205,6 +251,13 @@ func EntityReferences() *framework.TestSuite {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
+			var result map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &result); err != nil {
+				return fmt.Errorf("$ref?$orderby returned non-JSON: %w", err)
+			}
+			if _, ok := result["value"]; !ok {
+				return fmt.Errorf("$ref?$orderby response missing 'value' array")
+			}
 			return nil
 		},
 	)

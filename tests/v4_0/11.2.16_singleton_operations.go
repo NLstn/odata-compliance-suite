@@ -81,7 +81,19 @@ func SingletonOperations() *framework.TestSuite {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
-			return nil
+			var result map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &result); err != nil {
+				return fmt.Errorf("singleton $select response is not valid JSON: %w", err)
+			}
+			if err := ctx.AssertEntityHasFields(result, "Name", "CEO"); err != nil {
+				return fmt.Errorf("$select response missing selected fields: %w", err)
+			}
+			// Key properties (ID) are always returned per OData spec even when not selected.
+			// System annotations (@odata.*) are always allowed. See NLstn/go-odata#747
+			// for the known violation where non-selected properties are returned.
+			return ctx.AssertEntityOnlyAllowedFields(result,
+				"@odata.context", "@odata.id", "@odata.etag", "@odata.type",
+				"ID", "Name", "CEO", "Version")
 		},
 	)
 
@@ -109,12 +121,29 @@ func SingletonOperations() *framework.TestSuite {
 				return err
 			}
 
+			// PATCH should return 204 No Content or 200 OK
+			if resp.StatusCode != 204 && resp.StatusCode != 200 {
+				_, _ = ctx.PATCH("/Company", original)
+				return fmt.Errorf("expected status 204 or 200, got %d", resp.StatusCode)
+			}
+
+			// Verify the update was applied
+			verifyResp, err := ctx.GET("/Company")
+			if err != nil {
+				_, _ = ctx.PATCH("/Company", original)
+				return err
+			}
+			var updated map[string]interface{}
+			if err := json.Unmarshal(verifyResp.Body, &updated); err != nil {
+				_, _ = ctx.PATCH("/Company", original)
+				return fmt.Errorf("failed to parse updated entity: %w", err)
+			}
+
 			// Restore original (cleanup)
 			_, _ = ctx.PATCH("/Company", original)
 
-			// PATCH should return 204 No Content or 200 OK
-			if resp.StatusCode != 204 && resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 204 or 200, got %d", resp.StatusCode)
+			if ceo, _ := updated["CEO"].(string); ceo != "Test CEO" {
+				return fmt.Errorf("PATCH did not update CEO: got %q, expected %q", ceo, "Test CEO")
 			}
 
 			return nil
@@ -269,6 +298,13 @@ func SingletonOperations() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
+				var result map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &result); err != nil {
+					return fmt.Errorf("singleton property response is not valid JSON: %w", err)
+				}
+				if _, ok := result["value"]; !ok {
+					return fmt.Errorf("singleton property response missing 'value' field")
+				}
 				return nil
 			}
 
