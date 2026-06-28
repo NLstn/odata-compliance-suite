@@ -108,6 +108,7 @@ Conformance levels are **cumulative**: a service must meet all lower levels to c
 | `11.4.7_deep_insert` | Data Modification |
 | `11.4.9_batch_requests` | Batch |
 | `11.4.9.1_batch_error_handling` | Batch |
+| `11.4.9.2_batch_changeset_atomicity` | Batch |
 | `11.4.9.3_batch_content_id_referencing` | Batch |
 | `19_json_batch` (v4.01) | Batch |
 | `11.2.5.4_query_apply` – `11.2.5.4.3_apply_rollup` | Advanced Querying |

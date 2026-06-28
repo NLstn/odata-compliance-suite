@@ -706,6 +706,11 @@ func main() {
 			Suite:   v4_0.BatchErrorHandling,
 		})
 		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "11.4.9.2_batch_changeset_atomicity",
+			Version: "4.0",
+			Suite:   v4_0.BatchChangesetAtomicity,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
 			Name:    "11.4.9.3_batch_content_id_referencing",
 			Version: "4.0",
 			Suite:   v4_0.BatchContentIDReferencing,
@@ -953,9 +958,10 @@ func main() {
 		// --- delete ---
 		"11.4.4_delete_entity": {framework.Require(framework.CapDelete, "Products")},
 		// --- batch ---
-		"11.4.9_batch_requests":                 {framework.Require(framework.CapBatch, "")},
-		"11.4.9.1_batch_error_handling":         {framework.Require(framework.CapBatch, "")},
-		"11.4.9.3_batch_content_id_referencing": {framework.Require(framework.CapBatch, "")},
+		"11.4.9_batch_requests":                  {framework.Require(framework.CapBatch, "")},
+		"11.4.9.1_batch_error_handling":          {framework.Require(framework.CapBatch, "")},
+		"11.4.9.2_batch_changeset_atomicity":     {framework.Require(framework.CapBatch, "")},
+		"11.4.9.3_batch_content_id_referencing":  {framework.Require(framework.CapBatch, "")},
 		"19_json_batch":                         {framework.Require(framework.CapBatch, "")},
 		// --- compute (v4.01; gated via SelectSupport.Computeable on entity set) ---
 		"11.2.5.8_query_compute": {framework.Require(framework.CapCompute, "Products")},
@@ -1114,6 +1120,7 @@ func main() {
 		// --- Batch ---
 		"11.4.9_batch_requests":                 {framework.LevelAdvanced, "Batch"},
 		"11.4.9.1_batch_error_handling":         {framework.LevelAdvanced, "Batch"},
+		"11.4.9.2_batch_changeset_atomicity":    {framework.LevelAdvanced, "Batch"},
 		"11.4.9.3_batch_content_id_referencing": {framework.LevelAdvanced, "Batch"},
 		"19_json_batch":                         {framework.LevelAdvanced, "Batch"},
 		// --- Advanced Querying ---
