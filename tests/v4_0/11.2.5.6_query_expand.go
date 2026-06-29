@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"sort"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -206,6 +207,271 @@ func QueryExpand() *framework.TestSuite {
 
 			if err := ctx.AssertEntityHasFields(category, "Name"); err != nil {
 				return fmt.Errorf("expanded category missing selected Name property: %w", err)
+			}
+
+			return nil
+		},
+	)
+
+	// Test 5: $expand with $count inside expand options
+	suite.AddTest(
+		"test_expand_collection_with_count",
+		"$expand with nested $count returns odata.count annotation",
+		func(ctx *framework.TestContext) error {
+			expand := url.QueryEscape("Descriptions($count=true)")
+			resp, err := ctx.GET("/Products?$top=1&$expand=" + expand)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return fmt.Errorf("response contains no items: %w", err)
+			}
+
+			item := items[0]
+
+			// OData spec requires Descriptions@odata.count annotation when $count=true
+			countVal, ok := item["Descriptions@odata.count"]
+			if !ok {
+				return fmt.Errorf("expected Descriptions@odata.count annotation in response (required by §11.2.5.6 when $count=true)")
+			}
+
+			// The count must be a non-negative number
+			switch v := countVal.(type) {
+			case float64:
+				if v < 0 {
+					return fmt.Errorf("Descriptions@odata.count is negative (%v)", v)
+				}
+			default:
+				return fmt.Errorf("Descriptions@odata.count has unexpected type %T (expected number)", countVal)
+			}
+
+			return nil
+		},
+	)
+
+	// Test 6: $expand with $top inside expand options
+	suite.AddTest(
+		"test_expand_collection_with_top",
+		"$expand with nested $top limits expanded collection size",
+		func(ctx *framework.TestContext) error {
+			expand := url.QueryEscape("Descriptions($top=1)")
+			resp, err := ctx.GET("/Products?$top=1&$expand=" + expand)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return fmt.Errorf("response contains no items: %w", err)
+			}
+
+			item := items[0]
+
+			descriptions, ok := item["Descriptions"]
+			if !ok {
+				return fmt.Errorf("Descriptions field is missing from expanded response")
+			}
+
+			descArray, ok := descriptions.([]interface{})
+			if !ok {
+				return fmt.Errorf("Descriptions field is not an array")
+			}
+
+			// $top=1 inside $expand must limit the collection to at most 1 item
+			if len(descArray) > 1 {
+				return fmt.Errorf("expected at most 1 Descriptions item due to $top=1, got %d", len(descArray))
+			}
+
+			return nil
+		},
+	)
+
+	// Test 7: $expand with $filter inside expand options
+	suite.AddTest(
+		"test_expand_collection_with_filter",
+		"$expand with nested $filter restricts expanded collection members",
+		func(ctx *framework.TestContext) error {
+			expand := url.QueryEscape("Descriptions($filter=LanguageKey eq 'EN')")
+			resp, err := ctx.GET("/Products?$expand=" + expand)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+
+			// Check every returned product's Descriptions — all must have LanguageKey='EN'
+			checkedAny := false
+			for _, item := range items {
+				descriptions, ok := item["Descriptions"]
+				if !ok {
+					continue
+				}
+				descArray, ok := descriptions.([]interface{})
+				if !ok || len(descArray) == 0 {
+					continue
+				}
+				for i, d := range descArray {
+					desc, ok := d.(map[string]interface{})
+					if !ok {
+						return fmt.Errorf("Descriptions[%d] is not an object", i)
+					}
+					lk, ok := desc["LanguageKey"]
+					if !ok {
+						return fmt.Errorf("Descriptions[%d] missing LanguageKey field", i)
+					}
+					if lk != "EN" {
+						return fmt.Errorf("Descriptions[%d] has LanguageKey=%q, expected 'EN' (filter should exclude other languages)", i, lk)
+					}
+					checkedAny = true
+				}
+			}
+
+			if !checkedAny {
+				return ctx.Skip("no products with Descriptions found — cannot verify filter behaviour")
+			}
+
+			return nil
+		},
+	)
+
+	// Test 8: $expand=Nav/$ref — server must return entity references per OData spec §5.1.3
+	suite.AddTest(
+		"test_expand_nav_ref",
+		"$expand=Category/$ref returns entity references (OData spec §5.1.3)",
+		func(ctx *framework.TestContext) error {
+			expand := url.QueryEscape("Category/$ref")
+			resp, err := ctx.GET("/Products?$top=1&$expand=" + expand)
+			if err != nil {
+				return err
+			}
+
+			// Any non-200 status is a spec violation: the server must support $expand=Nav/$ref
+			if resp.StatusCode != 200 {
+				return fmt.Errorf(
+					"server rejected $expand=Category/$ref with status %d — "+
+						"OData 4.0 spec §5.1.3 (Part 2) requires servers to support this syntax "+
+						"to return entity references instead of full entities (body: %s)",
+					resp.StatusCode, string(resp.Body),
+				)
+			}
+
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return fmt.Errorf("response contains no items: %w", err)
+			}
+
+			// Each item that has an expanded Category must contain @odata.id (entity reference)
+			for i, item := range items {
+				catVal, ok := item["Category"]
+				if !ok || catVal == nil {
+					continue // null/missing Category is fine
+				}
+				cat, ok := catVal.(map[string]interface{})
+				if !ok {
+					return fmt.Errorf("items[%d].Category is not an object", i)
+				}
+				if _, hasRef := cat["@odata.id"]; !hasRef {
+					return fmt.Errorf(
+						"items[%d].Category is missing @odata.id — "+
+							"$expand=Nav/$ref must return entity references containing @odata.id",
+						i,
+					)
+				}
+			}
+
+			return nil
+		},
+	)
+
+	// Test 9: $expand with $orderby inside expand options
+	suite.AddTest(
+		"test_expand_with_orderby",
+		"$expand with nested $orderby sorts the expanded collection",
+		func(ctx *framework.TestContext) error {
+			expand := url.QueryEscape("Descriptions($orderby=LanguageKey)")
+			resp, err := ctx.GET("/Products?$expand=" + expand)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+
+			checkedAny := false
+			for _, item := range items {
+				descriptions, ok := item["Descriptions"]
+				if !ok {
+					continue
+				}
+				descArray, ok := descriptions.([]interface{})
+				if !ok || len(descArray) < 2 {
+					// Need at least 2 entries to verify ordering
+					continue
+				}
+
+				// Collect LanguageKey values
+				keys := make([]string, 0, len(descArray))
+				for i, d := range descArray {
+					desc, ok := d.(map[string]interface{})
+					if !ok {
+						return fmt.Errorf("Descriptions[%d] is not an object", i)
+					}
+					lk, ok := desc["LanguageKey"]
+					if !ok {
+						return fmt.Errorf("Descriptions[%d] missing LanguageKey field", i)
+					}
+					lkStr, ok := lk.(string)
+					if !ok {
+						return fmt.Errorf("Descriptions[%d].LanguageKey is not a string", i)
+					}
+					keys = append(keys, lkStr)
+				}
+
+				// Verify ascending order
+				sorted := make([]string, len(keys))
+				copy(sorted, keys)
+				sort.Strings(sorted)
+				for i := range keys {
+					if keys[i] != sorted[i] {
+						return fmt.Errorf(
+							"Descriptions are not sorted by LanguageKey ascending: got %v, expected %v",
+							keys, sorted,
+						)
+					}
+				}
+				checkedAny = true
+			}
+
+			if !checkedAny {
+				return ctx.Skip("no products with multiple Descriptions found — cannot verify $orderby behaviour")
 			}
 
 			return nil
