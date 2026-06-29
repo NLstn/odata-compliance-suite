@@ -1,6 +1,8 @@
 package v4_0
 
 import (
+	"encoding/xml"
+	"fmt"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -58,6 +60,109 @@ func IncludeAnnotationsElement() *framework.TestSuite {
 				return framework.NewError("TargetNamespace attribute must not be empty if specified")
 			}
 
+			return nil
+		},
+	)
+
+	// Test: Verify each edmx:IncludeAnnotations has a non-empty TermNamespace attribute (spec §3.5)
+	suite.AddTest(
+		"test_includeannotations_has_termnamespace",
+		"Each edmx:IncludeAnnotations MUST have a non-empty TermNamespace attribute (spec §3.5)",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/$metadata", framework.Header{Key: "Accept", Value: "application/xml"})
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			if !strings.Contains(string(resp.Body), "<edmx:IncludeAnnotations") {
+				return ctx.Skip("no edmx:IncludeAnnotations elements in metadata")
+			}
+
+			type IncludeAnnotations struct {
+				TermNamespace string `xml:"TermNamespace,attr"`
+			}
+			type Reference struct {
+				IncludeAnnotations []IncludeAnnotations `xml:"IncludeAnnotations"`
+			}
+			type EdmxDoc struct {
+				XMLName    xml.Name    `xml:"Edmx"`
+				References []Reference `xml:"Reference"`
+			}
+			var doc EdmxDoc
+			if err := xml.Unmarshal(resp.Body, &doc); err != nil {
+				return framework.NewError(fmt.Sprintf("Failed to parse metadata XML: %v", err))
+			}
+
+			for ri, ref := range doc.References {
+				for ii, ia := range ref.IncludeAnnotations {
+					if strings.TrimSpace(ia.TermNamespace) == "" {
+						return framework.NewError(fmt.Sprintf(
+							"edmx:Reference[%d]/edmx:IncludeAnnotations[%d] is missing a non-empty TermNamespace attribute (spec §3.5)",
+							ri, ii,
+						))
+					}
+				}
+			}
+			return nil
+		},
+	)
+
+	// Test: Verify Qualifier on edmx:IncludeAnnotations is non-empty if present (spec §3.5)
+	suite.AddTest(
+		"test_includeannotations_qualifier_format",
+		"edmx:IncludeAnnotations Qualifier attribute MUST be non-empty when present (spec §3.5)",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/$metadata", framework.Header{Key: "Accept", Value: "application/xml"})
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			if !strings.Contains(string(resp.Body), "<edmx:IncludeAnnotations") {
+				return ctx.Skip("no edmx:IncludeAnnotations elements in metadata")
+			}
+
+			type IncludeAnnotations struct {
+				TermNamespace string `xml:"TermNamespace,attr"`
+				Qualifier     string `xml:"Qualifier,attr"`
+			}
+			type Reference struct {
+				IncludeAnnotations []IncludeAnnotations `xml:"IncludeAnnotations"`
+			}
+			type EdmxDoc struct {
+				XMLName    xml.Name    `xml:"Edmx"`
+				References []Reference `xml:"Reference"`
+			}
+			var doc EdmxDoc
+			if err := xml.Unmarshal(resp.Body, &doc); err != nil {
+				return framework.NewError(fmt.Sprintf("Failed to parse metadata XML: %v", err))
+			}
+
+			// Only fail if the attribute is explicitly present but empty.
+			// encoding/xml sets the field to "" both when absent and when empty="";
+			// we use a string-check on the raw body to distinguish the two cases.
+			body := string(resp.Body)
+			if strings.Contains(body, `Qualifier=""`) {
+				return framework.NewError(
+					"edmx:IncludeAnnotations Qualifier attribute must not be empty when present (spec §3.5)",
+				)
+			}
+			// For completeness, also validate via parsed struct (catches whitespace-only values).
+			for ri, ref := range doc.References {
+				for ii, ia := range ref.IncludeAnnotations {
+					if ia.Qualifier != "" && strings.TrimSpace(ia.Qualifier) == "" {
+						return framework.NewError(fmt.Sprintf(
+							"edmx:Reference[%d]/edmx:IncludeAnnotations[%d] Qualifier attribute is whitespace-only (spec §3.5)",
+							ri, ii,
+						))
+					}
+				}
+			}
 			return nil
 		},
 	)

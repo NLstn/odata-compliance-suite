@@ -1,6 +1,7 @@
 package v4_0
 
 import (
+	"encoding/xml"
 	"fmt"
 	"strings"
 
@@ -65,6 +66,63 @@ func EDMXElement() *framework.TestSuite {
 				))
 			}
 
+			return nil
+		},
+	)
+
+	// Test: Verify Version attribute equals "4.0" per spec §3.1
+	suite.AddTest(
+		"test_edmx_version_attribute",
+		"edmx:Edmx Version attribute MUST equal \"4.0\" (spec §3.1)",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/$metadata", framework.Header{Key: "Accept", Value: "application/xml"})
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			// Parse only the root element to read the Version attribute.
+			type EdmxDoc struct {
+				XMLName xml.Name `xml:"Edmx"`
+				Version string   `xml:"Version,attr"`
+			}
+			var doc EdmxDoc
+			if err := xml.Unmarshal(resp.Body, &doc); err != nil {
+				return framework.NewError(fmt.Sprintf("Failed to parse metadata XML: %v", err))
+			}
+
+			if doc.Version != "4.0" {
+				return framework.NewError(fmt.Sprintf(
+					"edmx:Edmx Version attribute MUST be \"4.0\", got %q",
+					doc.Version,
+				))
+			}
+			return nil
+		},
+	)
+
+	// Test: Verify EDMX namespace declaration per spec §3.1
+	suite.AddTest(
+		"test_edmx_namespace",
+		"edmx:Edmx MUST declare the EDMX namespace xmlns:edmx=\"http://docs.oasis-open.org/odata/ns/edmx\" (spec §3.1)",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/$metadata", framework.Header{Key: "Accept", Value: "application/xml"})
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			const expectedNS = `xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx"`
+			if !strings.Contains(string(resp.Body), expectedNS) {
+				return framework.NewError(fmt.Sprintf(
+					"Missing required EDMX namespace declaration. Expected to find: %s",
+					expectedNS,
+				))
+			}
 			return nil
 		},
 	)
