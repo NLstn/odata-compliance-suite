@@ -26,8 +26,8 @@ func PreferenceAllowEntityReferences() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode < http.StatusOK || resp.StatusCode >= 300 {
-				return framework.NewError(fmt.Sprintf("expected 2xx, got %d", resp.StatusCode))
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
 			}
 
 			if err := ctx.AssertJSONField(resp, "value"); err != nil {
@@ -48,8 +48,8 @@ func PreferenceAllowEntityReferences() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode < http.StatusOK || resp.StatusCode >= 300 {
-				return framework.NewError(fmt.Sprintf("expected 2xx, got %d", resp.StatusCode))
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
 			}
 
 			applied := resp.Headers.Get("Preference-Applied")

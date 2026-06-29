@@ -232,7 +232,7 @@ func ConditionalRequests() *framework.TestSuite {
 			}
 
 			if etag == "" {
-				return framework.NewError("No ETag support")
+				return ctx.Skip("server returned no ETag; conditional requests require ETag support")
 			}
 
 			resp, err := ctx.GET(path, framework.Header{Key: "If-None-Match", Value: etag})
@@ -255,7 +255,7 @@ func ConditionalRequests() *framework.TestSuite {
 			}
 
 			if etag == "" {
-				return framework.NewError("No ETag support")
+				return ctx.Skip("server returned no ETag; conditional requests require ETag support")
 			}
 
 			resp, err := ctx.GET(path, framework.Header{Key: "If-None-Match", Value: `"different-etag"`})
@@ -278,7 +278,7 @@ func ConditionalRequests() *framework.TestSuite {
 			}
 
 			if etag == "" {
-				return framework.NewError("No ETag support")
+				return ctx.Skip("server returned no ETag; conditional requests require ETag support")
 			}
 
 			payload := map[string]interface{}{
@@ -312,7 +312,7 @@ func ConditionalRequests() *framework.TestSuite {
 			}
 
 			if etag == "" {
-				return framework.NewError("No ETag support")
+				return ctx.Skip("server returned no ETag; conditional requests require ETag support")
 			}
 
 			payload := map[string]interface{}{
@@ -341,7 +341,7 @@ func ConditionalRequests() *framework.TestSuite {
 			}
 
 			if etag == "" {
-				return framework.NewError("No ETag support")
+				return ctx.Skip("server returned no ETag; conditional requests require ETag support")
 			}
 
 			payload := map[string]interface{}{
@@ -375,7 +375,7 @@ func ConditionalRequests() *framework.TestSuite {
 			}
 
 			if etag == "" {
-				return framework.NewError("No ETag support")
+				return ctx.Skip("server returned no ETag; conditional requests require ETag support")
 			}
 
 			resp, err := ctx.DELETE(path,
@@ -399,7 +399,7 @@ func ConditionalRequests() *framework.TestSuite {
 			}
 
 			if etag == "" {
-				return framework.NewError("No ETag support")
+				return ctx.Skip("server returned no ETag; conditional requests require ETag support")
 			}
 
 			resp, err := ctx.DELETE(path,

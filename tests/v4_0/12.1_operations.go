@@ -37,12 +37,12 @@ func Operations() *framework.TestSuite {
 				return ctx.AssertJSONField(resp, "value")
 			}
 
-			// 404 indicates function not defined
-			if resp.StatusCode == 404 {
-				return framework.NewError("Unbound function not defined in service")
+			// Custom operations are optional OData features
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return ctx.Skip("GetTopProducts() not defined in this service (optional feature)")
 			}
 
-			return fmt.Errorf("Unexpected status code %d for unbound function", resp.StatusCode)
+			return fmt.Errorf("unexpected status code %d for unbound function", resp.StatusCode)
 		},
 	)
 
@@ -61,12 +61,12 @@ func Operations() *framework.TestSuite {
 				return ctx.AssertJSONField(resp, "value")
 			}
 
-			// 404 indicates function not defined
-			if resp.StatusCode == 404 {
-				return framework.NewError("Unbound function with parameters not defined in service")
+			// Custom operations are optional OData features
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return ctx.Skip("GetTopProducts(count=3) not defined in this service (optional feature)")
 			}
 
-			return fmt.Errorf("Unexpected status code %d for function with parameters", resp.StatusCode)
+			return fmt.Errorf("unexpected status code %d for function with parameters", resp.StatusCode)
 		},
 	)
 
@@ -95,11 +95,11 @@ func Operations() *framework.TestSuite {
 				return nil
 			}
 
-			if resp.StatusCode == 404 {
-				return framework.NewError("Bound function not defined for this entity type")
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return ctx.Skip("GetTotalPrice() not defined for Products (optional feature)")
 			}
 
-			return fmt.Errorf("Unexpected status code %d for bound function", resp.StatusCode)
+			return fmt.Errorf("unexpected status code %d for bound function", resp.StatusCode)
 		},
 	)
 
@@ -124,11 +124,11 @@ func Operations() *framework.TestSuite {
 				return nil
 			}
 
-			if resp.StatusCode == 404 {
-				return framework.NewError("Collection-bound function not defined for Products")
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return ctx.Skip("GetAveragePrice() not defined for Products (optional feature)")
 			}
 
-			return fmt.Errorf("Unexpected status code %d for collection-bound function", resp.StatusCode)
+			return fmt.Errorf("unexpected status code %d for collection-bound function", resp.StatusCode)
 		},
 	)
 
@@ -155,11 +155,11 @@ func Operations() *framework.TestSuite {
 				return nil
 			}
 
-			if resp.StatusCode == 404 {
-				return framework.NewError("Unbound action not defined in service")
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return ctx.Skip("ResetProducts action not defined in this service (optional feature)")
 			}
 
-			return fmt.Errorf("Unexpected status code %d for unbound action", resp.StatusCode)
+			return fmt.Errorf("unexpected status code %d for unbound action", resp.StatusCode)
 		},
 	)
 
@@ -192,11 +192,11 @@ func Operations() *framework.TestSuite {
 				return nil
 			}
 
-			if resp.StatusCode == 404 {
-				return framework.NewError("Bound action not defined for this entity type")
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return ctx.Skip("ApplyDiscount action not defined for Products (optional feature)")
 			}
 
-			return fmt.Errorf("Unexpected status code %d for bound action", resp.StatusCode)
+			return fmt.Errorf("unexpected status code %d for bound action", resp.StatusCode)
 		},
 	)
 
@@ -218,12 +218,12 @@ func Operations() *framework.TestSuite {
 				return nil
 			}
 
-			// 404 indicates operation not defined
-			if resp.StatusCode == 404 {
-				return framework.NewError("Operation not defined in service")
+			// Custom operations are optional OData features
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return ctx.Skip("GetTopProducts() not defined in this service (optional feature)")
 			}
 
-			return fmt.Errorf("Unexpected status code %d", resp.StatusCode)
+			return fmt.Errorf("unexpected status code %d", resp.StatusCode)
 		},
 	)
 

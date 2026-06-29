@@ -26,8 +26,8 @@ func PreferenceIncludeAnnotations() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode < http.StatusOK || resp.StatusCode >= 300 {
-				return framework.NewError(fmt.Sprintf("expected 2xx, got %d", resp.StatusCode))
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
 			}
 
 			if err := ctx.AssertJSONField(resp, "value"); err != nil {
@@ -48,8 +48,8 @@ func PreferenceIncludeAnnotations() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode < http.StatusOK || resp.StatusCode >= 300 {
-				return framework.NewError(fmt.Sprintf("expected 2xx, got %d", resp.StatusCode))
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
 			}
 
 			applied := resp.Headers.Get("Preference-Applied")
@@ -76,8 +76,8 @@ func PreferenceIncludeAnnotations() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode < http.StatusOK || resp.StatusCode >= 300 {
-				return framework.NewError(fmt.Sprintf("expected 2xx, got %d", resp.StatusCode))
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
 			}
 
 			return nil
@@ -94,8 +94,8 @@ func PreferenceIncludeAnnotations() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode < http.StatusOK || resp.StatusCode >= 300 {
-				return framework.NewError(fmt.Sprintf("expected 2xx, got %d", resp.StatusCode))
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
 			}
 
 			return nil
@@ -112,9 +112,8 @@ func PreferenceIncludeAnnotations() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode < http.StatusOK || resp.StatusCode >= 300 {
-				return framework.NewError(fmt.Sprintf(
-					"expected 2xx for combined include-annotations rule, got %d", resp.StatusCode))
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
 			}
 
 			return nil
@@ -137,11 +136,10 @@ func PreferenceIncludeAnnotations() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == http.StatusOK {
+				// Per RFC 7240/OData spec, Preference-Applied is SHOULD (not MUST) when honoring a preference.
+				// If present, it must name the honored preference; if absent, we cannot verify but must not fail.
 				applied := resp.Headers.Get("Preference-Applied")
-				if applied == "" {
-					return framework.NewError("Preference-Applied must be set on entity read with include-annotations")
-				}
-				if !strings.Contains(applied, "odata.include-annotations") {
+				if applied != "" && !strings.Contains(applied, "odata.include-annotations") {
 					return framework.NewError(fmt.Sprintf(
 						"Preference-Applied must contain odata.include-annotations, got %q", applied))
 				}

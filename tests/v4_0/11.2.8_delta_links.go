@@ -33,10 +33,10 @@ func DeltaLinks() *framework.TestSuite {
 				return err
 			}
 
-			// Check for Preference-Applied header
+			// Delta links are an optional OData feature (odata.track-changes preference)
 			prefApplied := resp.Headers.Get("Preference-Applied")
 			if !strings.Contains(strings.ToLower(prefApplied), "odata.track-changes") {
-				return framework.NewError("Preference-Applied header missing odata.track-changes")
+				return ctx.Skip("server does not honor odata.track-changes preference; delta links are optional")
 			}
 
 			// Parse delta link
@@ -47,7 +47,7 @@ func DeltaLinks() *framework.TestSuite {
 
 			deltaLink, ok := data["@odata.deltaLink"].(string)
 			if !ok {
-				return framework.NewError("Delta link not found in initial response")
+				return ctx.Skip("delta link not present in response; delta links are optional")
 			}
 
 			token, err := extractDeltaToken(deltaLink)

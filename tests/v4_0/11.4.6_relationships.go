@@ -6,7 +6,7 @@ import (
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
 
-const errRefMandatory = "$ref is mandatory in OData v4, but got status 404 (not implemented)"
+const errRefMandatory = "$ref is mandatory in OData v4, but server returned 404/501 (not implemented)"
 
 // Relationships creates the 11.4.6 Managing Relationships test suite
 func Relationships() *framework.TestSuite {
@@ -58,7 +58,7 @@ func Relationships() *framework.TestSuite {
 			}
 
 			// $ref is a mandatory feature in OData v4
-			if resp.StatusCode == 404 {
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
 				return fmt.Errorf(errRefMandatory)
 			}
 
@@ -85,7 +85,7 @@ func Relationships() *framework.TestSuite {
 			}
 
 			// $ref is a mandatory feature in OData v4
-			if resp.StatusCode == 404 {
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
 				return fmt.Errorf(errRefMandatory)
 			}
 
@@ -120,7 +120,7 @@ func Relationships() *framework.TestSuite {
 			}
 
 			// $ref manipulation is a mandatory feature in OData v4
-			if resp.StatusCode == 404 {
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
 				return fmt.Errorf(errRefMandatory)
 			}
 
@@ -152,13 +152,13 @@ func Relationships() *framework.TestSuite {
 			}
 
 			// $ref manipulation is a mandatory feature in OData v4
-			if resp.StatusCode == 404 {
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
 				return fmt.Errorf(errRefMandatory)
 			}
 
-			// Should return 204 or 201
+			// OData spec §11.4.6.2: POST to add a reference MUST return 204 No Content
 			if err := ctx.AssertStatusCode(resp, 204); err != nil {
-				return ctx.AssertStatusCode(resp, 201)
+				return err
 			}
 
 			return nil
@@ -180,7 +180,7 @@ func Relationships() *framework.TestSuite {
 			}
 
 			// $ref manipulation is a mandatory feature in OData v4
-			if resp.StatusCode == 404 {
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
 				return fmt.Errorf(errRefMandatory)
 			}
 
@@ -204,6 +204,10 @@ func Relationships() *framework.TestSuite {
 			resp, err := ctx.PUT(productPath+"/Category/$ref", payload, framework.Header{Key: "Content-Type", Value: "application/json"})
 			if err != nil {
 				return err
+			}
+
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return fmt.Errorf(errRefMandatory)
 			}
 
 			return ctx.AssertStatusCode(resp, 400)
