@@ -186,13 +186,11 @@ func QueryIndex() *framework.TestSuite {
 				return framework.NewError(fmt.Sprintf("$index with $skip must return non-empty value array with @odata.index: %v", err))
 			}
 
-			// @odata.index annotations must be sequential. The spec intends absolute
-			// positions (starting at 2 when $skip=2), but some servers use page-relative
-			// positions (starting at 0). Accept whichever the server provides as long as
-			// the sequence is contiguous.
-			startIdx := int(items[0]["@odata.index"].(float64))
-			if err := assertSequentialIndexes(items, startIdx); err != nil {
-				return framework.NewError(fmt.Sprintf("$index with $skip=2 must produce sequential @odata.index annotations: %v", err))
+			// When $skip=2 the @odata.index annotations must reflect the absolute
+			// position in the full collection, so the first returned item must carry
+			// @odata.index == 2 (not 0). Fixed in go-odata#763.
+			if err := assertSequentialIndexes(items, 2); err != nil {
+				return framework.NewError(fmt.Sprintf("$index with $skip=2 must produce sequential annotations starting at 2: %v", err))
 			}
 
 			return nil
