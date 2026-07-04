@@ -3,7 +3,6 @@ package v4_0
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"net/url"
 	"strings"
 
@@ -248,26 +247,24 @@ func ODataAnnotations() *framework.TestSuite {
 				return fmt.Errorf("@odata.count required when $count=true is specified")
 			}
 
-			// Should be a number
-			var countNum float64
-			switch v := count.(type) {
-			case float64:
-				countNum = v
-			case int:
-				countNum = float64(v)
-			default:
-				return fmt.Errorf("@odata.count must be a number, got %T", count)
+			// Per OData JSON Format §7.2, @odata.count MUST be a JSON string (e.g. "7"),
+			// not a JSON number.
+			countStr, ok := count.(string)
+			if !ok {
+				return fmt.Errorf("@odata.count must be a JSON string (OData JSON Format §7.2), got %T", count)
+			}
+
+			// Validate the string represents a non-negative integer.
+			var countNum int64
+			if _, err := fmt.Sscanf(countStr, "%d", &countNum); err != nil {
+				return fmt.Errorf("@odata.count string value %q is not a valid integer: %w", countStr, err)
 			}
 
 			if countNum < 0 {
-				return fmt.Errorf("@odata.count must be non-negative, got %f", countNum)
+				return fmt.Errorf("@odata.count must be non-negative, got %s", countStr)
 			}
 
-			if math.Trunc(countNum) != countNum {
-				return fmt.Errorf("@odata.count must be an integer value, got %f", countNum)
-			}
-
-			ctx.Log(fmt.Sprintf("@odata.count: %f", countNum))
+			ctx.Log(fmt.Sprintf("@odata.count: %s", countStr))
 			return nil
 		},
 	)
@@ -287,14 +284,22 @@ func ODataAnnotations() *framework.TestSuite {
 
 			var result struct {
 				Value    []map[string]interface{} `json:"value"`
-				Count    float64                  `json:"@odata.count"`
+				Count    string                   `json:"@odata.count"`
 				NextLink string                   `json:"@odata.nextLink"`
 			}
 			if err := json.Unmarshal(resp.Body, &result); err != nil {
 				return fmt.Errorf("invalid JSON response: %w", err)
 			}
 
-			if result.Count <= 1 {
+			// Per OData JSON Format §7.2, @odata.count is a JSON string.
+			var countNum int64
+			if result.Count != "" {
+				if _, err := fmt.Sscanf(result.Count, "%d", &countNum); err != nil {
+					return fmt.Errorf("@odata.count value %q is not a valid integer string: %w", result.Count, err)
+				}
+			}
+
+			if countNum <= 1 {
 				return ctx.Skip("Not enough entities to require pagination for $top=1")
 			}
 

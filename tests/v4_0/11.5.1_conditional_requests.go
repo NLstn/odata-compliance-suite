@@ -412,5 +412,48 @@ func ConditionalRequests() *framework.TestSuite {
 		},
 	)
 
+	// Test 9: Stale ETag on PATCH returns 412
+	// Steps: GET entity → capture ETag → PATCH (makes ETag stale) → PATCH again
+	// with the original ETag → must get 412 Precondition Failed.
+	suite.AddTest(
+		"test_if_match_stale_etag_412",
+		"PATCH with stale ETag (after concurrent modification) returns 412",
+		func(ctx *framework.TestContext) error {
+			path, etag, err := getProductAndETag(ctx)
+			if err != nil {
+				return err
+			}
+
+			if etag == "" {
+				return framework.NewError("No ETag support")
+			}
+
+			// First PATCH: succeeds and increments the Version, making originalETag stale.
+			firstPatch, err := ctx.PATCH(path, map[string]interface{}{
+				"Name": "StaleETagFirstPatch",
+			},
+				framework.Header{Key: "Content-Type", Value: "application/json"},
+				framework.Header{Key: "If-Match", Value: etag})
+			if err != nil {
+				return err
+			}
+			if firstPatch.StatusCode != 200 && firstPatch.StatusCode != 204 {
+				return fmt.Errorf("first PATCH expected 200 or 204, got %d", firstPatch.StatusCode)
+			}
+
+			// Second PATCH: uses the original (now stale) ETag — must be rejected with 412.
+			stalePatch, err := ctx.PATCH(path, map[string]interface{}{
+				"Name": "StaleETagSecondPatch",
+			},
+				framework.Header{Key: "Content-Type", Value: "application/json"},
+				framework.Header{Key: "If-Match", Value: etag})
+			if err != nil {
+				return err
+			}
+
+			return ctx.AssertStatusCode(stalePatch, 412)
+		},
+	)
+
 	return suite
 }

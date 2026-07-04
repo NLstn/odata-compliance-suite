@@ -240,5 +240,71 @@ func HEADRequests() *framework.TestSuite {
 		},
 	)
 
+	// Test 12: HEAD headers match GET headers; HEAD body is empty, GET body is non-empty
+	suite.AddTest(
+		"test_head_matches_get",
+		"HEAD response headers match GET and HEAD body is empty while GET body is non-empty",
+		func(ctx *framework.TestContext) error {
+			productPath, err := firstEntityPath(ctx, "Products")
+			if err != nil {
+				return err
+			}
+
+			headResp, err := ctx.HEAD(productPath)
+			if err != nil {
+				return err
+			}
+			if headResp.StatusCode != 200 {
+				return fmt.Errorf("HEAD expected status 200, got %d", headResp.StatusCode)
+			}
+
+			getResp, err := ctx.GET(productPath)
+			if err != nil {
+				return err
+			}
+			if getResp.StatusCode != 200 {
+				return fmt.Errorf("GET expected status 200, got %d", getResp.StatusCode)
+			}
+
+			// HEAD body must be empty
+			if len(headResp.Body) > 0 {
+				return fmt.Errorf("HEAD response must have no body, got %d bytes", len(headResp.Body))
+			}
+
+			// GET body must be non-empty
+			if len(getResp.Body) == 0 {
+				return fmt.Errorf("GET response must have a non-empty body")
+			}
+
+			// Content-Type must match
+			headCT := headResp.Headers.Get("Content-Type")
+			getCT := getResp.Headers.Get("Content-Type")
+			if headCT == "" {
+				return fmt.Errorf("HEAD response missing Content-Type header")
+			}
+			if getCT == "" {
+				return fmt.Errorf("GET response missing Content-Type header")
+			}
+			if headCT != getCT {
+				return fmt.Errorf("Content-Type mismatch: HEAD=%q GET=%q", headCT, getCT)
+			}
+
+			// ETag, if present on GET, must also be present on HEAD and must match
+			getETag := getResp.Headers.Get("ETag")
+			if getETag != "" {
+				headETag := headResp.Headers.Get("ETag")
+				if headETag == "" {
+					return fmt.Errorf("GET includes ETag %q but HEAD is missing ETag header", getETag)
+				}
+				if headETag != getETag {
+					return fmt.Errorf("ETag mismatch: HEAD=%q GET=%q", headETag, getETag)
+				}
+			}
+
+			ctx.Log("HEAD headers match GET; HEAD body empty, GET body non-empty")
+			return nil
+		},
+	)
+
 	return suite
 }

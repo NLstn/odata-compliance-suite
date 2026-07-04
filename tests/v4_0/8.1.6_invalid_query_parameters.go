@@ -21,7 +21,7 @@ func InvalidQueryParameters() *framework.TestSuite {
 			}
 
 			// Per OData spec, unknown system query options (starting with $) MUST result in 400
-			return ctx.AssertStatusCode(resp, 400)
+			return ctx.AssertODataError(resp, 400, "")
 		},
 	)
 
@@ -35,7 +35,7 @@ func InvalidQueryParameters() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, 400)
+			return ctx.AssertODataError(resp, 400, "")
 		},
 	)
 
@@ -49,7 +49,7 @@ func InvalidQueryParameters() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, 400)
+			return ctx.AssertODataError(resp, 400, "")
 		},
 	)
 
@@ -63,7 +63,7 @@ func InvalidQueryParameters() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, 400)
+			return ctx.AssertODataError(resp, 400, "")
 		},
 	)
 
@@ -77,7 +77,7 @@ func InvalidQueryParameters() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, 400)
+			return ctx.AssertODataError(resp, 400, "")
 		},
 	)
 
@@ -91,11 +91,7 @@ func InvalidQueryParameters() *framework.TestSuite {
 				return err
 			}
 
-			if err := ctx.AssertStatusCode(resp, 400); err != nil {
-				return err
-			}
-
-			return ctx.AssertJSONField(resp, "error")
+			return ctx.AssertODataError(resp, 400, "")
 		},
 	)
 
@@ -110,7 +106,7 @@ func InvalidQueryParameters() *framework.TestSuite {
 			}
 
 			// Should return 400 for invalid navigation property
-			return ctx.AssertStatusCode(resp, 400)
+			return ctx.AssertODataError(resp, 400, "")
 		},
 	)
 
@@ -125,7 +121,7 @@ func InvalidQueryParameters() *framework.TestSuite {
 			}
 
 			// Should return 400 for invalid property
-			return ctx.AssertStatusCode(resp, 400)
+			return ctx.AssertODataError(resp, 400, "")
 		},
 	)
 

@@ -1,6 +1,7 @@
 package v4_01
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -20,7 +21,32 @@ func PreferenceOmitValues() *framework.TestSuite {
 		"test_omit_values_unprefixed_is_accepted",
 		"Prefer: omit-values=nulls is accepted on data requests",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=3", framework.Header{Key: "Prefer", Value: "omit-values=nulls"})
+			// First fetch the same products WITHOUT the preference to discover which ones
+			// have null Description values.
+			baseResp, err := ctx.GET("/Products?$top=3&$select=ID,Name,Description")
+			if err != nil {
+				return err
+			}
+			if baseResp.StatusCode < http.StatusOK || baseResp.StatusCode >= 300 {
+				return framework.NewError(fmt.Sprintf("baseline request failed with %d", baseResp.StatusCode))
+			}
+			var basePayload struct {
+				Value []map[string]interface{} `json:"value"`
+			}
+			if err := json.Unmarshal(baseResp.Body, &basePayload); err != nil {
+				return framework.NewError(fmt.Sprintf("failed to parse baseline response: %v", err))
+			}
+
+			// Determine which IDs have a null Description in normal mode.
+			nullDescriptionIDs := map[interface{}]struct{}{}
+			for _, entity := range basePayload.Value {
+				if desc, hasDesc := entity["Description"]; !hasDesc || desc == nil {
+					nullDescriptionIDs[entity["ID"]] = struct{}{}
+				}
+			}
+
+			// Now make the omit-values=nulls request.
+			resp, err := ctx.GET("/Products?$top=3&$select=ID,Name,Description", framework.Header{Key: "Prefer", Value: "omit-values=nulls"})
 			if err != nil {
 				return err
 			}
@@ -31,6 +57,24 @@ func PreferenceOmitValues() *framework.TestSuite {
 
 			if err := ctx.AssertJSONField(resp, "value"); err != nil {
 				return framework.NewError(fmt.Sprintf("response must remain a valid collection payload: %v", err))
+			}
+
+			// If the preference was honoured and any products had null Description,
+			// those entities must NOT contain a "Description" key at all.
+			if len(nullDescriptionIDs) > 0 {
+				var omitPayload struct {
+					Value []map[string]interface{} `json:"value"`
+				}
+				if err := json.Unmarshal(resp.Body, &omitPayload); err != nil {
+					return framework.NewError(fmt.Sprintf("failed to parse omit-values response: %v", err))
+				}
+				for i, entity := range omitPayload.Value {
+					if _, isNullDesc := nullDescriptionIDs[entity["ID"]]; isNullDesc {
+						if _, hasDesc := entity["Description"]; hasDesc {
+							return framework.NewError(fmt.Sprintf("entity %d (ID=%v) has null Description but 'Description' key is still present with omit-values=nulls", i, entity["ID"]))
+						}
+					}
+				}
 			}
 
 			return nil

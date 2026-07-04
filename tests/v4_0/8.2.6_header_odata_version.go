@@ -15,19 +15,23 @@ func HeaderODataVersion() *framework.TestSuite {
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part1-protocol/odata-v4.0-errata03-os-part1-protocol-complete.html#sec_HeaderODataVersion",
 	)
 
-	// Test 1: Service should return OData-Version header by default
+	// Test 1: Service should return OData-Version: 4.0 header by default
 	suite.AddTest(
 		"test_odata_version_header",
-		"Service returns OData-Version header by default",
+		"Service returns OData-Version: 4.0 header by default",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/")
 			if err != nil {
 				return err
 			}
 
-			odataVersion := resp.Headers.Get("OData-Version")
+			odataVersion := strings.TrimSpace(resp.Headers.Get("OData-Version"))
 			if odataVersion == "" {
-				return framework.NewError("Header not found")
+				return framework.NewError("OData-Version header not found")
+			}
+
+			if odataVersion != "4.0" {
+				return framework.NewError(fmt.Sprintf("OData-Version must be exactly \"4.0\" (OData Protocol §8.1.5), got: %q", odataVersion))
 			}
 
 			return nil
@@ -109,29 +113,33 @@ func HeaderODataVersion() *framework.TestSuite {
 		},
 	)
 
-	// Test 5: OData-Version header should be present in all responses
+	// Test 5: OData-Version header should be exactly "4.0" in all responses
 	suite.AddTest(
 		"test_entity_collection_header",
-		"Entity collection response includes OData-Version header",
+		"Entity collection response includes OData-Version: 4.0 header",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products")
 			if err != nil {
 				return err
 			}
 
-			odataVersion := resp.Headers.Get("OData-Version")
+			odataVersion := strings.TrimSpace(resp.Headers.Get("OData-Version"))
 			if odataVersion == "" {
-				return framework.NewError("Header not found")
+				return framework.NewError("OData-Version header not found")
+			}
+
+			if odataVersion != "4.0" {
+				return framework.NewError(fmt.Sprintf("OData-Version must be exactly \"4.0\" (OData Protocol §8.1.5), got: %q", odataVersion))
 			}
 
 			return nil
 		},
 	)
 
-	// Test 6: OData-Version header should be present in error responses
+	// Test 6: OData-Version header should be exactly "4.0" in error responses
 	suite.AddTest(
 		"test_error_response_header",
-		"Error response includes OData-Version header",
+		"Error response includes OData-Version: 4.0 header",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/",
 				framework.Header{Key: "OData-MaxVersion", Value: "3.0"},
@@ -140,9 +148,13 @@ func HeaderODataVersion() *framework.TestSuite {
 				return err
 			}
 
-			odataVersion := resp.Headers.Get("OData-Version")
+			odataVersion := strings.TrimSpace(resp.Headers.Get("OData-Version"))
 			if odataVersion == "" {
-				return framework.NewError("No OData-Version header")
+				return framework.NewError("OData-Version header missing from error response")
+			}
+
+			if odataVersion != "4.0" {
+				return framework.NewError(fmt.Sprintf("OData-Version must be exactly \"4.0\" in error responses (OData Protocol §8.1.5), got: %q", odataVersion))
 			}
 
 			return nil

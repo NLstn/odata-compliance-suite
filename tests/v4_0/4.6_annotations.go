@@ -22,12 +22,28 @@ func MetadataAnnotations() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
 
 			body := string(resp.Body)
 			if !strings.Contains(body, "Annotation") {
 				return nil // No annotations, skip (they're optional)
 			}
 
+			// Annotations are declared: verify at least one known Core vocabulary
+			// annotation is present (Core.Computed is applied to computed properties
+			// and Core.Description to entity types/properties in the reference model).
+			hasKnownAnnotation := strings.Contains(body, "Core.Computed") ||
+				strings.Contains(body, "Core.Description") ||
+				strings.Contains(body, "Org.OData.Core")
+			if !hasKnownAnnotation {
+				// Accept any annotation with a qualified term (contains a dot)
+				hasQualifiedTerm := strings.Contains(body, `Term="`) && strings.Contains(body, `."`)
+				if !hasQualifiedTerm {
+					return framework.NewError("metadata declares Annotation elements but none use a qualified term (Namespace.LocalName)")
+				}
+			}
 			return nil
 		},
 	)
@@ -119,9 +135,22 @@ func MetadataAnnotations() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
 
-			_ = string(resp.Body)
-			// Optional feature
+			body := string(resp.Body)
+			if !strings.Contains(body, "<Annotation") {
+				return nil // No annotations — optional feature
+			}
+
+			// If annotations exist, verify the metadata response is well-formed XML/JSON
+			// by confirming the body contains expected structural markers.
+			isXML := strings.Contains(body, "<edmx:Edmx") || strings.Contains(body, "<Edmx")
+			isJSON := strings.Contains(body, `"$Version"`)
+			if !isXML && !isJSON {
+				return framework.NewError("metadata response does not appear to be valid CSDL XML or JSON")
+			}
 			return nil
 		},
 	)
@@ -134,9 +163,20 @@ func MetadataAnnotations() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
 
-			_ = string(resp.Body)
-			// Optional feature
+			body := string(resp.Body)
+			if !strings.Contains(body, "<Annotation") {
+				return nil // No annotations — optional feature
+			}
+
+			// Verify that at least one Annotation element carries a Term attribute,
+			// confirming the server emits well-formed CSDL annotation markup.
+			if !strings.Contains(body, `Term=`) {
+				return framework.NewError("metadata contains <Annotation> elements but none have a Term attribute")
+			}
 			return nil
 		},
 	)

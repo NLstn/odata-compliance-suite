@@ -231,20 +231,22 @@ func PropertyValue() *framework.TestSuite {
 	// Test 9: $value on complex type property
 	suite.AddTest(
 		"test_value_complex_type",
-		"$value on complex type handled appropriately",
+		"$value on complex type must return 400",
 		func(ctx *framework.TestContext) error {
 			productPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
 				return err
 			}
-			resp, err := ctx.GET(productPath + "/ComplexProperty/$value")
+			// OData Protocol §11.2.11: $value is only defined for primitive properties.
+			// Appending /$value to a complex-type structured property is a client error
+			// and the server MUST return 400 Bad Request.
+			resp, err := ctx.GET(productPath + "/Dimensions/$value")
 			if err != nil {
 				return err
 			}
 
-			// Returns 200 if supported, 400/404 if not
-			if resp.StatusCode != 200 && resp.StatusCode != 400 && resp.StatusCode != 404 {
-				return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+			if resp.StatusCode != 400 {
+				return fmt.Errorf("expected status 400 for $value on complex type, got %d", resp.StatusCode)
 			}
 
 			return nil

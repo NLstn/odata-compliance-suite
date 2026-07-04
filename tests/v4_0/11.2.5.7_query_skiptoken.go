@@ -15,18 +15,18 @@ func QuerySkiptoken() *framework.TestSuite {
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part2-url-conventions/odata-v4.0-errata03-os-part2-url-conventions-complete.html#sec_SystemQueryOptionskiptoken",
 	)
 
-	// Test 1: Response with @odata.nextLink includes skiptoken
+	// Test 1: Response with @odata.nextLink includes skiptoken; follow it and
+	// verify that the two pages together cover all 7 seed products.
 	suite.AddTest(
 		"test_nextlink_has_skiptoken",
 		"@odata.nextLink contains $skiptoken parameter",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=2")
+			resp, err := ctx.GET("/Products?$top=3")
 			if err != nil {
 				return err
 			}
-
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
 			}
 
 			var result map[string]interface{}
@@ -34,16 +34,62 @@ func QuerySkiptoken() *framework.TestSuite {
 				return fmt.Errorf("invalid JSON: %w", err)
 			}
 
-			// Check if there's a nextLink
-			if nextLink, ok := result["@odata.nextLink"].(string); ok {
-				// NextLink should contain skiptoken parameter
-				// This is implementation-specific, so we just verify it exists
-				ctx.Log("@odata.nextLink found: " + nextLink)
+			page1Items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+
+			nextLink, hasNextLink := result["@odata.nextLink"].(string)
+			if !hasNextLink {
+				// Server returned all items without a nextLink; valid for small collections.
+				// Assert we still received all 7 seed products in one shot.
+				if len(page1Items) != 7 {
+					return fmt.Errorf("no @odata.nextLink on $top=3 and page returned %d items (expected 7 for full single-page response)", len(page1Items))
+				}
+				ctx.Log("No @odata.nextLink — server returned all 7 products in a single page (conformant)")
 				return nil
 			}
 
-			// If there's no nextLink, result set fits in one page
-			ctx.Log("No @odata.nextLink (result set fits in one page)")
+			ctx.Log("@odata.nextLink found: " + nextLink)
+
+			// Follow the nextLink and verify it is usable.
+			resp2, err := ctx.GET(nextLink)
+			if err != nil {
+				return fmt.Errorf("failed to follow @odata.nextLink: %w", err)
+			}
+			if err := ctx.AssertStatusCode(resp2, 200); err != nil {
+				return fmt.Errorf("@odata.nextLink response: %w", err)
+			}
+
+			page2Items, err := ctx.ParseEntityCollection(resp2)
+			if err != nil {
+				return fmt.Errorf("@odata.nextLink response body: %w", err)
+			}
+			if len(page2Items) == 0 {
+				return fmt.Errorf("@odata.nextLink response has an empty value array; expected at least one item on the second page")
+			}
+
+			// Build ID sets for both pages; they must be disjoint.
+			page1IDs := make(map[interface{}]bool, len(page1Items))
+			for _, item := range page1Items {
+				page1IDs[item["ID"]] = true
+			}
+			for _, item := range page2Items {
+				if page1IDs[item["ID"]] {
+					return fmt.Errorf("item ID=%v appears on both page 1 and page 2; $skiptoken did not advance correctly", item["ID"])
+				}
+			}
+
+			// Combined count must equal total seed products (7).
+			combined := len(page1Items) + len(page2Items)
+			if combined != 7 {
+				// Allow the combined total to exceed 7 if the server itself has additional
+				// data, but it must never be less than 7.
+				if combined < 7 {
+					return fmt.Errorf("combined pages contain %d items, expected 7 total seed products", combined)
+				}
+			}
+
 			return nil
 		},
 	)
