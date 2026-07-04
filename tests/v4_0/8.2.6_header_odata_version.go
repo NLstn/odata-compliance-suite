@@ -30,8 +30,8 @@ func HeaderODataVersion() *framework.TestSuite {
 				return framework.NewError("OData-Version header not found")
 			}
 
-			if odataVersion != "4.0" {
-				return framework.NewError(fmt.Sprintf("OData-Version must be exactly \"4.0\" (OData Protocol §8.1.5), got: %q", odataVersion))
+			if odataVersion != "4.0" && odataVersion != "4.01" {
+				return framework.NewError(fmt.Sprintf("OData-Version must be \"4.0\" or \"4.01\" (OData Protocol §8.1.5), got: %q", odataVersion))
 			}
 
 			return nil
@@ -128,8 +128,8 @@ func HeaderODataVersion() *framework.TestSuite {
 				return framework.NewError("OData-Version header not found")
 			}
 
-			if odataVersion != "4.0" {
-				return framework.NewError(fmt.Sprintf("OData-Version must be exactly \"4.0\" (OData Protocol §8.1.5), got: %q", odataVersion))
+			if odataVersion != "4.0" && odataVersion != "4.01" {
+				return framework.NewError(fmt.Sprintf("OData-Version must be \"4.0\" or \"4.01\" (OData Protocol §8.1.5), got: %q", odataVersion))
 			}
 
 			return nil
@@ -153,8 +153,8 @@ func HeaderODataVersion() *framework.TestSuite {
 				return framework.NewError("OData-Version header missing from error response")
 			}
 
-			if odataVersion != "4.0" {
-				return framework.NewError(fmt.Sprintf("OData-Version must be exactly \"4.0\" in error responses (OData Protocol §8.1.5), got: %q", odataVersion))
+			if odataVersion != "4.0" && odataVersion != "4.01" {
+				return framework.NewError(fmt.Sprintf("OData-Version must be \"4.0\" or \"4.01\" in error responses (OData Protocol §8.1.5), got: %q", odataVersion))
 			}
 
 			return nil

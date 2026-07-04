@@ -59,9 +59,11 @@ func PreferenceOmitValues() *framework.TestSuite {
 				return framework.NewError(fmt.Sprintf("response must remain a valid collection payload: %v", err))
 			}
 
-			// If the preference was honoured and any products had null Description,
-			// those entities must NOT contain a "Description" key at all.
-			if len(nullDescriptionIDs) > 0 {
+			// Only assert null-property omission if the server declared via
+			// Preference-Applied that it actually applied omit-values. Servers that
+			// silently ignore the preference are conformant for this acceptance test.
+			prefApplied := resp.Headers.Get("Preference-Applied")
+			if len(nullDescriptionIDs) > 0 && (prefApplied == "omit-values=nulls" || prefApplied == "odata.omit-values=nulls") {
 				var omitPayload struct {
 					Value []map[string]interface{} `json:"value"`
 				}

@@ -247,24 +247,17 @@ func ODataAnnotations() *framework.TestSuite {
 				return fmt.Errorf("@odata.count required when $count=true is specified")
 			}
 
-			// Per OData JSON Format §7.2, @odata.count MUST be a JSON string (e.g. "7"),
-			// not a JSON number.
-			countStr, ok := count.(string)
+			// @odata.count is a JSON integer per OData JSON Format §7.2.
+			countNum, ok := count.(float64)
 			if !ok {
-				return fmt.Errorf("@odata.count must be a JSON string (OData JSON Format §7.2), got %T", count)
-			}
-
-			// Validate the string represents a non-negative integer.
-			var countNum int64
-			if _, err := fmt.Sscanf(countStr, "%d", &countNum); err != nil {
-				return fmt.Errorf("@odata.count string value %q is not a valid integer: %w", countStr, err)
+				return fmt.Errorf("@odata.count must be a JSON integer, got %T", count)
 			}
 
 			if countNum < 0 {
-				return fmt.Errorf("@odata.count must be non-negative, got %s", countStr)
+				return fmt.Errorf("@odata.count must be non-negative, got %.0f", countNum)
 			}
 
-			ctx.Log(fmt.Sprintf("@odata.count: %s", countStr))
+			ctx.Log(fmt.Sprintf("@odata.count: %.0f", countNum))
 			return nil
 		},
 	)
@@ -284,20 +277,14 @@ func ODataAnnotations() *framework.TestSuite {
 
 			var result struct {
 				Value    []map[string]interface{} `json:"value"`
-				Count    string                   `json:"@odata.count"`
+				Count    float64                  `json:"@odata.count"`
 				NextLink string                   `json:"@odata.nextLink"`
 			}
 			if err := json.Unmarshal(resp.Body, &result); err != nil {
 				return fmt.Errorf("invalid JSON response: %w", err)
 			}
 
-			// Per OData JSON Format §7.2, @odata.count is a JSON string.
-			var countNum int64
-			if result.Count != "" {
-				if _, err := fmt.Sscanf(result.Count, "%d", &countNum); err != nil {
-					return fmt.Errorf("@odata.count value %q is not a valid integer string: %w", result.Count, err)
-				}
-			}
+			countNum := int64(result.Count)
 
 			if countNum <= 1 {
 				return ctx.Skip("Not enough entities to require pagination for $top=1")
