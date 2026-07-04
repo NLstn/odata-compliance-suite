@@ -59,11 +59,9 @@ func PreferenceOmitValues() *framework.TestSuite {
 				return framework.NewError(fmt.Sprintf("response must remain a valid collection payload: %v", err))
 			}
 
-			// Only assert null-property omission if the server declared via
-			// Preference-Applied that it actually applied omit-values. Servers that
-			// silently ignore the preference are conformant for this acceptance test.
-			prefApplied := resp.Headers.Get("Preference-Applied")
-			if len(nullDescriptionIDs) > 0 && (prefApplied == "omit-values=nulls" || prefApplied == "odata.omit-values=nulls") {
+			// The server must omit null-valued properties when omit-values=nulls is
+			// requested. Fixed in go-odata#764.
+			if len(nullDescriptionIDs) > 0 {
 				var omitPayload struct {
 					Value []map[string]interface{} `json:"value"`
 				}
