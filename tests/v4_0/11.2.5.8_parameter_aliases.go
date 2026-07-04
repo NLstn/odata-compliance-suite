@@ -29,20 +29,29 @@ func ParameterAliases() *framework.TestSuite {
 				return err
 			}
 
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
 				return fmt.Errorf("failed to parse response: %v", err)
 			}
 
-			value, ok := result["value"].([]interface{})
-			if !ok {
-				return framework.NewError("response missing value array")
+			// All 7 seed products have Price > 10 (cheapest is Coffee Mug at 15.50),
+			// so at least 1 result is expected.
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
 			}
 
-			// Success: parameter alias was accepted by server (status 200)
-			// The actual filter results depend on data, so we don't assert on count
-			_ = value // Acknowledge we have the value
-			return nil
+			// Every returned product must satisfy the alias-expanded filter (Price > 10).
+			return ctx.AssertAllEntitiesSatisfy(items, "Price gt @p (@p=10)", func(entity map[string]interface{}) (bool, string) {
+				price, ok := entity["Price"].(float64)
+				if !ok {
+					// Price may have been excluded by a $select; skip the check.
+					return true, ""
+				}
+				if price <= 10 {
+					return false, fmt.Sprintf("Price=%.2f is not > 10; parameter alias @p=10 was not applied", price)
+				}
+				return true, ""
+			})
 		},
 	)
 

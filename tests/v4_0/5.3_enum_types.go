@@ -1,6 +1,7 @@
 package v4_0
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -33,11 +34,39 @@ func EnumTypes() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			if strings.Contains(body, `"Status"`) {
-				return nil
+			if !strings.Contains(body, `"Status"`) {
+				return ctx.Skip("product entity does not expose a Status enum property")
 			}
 
-			return nil // No enum property, optional
+			// Status is present — decode the entity and validate the value is a
+			// known member of the flags enum (None=0, InStock=1, OnSale=2,
+			// Discontinued=4, Featured=8) or a string representation thereof.
+			var entity map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &entity); err != nil {
+				return fmt.Errorf("decode product entity: %w", err)
+			}
+			statusRaw, ok := entity["Status"]
+			if !ok || statusRaw == nil {
+				return fmt.Errorf("Status field is absent or null in product entity")
+			}
+			switch v := statusRaw.(type) {
+			case string:
+				// String representation: may be a single member name, a comma-separated
+				// combination, or a numeric string.  Accept any non-empty value.
+				if strings.TrimSpace(v) == "" {
+					return fmt.Errorf("Status field is an empty string; expected a valid enum member")
+				}
+			case float64:
+				intVal := int(v)
+				// All valid combinations of None=0,InStock=1,OnSale=2,Discontinued=4,Featured=8
+				// fit within the range [0, 15].
+				if intVal < 0 || intVal > 15 {
+					return fmt.Errorf("Status value %d is outside the valid flags-enum range [0, 15]", intVal)
+				}
+			default:
+				return fmt.Errorf("Status field has unexpected type %T (value: %v); expected string or number", statusRaw, statusRaw)
+			}
+			return nil
 		},
 	)
 
@@ -205,11 +234,20 @@ func EnumTypes() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			if strings.Contains(body, "EnumType") {
-				return nil
+			if !strings.Contains(body, "EnumType") {
+				return ctx.Skip("no EnumType declared in metadata — enum types are optional")
 			}
 
-			return nil // No enum types, optional
+			// An enum type is declared; verify that ProductStatus (the flags enum
+			// used by the Products entity) is among the declared enum types with at
+			// least one member element.
+			if !strings.Contains(body, "ProductStatus") {
+				return fmt.Errorf("metadata declares EnumType elements but ProductStatus enum is absent")
+			}
+			if !strings.Contains(body, "<Member") {
+				return fmt.Errorf("metadata declares ProductStatus EnumType but it has no Member elements")
+			}
+			return nil
 		},
 	)
 

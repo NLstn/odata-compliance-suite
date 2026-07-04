@@ -34,6 +34,11 @@ func InOperator() *framework.TestSuite {
 				return err
 			}
 
+			// Exactly 2 distinct products in the seed data match.
+			if len(entities) != 2 {
+				return framework.NewError(fmt.Sprintf("Name in ('Laptop','Wireless Mouse') expected exactly 2 entities, got %d", len(entities)))
+			}
+
 			allowed := map[string]struct{}{"Laptop": {}, "Wireless Mouse": {}}
 			for i, entity := range entities {
 				name, ok := entity["Name"].(string)
@@ -132,7 +137,7 @@ func InOperator() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, http.StatusBadRequest)
+			return ctx.AssertODataError(resp, http.StatusBadRequest, "")
 		},
 	)
 
@@ -145,7 +150,7 @@ func InOperator() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, http.StatusBadRequest)
+			return ctx.AssertODataError(resp, http.StatusBadRequest, "")
 		},
 	)
 
@@ -158,7 +163,7 @@ func InOperator() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, http.StatusBadRequest)
+			return ctx.AssertODataError(resp, http.StatusBadRequest, "")
 		},
 	)
 
@@ -171,7 +176,7 @@ func InOperator() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, http.StatusBadRequest)
+			return ctx.AssertODataError(resp, http.StatusBadRequest, "")
 		},
 	)
 
@@ -184,7 +189,7 @@ func InOperator() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, http.StatusBadRequest)
+			return ctx.AssertODataError(resp, http.StatusBadRequest, "")
 		},
 	)
 
@@ -197,7 +202,7 @@ func InOperator() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, http.StatusBadRequest)
+			return ctx.AssertODataError(resp, http.StatusBadRequest, "")
 		},
 	)
 

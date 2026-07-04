@@ -126,8 +126,19 @@ func PaginationEdgeCases() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+
+			// A very large $top must not truncate the result; all 7 seed products
+			// must be present.
+			if len(items) < 7 {
+				return fmt.Errorf("$top=999999 returned %d items, expected at least 7 seed products", len(items))
 			}
 
 			return nil
@@ -171,13 +182,38 @@ func PaginationEdgeCases() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
 			}
 
-			// If there are more than 2 products, should include nextLink
-			// May not have nextLink if total results <= $top (acceptable)
-			ctx.Log("No @odata.nextLink check - may be expected if result count <= $top")
+			var result map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &result); err != nil {
+				return fmt.Errorf("failed to parse JSON: %w", err)
+			}
+
+			value, ok := result["value"].([]interface{})
+			if !ok {
+				return fmt.Errorf("expected value array in response")
+			}
+
+			if nextLink, hasNextLink := result["@odata.nextLink"].(string); hasNextLink {
+				// Server chose to page; verify the nextLink is actually followable.
+				ctx.Log("@odata.nextLink found: " + nextLink)
+				resp2, err := ctx.GET(nextLink)
+				if err != nil {
+					return fmt.Errorf("failed to follow @odata.nextLink: %w", err)
+				}
+				if err := ctx.AssertStatusCode(resp2, 200); err != nil {
+					return fmt.Errorf("@odata.nextLink follow: %w", err)
+				}
+			} else {
+				// No nextLink is valid when the server returns all items within $top.
+				// With 7 seed products and $top=2, the server is expected to set a
+				// nextLink, but we allow the no-nextLink path for non-conformant servers
+				// that return all rows regardless of $top.
+				ctx.Log(fmt.Sprintf("No @odata.nextLink (server returned %d items for $top=2)", len(value)))
+			}
+
 			return nil
 		},
 	)

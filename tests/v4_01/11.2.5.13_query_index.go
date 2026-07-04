@@ -149,6 +149,20 @@ func QueryIndex() *framework.TestSuite {
 				return framework.NewError(fmt.Sprintf("Missing $index with $top support: %v", err))
 			}
 
+			items, err := parseIndexedEntities(ctx, resp)
+			if err != nil {
+				return framework.NewError(fmt.Sprintf("$index with $top must return non-empty value array with @odata.index: %v", err))
+			}
+
+			// $top=5 with 7 seed products → exactly 5 items at indexes 0..4
+			if len(items) > 5 {
+				return framework.NewError(fmt.Sprintf("$top=5 returned %d items, expected at most 5", len(items)))
+			}
+
+			if err := assertSequentialIndexes(items, 0); err != nil {
+				return framework.NewError(fmt.Sprintf("$index with $top must produce sequential annotations starting at 0: %v", err))
+			}
+
 			return nil
 		},
 	)
@@ -167,6 +181,18 @@ func QueryIndex() *framework.TestSuite {
 				return framework.NewError(fmt.Sprintf("Missing $index with $skip support: %v", err))
 			}
 
+			items, err := parseIndexedEntities(ctx, resp)
+			if err != nil {
+				return framework.NewError(fmt.Sprintf("$index with $skip must return non-empty value array with @odata.index: %v", err))
+			}
+
+			// When $skip=2 the @odata.index annotations must reflect the absolute
+			// position in the full collection, so the first returned item must carry
+			// @odata.index == 2 (not 0).
+			if err := assertSequentialIndexes(items, 2); err != nil {
+				return framework.NewError(fmt.Sprintf("$index with $skip=2 must produce sequential annotations starting at 2: %v", err))
+			}
+
 			return nil
 		},
 	)
@@ -183,6 +209,34 @@ func QueryIndex() *framework.TestSuite {
 
 			if err := ctx.AssertStatusCode(resp, 200); err != nil {
 				return framework.NewError(fmt.Sprintf("Missing $index with $orderby support: %v", err))
+			}
+
+			items, err := parseIndexedEntities(ctx, resp)
+			if err != nil {
+				return framework.NewError(fmt.Sprintf("$index with $orderby must return non-empty value array with @odata.index: %v", err))
+			}
+
+			// Indexes must still be sequential starting at 0 regardless of sort order.
+			if err := assertSequentialIndexes(items, 0); err != nil {
+				return framework.NewError(fmt.Sprintf("$index with $orderby must produce sequential annotations starting at 0: %v", err))
+			}
+
+			// Verify that Price is monotonically non-decreasing to confirm $orderby was honoured.
+			var prevPrice float64
+			for i, item := range items {
+				priceRaw, ok := item["Price"]
+				if !ok {
+					// Price may have been omitted by $select elsewhere; skip value check here.
+					break
+				}
+				price, ok := priceRaw.(float64)
+				if !ok {
+					return framework.NewError(fmt.Sprintf("item %d has non-numeric Price value %T", i, priceRaw))
+				}
+				if i > 0 && price < prevPrice {
+					return framework.NewError(fmt.Sprintf("$orderby=Price not honoured: item %d Price %.2f < item %d Price %.2f", i, price, i-1, prevPrice))
+				}
+				prevPrice = price
 			}
 
 			return nil

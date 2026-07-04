@@ -1,6 +1,7 @@
 package v4_01
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -22,13 +23,48 @@ func FilterDivByOperator() *framework.TestSuite {
 		"test_divby_operator_basic",
 		"divby operator in $filter returns 200 when OData 4.01 is negotiated",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("Price divby 1.5 gt 0")
+			// Price divby 100 gt 5.0  ↔  Price > 500
+			// Seed data: Laptop (999.99), Smartphone (799.99), Premium Laptop Pro (1999.99)
+			// all satisfy this; Office Chair (249.99), Wireless Mouse (29.99), Coffee Mug (15.50),
+			// Gaming Mouse Ultra (149.99) do not.
+			filter := url.QueryEscape("Price divby 100 gt 5.0")
 			headers := []framework.Header{{Key: "OData-MaxVersion", Value: "4.01"}}
 			resp, err := ctx.GET("/Products?$filter="+filter, headers...)
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, http.StatusOK)
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
+			}
+
+			var payload struct {
+				Value []map[string]interface{} `json:"value"`
+			}
+			if err := json.Unmarshal(resp.Body, &payload); err != nil {
+				return framework.NewError(fmt.Sprintf("failed to parse divby filter response: %v", err))
+			}
+			if payload.Value == nil {
+				return framework.NewError("divby filter response missing 'value' collection")
+			}
+			// All 3 qualifying products must be present.
+			if len(payload.Value) < 3 {
+				return framework.NewError(fmt.Sprintf("Price divby 100 gt 5.0 expected at least 3 products (Price>500), got %d", len(payload.Value)))
+			}
+			// Every returned product must actually have Price > 500.
+			for i, entity := range payload.Value {
+				priceRaw, ok := entity["Price"]
+				if !ok {
+					return framework.NewError(fmt.Sprintf("entity %d missing Price field", i))
+				}
+				price, ok := priceRaw.(float64)
+				if !ok {
+					return framework.NewError(fmt.Sprintf("entity %d has non-numeric Price %T", i, priceRaw))
+				}
+				if price <= 500 {
+					return framework.NewError(fmt.Sprintf("entity %d has Price %.2f which does not satisfy Price divby 100 gt 5.0", i, price))
+				}
+			}
+			return nil
 		},
 	)
 
@@ -37,15 +73,47 @@ func FilterDivByOperator() *framework.TestSuite {
 		"test_divby_performs_decimal_division",
 		"divby performs decimal division (e.g. 3 divby 2 = 1.5, not 1)",
 		func(ctx *framework.TestContext) error {
-			// Price divby 2 ge 1 should match products with Price >= 2
-			// (unlike integer div which would behave differently for odd prices)
+			// Price divby 2 ge 1  ↔  Price >= 2.
+			// All 7 seed products have Price >= 2, so all 7 must be returned.
 			filter := url.QueryEscape("Price divby 2 ge 1")
 			headers := []framework.Header{{Key: "OData-MaxVersion", Value: "4.01"}}
 			resp, err := ctx.GET("/Products?$filter="+filter, headers...)
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, http.StatusOK)
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
+			}
+
+			var payload struct {
+				Value []map[string]interface{} `json:"value"`
+			}
+			if err := json.Unmarshal(resp.Body, &payload); err != nil {
+				return framework.NewError(fmt.Sprintf("failed to parse divby decimal filter response: %v", err))
+			}
+			if payload.Value == nil {
+				return framework.NewError("divby decimal filter response missing 'value' collection")
+			}
+			// All 7 seed products satisfy Price >= 2; fewer results means the filter
+			// incorrectly excluded some rows.
+			if len(payload.Value) < 7 {
+				return framework.NewError(fmt.Sprintf("Price divby 2 ge 1 expected all 7 seed products (Price>=2), got %d", len(payload.Value)))
+			}
+			// Every returned product must have Price >= 2.
+			for i, entity := range payload.Value {
+				priceRaw, ok := entity["Price"]
+				if !ok {
+					return framework.NewError(fmt.Sprintf("entity %d missing Price field", i))
+				}
+				price, ok := priceRaw.(float64)
+				if !ok {
+					return framework.NewError(fmt.Sprintf("entity %d has non-numeric Price %T", i, priceRaw))
+				}
+				if price < 2 {
+					return framework.NewError(fmt.Sprintf("entity %d has Price %.2f which does not satisfy Price divby 2 ge 1", i, price))
+				}
+			}
+			return nil
 		},
 	)
 
@@ -54,13 +122,47 @@ func FilterDivByOperator() *framework.TestSuite {
 		"test_divby_combined_with_and",
 		"divby combined with 'and' logical operator",
 		func(ctx *framework.TestContext) error {
+			// Price divby 2 gt 0 and Price divby 2 lt 1000  ↔  Price > 0 and Price < 2000.
+			// Premium Laptop Pro (1999.99) satisfies Price < 2000; all products have Price > 0.
+			// So all 7 seed products should be returned.
 			filter := url.QueryEscape("Price divby 2 gt 0 and Price divby 2 lt 1000")
 			headers := []framework.Header{{Key: "OData-MaxVersion", Value: "4.01"}}
 			resp, err := ctx.GET("/Products?$filter="+filter, headers...)
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, http.StatusOK)
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
+			}
+
+			var payload struct {
+				Value []map[string]interface{} `json:"value"`
+			}
+			if err := json.Unmarshal(resp.Body, &payload); err != nil {
+				return framework.NewError(fmt.Sprintf("failed to parse divby+and filter response: %v", err))
+			}
+			if payload.Value == nil {
+				return framework.NewError("divby+and filter response missing 'value' collection")
+			}
+			// All 7 products have Price in (0, 2000), so all must appear.
+			if len(payload.Value) < 7 {
+				return framework.NewError(fmt.Sprintf("Price divby 2 gt 0 and Price divby 2 lt 1000 expected all 7 seed products, got %d", len(payload.Value)))
+			}
+			// Every returned product must satisfy both predicates.
+			for i, entity := range payload.Value {
+				priceRaw, ok := entity["Price"]
+				if !ok {
+					return framework.NewError(fmt.Sprintf("entity %d missing Price field", i))
+				}
+				price, ok := priceRaw.(float64)
+				if !ok {
+					return framework.NewError(fmt.Sprintf("entity %d has non-numeric Price %T", i, priceRaw))
+				}
+				if price <= 0 || price >= 2000 {
+					return framework.NewError(fmt.Sprintf("entity %d has Price %.2f outside expected range (0, 2000)", i, price))
+				}
+			}
+			return nil
 		},
 	)
 

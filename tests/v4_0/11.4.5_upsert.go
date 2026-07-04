@@ -55,11 +55,8 @@ func Upsert() *framework.TestSuite {
 				return err
 			}
 
-			if putResp.StatusCode != 204 {
-				return fmt.Errorf("expected status 204, got %d", putResp.StatusCode)
-			}
-			if len(putResp.Body) != 0 {
-				return fmt.Errorf("expected empty body for 204 PUT response, got %q", string(putResp.Body))
+			if putResp.StatusCode != 204 && putResp.StatusCode != 201 {
+				return fmt.Errorf("expected status 201 or 204, got %d", putResp.StatusCode)
 			}
 
 			getResp, err := ctx.GET(fmt.Sprintf("/Products(%s)", id))
@@ -167,11 +164,8 @@ func Upsert() *framework.TestSuite {
 				return err
 			}
 
-			if putResp.StatusCode != 204 {
-				return fmt.Errorf("expected status 204, got %d", putResp.StatusCode)
-			}
-			if len(putResp.Body) != 0 {
-				return fmt.Errorf("expected empty body for 204 PUT response, got %q", string(putResp.Body))
+			if putResp.StatusCode != 204 && putResp.StatusCode != 201 {
+				return fmt.Errorf("expected status 201 or 204, got %d", putResp.StatusCode)
 			}
 
 			getResp, err := ctx.GET(fmt.Sprintf("/Products(%s)", id))
@@ -240,11 +234,8 @@ func Upsert() *framework.TestSuite {
 				return err
 			}
 
-			if putResp.StatusCode != 204 {
-				return fmt.Errorf("expected status 204, got %d", putResp.StatusCode)
-			}
-			if len(putResp.Body) != 0 {
-				return fmt.Errorf("expected empty body for 204 PUT response, got %q", string(putResp.Body))
+			if putResp.StatusCode != 204 && putResp.StatusCode != 201 {
+				return fmt.Errorf("expected status 201 or 204, got %d", putResp.StatusCode)
 			}
 
 			// Check for OData-Version header

@@ -25,7 +25,15 @@ func MethodNotAllowed() *framework.TestSuite {
 			}
 
 			// Should return 405 Method Not Allowed
-			return ctx.AssertStatusCode(resp, 405)
+			if err := ctx.AssertStatusCode(resp, 405); err != nil {
+				return err
+			}
+
+			if strings.TrimSpace(resp.Headers.Get("Allow")) == "" {
+				return framework.NewError("405 response must include Allow header listing permitted methods (OData Protocol §7.6)")
+			}
+
+			return nil
 		},
 	)
 
@@ -39,7 +47,15 @@ func MethodNotAllowed() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, 405)
+			if err := ctx.AssertStatusCode(resp, 405); err != nil {
+				return err
+			}
+
+			if strings.TrimSpace(resp.Headers.Get("Allow")) == "" {
+				return framework.NewError("405 response must include Allow header listing permitted methods (OData Protocol §7.6)")
+			}
+
+			return nil
 		},
 	)
 
@@ -53,7 +69,15 @@ func MethodNotAllowed() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, 405)
+			if err := ctx.AssertStatusCode(resp, 405); err != nil {
+				return err
+			}
+
+			if strings.TrimSpace(resp.Headers.Get("Allow")) == "" {
+				return framework.NewError("405 response must include Allow header listing permitted methods (OData Protocol §7.6)")
+			}
+
+			return nil
 		},
 	)
 
@@ -67,7 +91,15 @@ func MethodNotAllowed() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, 405)
+			if err := ctx.AssertStatusCode(resp, 405); err != nil {
+				return err
+			}
+
+			if strings.TrimSpace(resp.Headers.Get("Allow")) == "" {
+				return framework.NewError("405 response must include Allow header listing permitted methods (OData Protocol §7.6)")
+			}
+
+			return nil
 		},
 	)
 
@@ -81,7 +113,15 @@ func MethodNotAllowed() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, 405)
+			if err := ctx.AssertStatusCode(resp, 405); err != nil {
+				return err
+			}
+
+			if strings.TrimSpace(resp.Headers.Get("Allow")) == "" {
+				return framework.NewError("405 response must include Allow header listing permitted methods (OData Protocol §7.6)")
+			}
+
+			return nil
 		},
 	)
 
@@ -95,7 +135,15 @@ func MethodNotAllowed() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, 405)
+			if err := ctx.AssertStatusCode(resp, 405); err != nil {
+				return err
+			}
+
+			if strings.TrimSpace(resp.Headers.Get("Allow")) == "" {
+				return framework.NewError("405 response must include Allow header listing permitted methods (OData Protocol §7.6)")
+			}
+
+			return nil
 		},
 	)
 
@@ -109,7 +157,15 @@ func MethodNotAllowed() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, 405)
+			if err := ctx.AssertStatusCode(resp, 405); err != nil {
+				return err
+			}
+
+			if strings.TrimSpace(resp.Headers.Get("Allow")) == "" {
+				return framework.NewError("405 response must include Allow header listing permitted methods (OData Protocol §7.6)")
+			}
+
+			return nil
 		},
 	)
 
@@ -123,7 +179,15 @@ func MethodNotAllowed() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, 405)
+			if err := ctx.AssertStatusCode(resp, 405); err != nil {
+				return err
+			}
+
+			if strings.TrimSpace(resp.Headers.Get("Allow")) == "" {
+				return framework.NewError("405 response must include Allow header listing permitted methods (OData Protocol §7.6)")
+			}
+
+			return nil
 		},
 	)
 

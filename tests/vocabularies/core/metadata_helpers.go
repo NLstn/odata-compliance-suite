@@ -139,9 +139,11 @@ func assertODataError(resp *framework.HTTPResponse) error {
 		return fmt.Errorf("error object has unexpected type")
 	}
 
+	// OData JSON Format §9.3: error.code is a service-defined string — it is NOT
+	// required to equal the HTTP status number. Only assert it is a non-empty string.
 	code, ok := errObj["code"].(string)
-	if !ok || code != fmt.Sprintf("%d", resp.StatusCode) {
-		return fmt.Errorf("error code mismatch: got %v, expected %d", errObj["code"], resp.StatusCode)
+	if !ok || strings.TrimSpace(code) == "" {
+		return fmt.Errorf("error code is missing or empty, got %v", errObj["code"])
 	}
 
 	message, ok := errObj["message"].(string)

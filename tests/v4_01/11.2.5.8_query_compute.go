@@ -2,6 +2,7 @@ package v4_01
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -66,7 +67,8 @@ func QueryCompute() *framework.TestSuite {
 		"test_compute_with_select",
 		"$compute combined with $select",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$compute=Price mul 2 as DoublePrice&$select=Name,DoublePrice")
+			// Include Price in $select so we can cross-check DoublePrice == Price * 2.
+			resp, err := ctx.GET("/Products?$compute=Price mul 2 as DoublePrice&$select=Name,Price,DoublePrice")
 			if err != nil {
 				return err
 			}
@@ -80,7 +82,38 @@ func QueryCompute() *framework.TestSuite {
 				return err
 			}
 
-			return ensureComputedProperties(entities, "DoublePrice")
+			if err := ensureComputedProperties(entities, "DoublePrice"); err != nil {
+				return err
+			}
+
+			// Verify the computed value is correct: DoublePrice must equal Price * 2.
+			// Seed data: Laptop (999.99) → DoublePrice = 1999.98.
+			for i, entity := range entities {
+				priceRaw, ok := entity["Price"]
+				if !ok {
+					return framework.NewError(fmt.Sprintf("entity %d missing Price field", i))
+				}
+				price, ok := priceRaw.(float64)
+				if !ok {
+					return framework.NewError(fmt.Sprintf("entity %d has non-numeric Price %T", i, priceRaw))
+				}
+
+				doublePriceRaw, ok := entity["DoublePrice"]
+				if !ok {
+					return framework.NewError(fmt.Sprintf("entity %d missing DoublePrice computed field", i))
+				}
+				doublePrice, ok := doublePriceRaw.(float64)
+				if !ok {
+					return framework.NewError(fmt.Sprintf("entity %d has non-numeric DoublePrice %T", i, doublePriceRaw))
+				}
+
+				expected := price * 2
+				if math.Abs(doublePrice-expected) > 0.01 {
+					return framework.NewError(fmt.Sprintf("entity %d: DoublePrice=%.4f but expected Price*2=%.4f (Price=%.4f)", i, doublePrice, expected, price))
+				}
+			}
+
+			return nil
 		},
 	)
 

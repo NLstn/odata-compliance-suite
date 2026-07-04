@@ -22,30 +22,20 @@ func ErrorResponses() *framework.TestSuite {
 }
 
 // validateErrorCodeAndMessage validates that an error object has required 'code' and 'message' fields
-// per OData v4 specification. The 'code' must be a non-empty string, and 'message' must be either
-// a non-empty string or an object with a non-empty 'value' property.
+// per OData v4 specification. The 'code' must be a non-empty string, and 'message' must be a
+// non-empty plain string (OData v4 JSON Format §19 — object-form messages are an OData v3 artifact).
 func validateErrorCodeAndMessage(errorObj map[string]interface{}) error {
 	code, ok := errorObj["code"].(string)
 	if !ok || code == "" {
 		return fmt.Errorf("missing or empty 'code' in error object")
 	}
 
-	message, ok := errorObj["message"]
+	message, ok := errorObj["message"].(string)
 	if !ok {
-		return fmt.Errorf("missing 'message' in error object")
+		return fmt.Errorf("'message' in error object must be a string, got %T", errorObj["message"])
 	}
-	switch msg := message.(type) {
-	case string:
-		if msg == "" {
-			return fmt.Errorf("'message' must not be empty")
-		}
-	case map[string]interface{}:
-		value, ok := msg["value"].(string)
-		if !ok || value == "" {
-			return fmt.Errorf("message object must have non-empty 'value'")
-		}
-	default:
-		return fmt.Errorf("message must be string or object, got %T", message)
+	if message == "" {
+		return fmt.Errorf("'message' must not be empty")
 	}
 	return nil
 }
@@ -476,7 +466,7 @@ func registerErrorResponseTests(suite *framework.TestSuite) {
 
 	suite.AddTest(
 		"Error message structure validation",
-		"Error message can be string or object with value and lang",
+		"Error message must be a non-empty plain string per OData v4 JSON Format §19",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET(invalidProductPath)
 			if err != nil {
@@ -493,33 +483,16 @@ func registerErrorResponseTests(suite *framework.TestSuite) {
 				return fmt.Errorf("no 'error' object in response")
 			}
 
-			message := errorObj["message"]
-			switch msg := message.(type) {
-			case string:
-				// Simple string message - most common
-				if msg == "" {
-					return fmt.Errorf("message string must not be empty")
-				}
-				ctx.Log(fmt.Sprintf("Simple message: %s", msg))
-			case map[string]interface{}:
-				// Object with value and optional lang
-				value, ok := msg["value"].(string)
-				if !ok || value == "" {
-					return fmt.Errorf("message object must have 'value' as non-empty string")
-				}
-				// lang is optional
-				if lang, ok := msg["lang"]; ok {
-					if langStr, ok := lang.(string); ok {
-						ctx.Log(fmt.Sprintf("Message: %s (lang: %s)", value, langStr))
-					} else {
-						return fmt.Errorf("message.lang must be a string if present")
-					}
-				} else {
-					ctx.Log(fmt.Sprintf("Message object: %s", value))
-				}
-			default:
-				return fmt.Errorf("message must be string or object, got %T", message)
+			// OData v4 JSON Format §19: error.message MUST be a plain string.
+			// Object-form messages ({"value":"..."}) are an OData v3 artifact.
+			msg, ok := errorObj["message"].(string)
+			if !ok {
+				return fmt.Errorf("error.message must be a string, got %T", errorObj["message"])
 			}
+			if msg == "" {
+				return fmt.Errorf("error.message must not be empty")
+			}
+			ctx.Log(fmt.Sprintf("Error message: %s", msg))
 
 			return nil
 		},

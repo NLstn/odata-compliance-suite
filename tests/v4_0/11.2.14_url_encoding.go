@@ -57,15 +57,19 @@ func URLEncoding() *framework.TestSuite {
 	// Test 3: Query option with encoded $ symbol
 	suite.AddTest(
 		"test_encoded_dollar_sign",
-		"Query option with encoded dollar sign",
+		"Query option with percent-encoded dollar sign must be rejected (400)",
 		func(ctx *framework.TestContext) error {
+			// %24top is NOT a system query option — the $ must be a literal '$' character.
+			// OData URL conventions §5.2: system query options start with "$"; a
+			// percent-encoded "%24" is a plain custom parameter name that is not a
+			// recognised system query option, so the server MUST return 400.
 			resp, err := ctx.GET("/Products?%24top=5")
 			if err != nil {
 				return err
 			}
 
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			if resp.StatusCode != 400 {
+				return fmt.Errorf("expected status 400, got %d", resp.StatusCode)
 			}
 
 			return nil

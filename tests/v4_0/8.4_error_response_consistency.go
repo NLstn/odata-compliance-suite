@@ -74,13 +74,7 @@ func ErrorResponseConsistency() *framework.TestSuite {
 				return nil // Not a validation error, skip
 			}
 
-			// Verify error object is present
-			body := string(resp.Body)
-			if !strings.Contains(body, `"error"`) {
-				return framework.NewError("400 response should contain error object")
-			}
-
-			return nil
+			return ctx.AssertODataError(resp, 400, "")
 		},
 	)
 

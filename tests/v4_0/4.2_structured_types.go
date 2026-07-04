@@ -226,6 +226,30 @@ func StructuredTypes() *framework.TestSuite {
 				return nil // No inheritance, skip
 			}
 
+			// Inheritance declared: verify isof() on the derived SpecialProduct type
+			// returns exactly the 3 seeded SpecialProduct instances.
+			ns, err := schemaNamespace(ctx)
+			if err != nil {
+				return err
+			}
+			if ns == "" {
+				return ctx.Skip("could not determine the schema namespace")
+			}
+
+			filterResp, err := ctx.GET("/Products?$filter=isof('" + ns + ".SpecialProduct')")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(filterResp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(filterResp)
+			if err != nil {
+				return fmt.Errorf("isof filter returned invalid collection: %w", err)
+			}
+			if len(items) != 3 {
+				return fmt.Errorf("isof('%s.SpecialProduct') expected exactly 3 results (Laptop, Premium Laptop Pro, Gaming Mouse Ultra), got %d", ns, len(items))
+			}
 			return nil
 		},
 	)
@@ -301,12 +325,13 @@ func StructuredTypes() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			// OpenType is optional
-			if strings.Contains(body, `OpenType="true"`) {
-				return nil
+			if !strings.Contains(body, `OpenType="true"`) {
+				return ctx.Skip("no open types declared in metadata — dynamic property round-trip not applicable")
 			}
 
-			return nil // Optional feature
+			// Open types are declared: skip as no seed data contains dynamic properties
+			// that could be round-tripped deterministically.
+			return ctx.Skip("open types declared but no seed data with dynamic properties to round-trip")
 		},
 	)
 
@@ -320,12 +345,37 @@ func StructuredTypes() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			// Abstract types are optional
-			if strings.Contains(body, `Abstract="true"`) {
-				return nil
+			if !strings.Contains(body, `Abstract="true"`) {
+				return nil // No abstract types, optional feature — nothing to verify
 			}
 
-			return nil // Optional feature
+			// An abstract entity type exists; extract its name and verify that a
+			// direct POST to that entity set is rejected with 400 or 405.
+			abstractNamePattern := regexp.MustCompile(`<EntityType[^>]+Abstract="true"[^>]+Name="([^"]+)"`)
+			if abstractNamePattern == nil {
+				return nil
+			}
+			matches := abstractNamePattern.FindStringSubmatch(body)
+			if len(matches) < 2 {
+				// Try reversed attribute order: Name before Abstract
+				abstractNamePattern2 := regexp.MustCompile(`<EntityType[^>]+Name="([^"]+)"[^>]+Abstract="true"`)
+				matches = abstractNamePattern2.FindStringSubmatch(body)
+			}
+			if len(matches) < 2 {
+				return nil // Cannot determine abstract type name; skip behavioral check
+			}
+			abstractTypeName := matches[1]
+
+			// Attempt to POST to an entity set whose type matches the abstract type name
+			entitySetName := abstractTypeName + "s" // naive pluralisation
+			postResp, err := ctx.POST("/"+entitySetName, map[string]interface{}{}, framework.Header{Key: "Content-Type", Value: "application/json"})
+			if err != nil {
+				return nil // entity set does not exist or network error; skip
+			}
+			if postResp.StatusCode != 400 && postResp.StatusCode != 404 && postResp.StatusCode != 405 {
+				return fmt.Errorf("POST to abstract type entity set /%s expected 400/404/405, got %d", entitySetName, postResp.StatusCode)
+			}
+			return nil
 		},
 	)
 

@@ -57,6 +57,52 @@ func UpdateEntity() *framework.TestSuite {
 		},
 	)
 
+	// Test 1b: PATCH round-trip — Name field
+	suite.AddTest(
+		"test_patch_update_name_roundtrip",
+		"PATCH Name field and verify via follow-up GET",
+		func(ctx *framework.TestContext) error {
+			productID, err := createTestProduct(ctx, "PatchRoundTripName", 55.00)
+			if err != nil {
+				return err
+			}
+			productPath := fmt.Sprintf("/Products(%s)", productID)
+
+			resp, err := ctx.PATCH(productPath, map[string]interface{}{
+				"Name": "PatchRoundTripName-Updated",
+			})
+			if err != nil {
+				return err
+			}
+
+			if resp.StatusCode != 204 && resp.StatusCode != 200 {
+				return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
+			}
+
+			// Round-trip: verify the patched field was persisted
+			verifyResp, err := ctx.GET(productPath)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(verifyResp, 200); err != nil {
+				return err
+			}
+
+			var result map[string]interface{}
+			if err := json.Unmarshal(verifyResp.Body, &result); err != nil {
+				return fmt.Errorf("failed to parse verification JSON: %w", err)
+			}
+
+			name, ok := result["Name"].(string)
+			if !ok || name != "PatchRoundTripName-Updated" {
+				return fmt.Errorf("expected Name %q after PATCH, got %v", "PatchRoundTripName-Updated", result["Name"])
+			}
+
+			ctx.Log("PATCH round-trip verified: Name updated correctly")
+			return nil
+		},
+	)
+
 	// Test 2: PATCH with invalid property returns error
 	suite.AddTest(
 		"test_patch_invalid_property",
