@@ -68,7 +68,7 @@ func URLEncoding() *framework.TestSuite {
 			}
 
 			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200 (%24top decodes to $top after HTTP percent-decoding), got %d", resp.StatusCode)
+				return fmt.Errorf("expected status 200 (%%24top decodes to $top after HTTP percent-decoding), got %d", resp.StatusCode)
 			}
 
 			return nil
