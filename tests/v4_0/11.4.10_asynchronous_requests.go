@@ -1,6 +1,8 @@
 package v4_0
 
 import (
+	"net/http"
+
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
 
@@ -34,7 +36,7 @@ func AsynchronousRequests() *framework.TestSuite {
 	// Test 2: Async POST request
 	suite.AddTest(
 		"test_async_post",
-		"Async POST request is handled",
+		"Async POST request returns 201 (sync) or 202 (async) with Location header",
 		func(ctx *framework.TestContext) error {
 			payload, err := buildProductPayload(ctx, "Async Test Product", 99.99)
 			if err != nil {
@@ -48,12 +50,19 @@ func AsynchronousRequests() *framework.TestSuite {
 				return err
 			}
 
-			// Should return 201 (sync) or 202 (async)
-			if err := ctx.AssertStatusCode(resp, 201); err != nil {
-				return ctx.AssertStatusCode(resp, 202)
+			// 201 = processed synchronously; 202 = asynchronous, per §13.1.
+			if resp.StatusCode == 201 {
+				return nil
 			}
-
-			return nil
+			if resp.StatusCode == 202 {
+				// Per OData Protocol §13.1: async 202 MUST include Location header.
+				location := resp.Headers.Get("Location")
+				if location == "" {
+					return framework.NewError("202 async response MUST include Location header (OData Protocol §13.1)")
+				}
+				return nil
+			}
+			return framework.NewError("expected 201 (sync) or 202 (async), got " + http.StatusText(resp.StatusCode))
 		},
 	)
 

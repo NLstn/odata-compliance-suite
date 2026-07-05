@@ -254,5 +254,165 @@ func QueryApply() *framework.TestSuite {
 		},
 	)
 
+	// Test 6: 'Property with count as Alias' aggregation keyword (OData Data Aggregation §6.2.1)
+	// This is distinct from '$count as Alias': it counts non-null values of a specific property.
+	suite.AddTest(
+		"test_apply_property_with_count",
+		"aggregate(Property with count as Alias) counts non-null property values (§6.2.1)",
+		func(ctx *framework.TestContext) error {
+			// Baseline: how many products have a non-null CategoryID
+			baselineResp, err := ctx.GET("/Products?$count=true")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(baselineResp, 200); err != nil {
+				return err
+			}
+			var baseline map[string]interface{}
+			if err := json.Unmarshal(baselineResp.Body, &baseline); err != nil {
+				return fmt.Errorf("failed to parse baseline: %w", err)
+			}
+			expectedCount, ok := baseline["@odata.count"].(float64)
+			if !ok {
+				return framework.NewError("baseline missing @odata.count")
+			}
+
+			resp, err := ctx.GET("/Products?$apply=" + url.QueryEscape("aggregate(CategoryID with count as CatCount)"))
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode == 501 || resp.StatusCode == 400 {
+				// Server may not support 'with count' keyword — optional extension.
+				return ctx.Skip("'Property with count' aggregation not supported (400/501)")
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := parseApplyItems(resp)
+			if err != nil {
+				return err
+			}
+			rawCount, ok := firstPresent(items[0], "CatCount", "catcount")
+			if !ok {
+				return framework.NewError("aggregate(CategoryID with count as CatCount) response missing CatCount field")
+			}
+			catCount, ok := rawCount.(float64)
+			if !ok {
+				return fmt.Errorf("CatCount is not numeric: %T", rawCount)
+			}
+			// All products have a non-null CategoryID, so CatCount must equal total product count.
+			if int(catCount) != int(expectedCount) {
+				return fmt.Errorf("CatCount=%d expected %d (all CategoryIDs are non-null)", int(catCount), int(expectedCount))
+			}
+			return nil
+		},
+	)
+
+	// Test 7: compute() transformation inside $apply (OData Data Aggregation §6.2.3)
+	// 'compute()' adds a computed property to each entity in the working set;
+	// a subsequent aggregate() can then reference that property.
+	suite.AddTest(
+		"test_apply_compute_transformation",
+		"compute() transformation inside $apply produces computable property (§6.2.3)",
+		func(ctx *framework.TestContext) error {
+			// compute(Price mul 2 as DoublePrice) should add DoublePrice to each entity.
+			resp, err := ctx.GET("/Products?$apply=" + url.QueryEscape("compute(Price mul 2 as DoublePrice)") + "&$top=3")
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode == 501 || resp.StatusCode == 400 {
+				return ctx.Skip("compute() transformation inside $apply not supported (400/501)")
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := parseApplyItems(resp)
+			if err != nil {
+				return err
+			}
+			for i, item := range items {
+				rawDouble, ok := firstPresent(item, "DoublePrice", "doubleprice")
+				if !ok {
+					return fmt.Errorf("item %d missing DoublePrice from compute() transformation", i)
+				}
+				doubled, ok := rawDouble.(float64)
+				if !ok {
+					return fmt.Errorf("item %d DoublePrice is not numeric: %T", i, rawDouble)
+				}
+				rawPrice, ok := firstPresent(item, "Price", "price")
+				if !ok {
+					continue // Price may not be in response if $select applied implicitly
+				}
+				price, ok := rawPrice.(float64)
+				if !ok {
+					continue
+				}
+				if doubled < price*1.9 || doubled > price*2.1 {
+					return fmt.Errorf("item %d DoublePrice=%.2f expected ~%.2f (Price*2)", i, doubled, price*2)
+				}
+			}
+			return nil
+		},
+	)
+
+	// Test 8: filter() transformation inside $apply must produce the same result set as
+	// the equivalent $filter system query option (OData Data Aggregation §6.3.2).
+	// The two syntaxes are semantically equivalent when no other transformation follows.
+	suite.AddTest(
+		"test_apply_filter_oracle",
+		"$apply=filter(expr) produces the same result set as $filter=expr (§6.3.2)",
+		func(ctx *framework.TestContext) error {
+			const pred = "Price gt 50"
+			// No $top — the seed has only ~7 products so all fit in one page.
+			filterResp, err := ctx.GET("/Products?$filter=" + url.QueryEscape(pred))
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(filterResp, 200); err != nil {
+				return err
+			}
+			filterItems, err := ctx.ParseEntityCollection(filterResp)
+			if err != nil {
+				return err
+			}
+
+			applyResp, err := ctx.GET("/Products?$apply=" + url.QueryEscape("filter("+pred+")"))
+			if err != nil {
+				return err
+			}
+			if applyResp.StatusCode == 400 || applyResp.StatusCode == 501 {
+				return ctx.Skip("$apply filter() transformation not supported (400/501)")
+			}
+			if err := ctx.AssertStatusCode(applyResp, 200); err != nil {
+				return err
+			}
+			applyItems, err := parseApplyItems(applyResp)
+			if err != nil {
+				return err
+			}
+
+			filterSet := map[string]bool{}
+			for _, p := range filterItems {
+				filterSet[productID(p)] = true
+			}
+			applySet := map[string]bool{}
+			for _, p := range applyItems {
+				applySet[productID(p)] = true
+			}
+
+			for id := range filterSet {
+				if !applySet[id] {
+					return fmt.Errorf("$filter returned product %s but $apply=filter() did not (filter=%d, apply=%d)", id, len(filterSet), len(applySet))
+				}
+			}
+			for id := range applySet {
+				if !filterSet[id] {
+					return fmt.Errorf("$apply=filter() returned product %s but $filter did not (filter=%d, apply=%d)", id, len(filterSet), len(applySet))
+				}
+			}
+			return nil
+		},
+	)
+
 	return suite
 }

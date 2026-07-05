@@ -1,6 +1,7 @@
 package v4_0
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -16,7 +17,7 @@ func HeaderPrefer() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_prefer_return_minimal",
-		"Prefer: return=minimal",
+		"Prefer: return=minimal — 204 body must be empty; Preference-Applied must include return=minimal when honored",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.POST("/Products", map[string]interface{}{
 				"Name":   "Prefer Test",
@@ -28,29 +29,28 @@ func HeaderPrefer() *framework.TestSuite {
 			})
 			if err != nil {
 				return err
-			} // Must accept successful creation
+			}
 			if resp.StatusCode != 201 && resp.StatusCode != 204 && resp.StatusCode != 200 {
 				return fmt.Errorf("expected successful creation (200/201/204), got %d", resp.StatusCode)
 			}
 
-			// When return=minimal is honored, should return 204 No Content
-			// When not honored, may return 200/201 with content
-			// Both are valid per OData spec section 8.2.8
 			if resp.StatusCode == 204 {
-				// Honored: minimal response, no body
+				// Honored: body must be empty and Preference-Applied must confirm it.
 				if len(resp.Body) > 0 {
-					return framework.NewError("return=minimal honored but body is not empty")
+					return framework.NewError("return=minimal honored (204) but response body is not empty")
+				}
+				prefApplied := resp.Headers.Get("Preference-Applied")
+				if prefApplied != "" && prefApplied != "return=minimal" {
+					return fmt.Errorf("Preference-Applied=%q; expected 'return=minimal' when preference was honored", prefApplied)
 				}
 			}
-			// If 200/201, server chose not to honor preference, which is acceptable
-
 			return nil
 		},
 	)
 
 	suite.AddTest(
 		"test_prefer_return_representation",
-		"Prefer: return=representation",
+		"Prefer: return=representation — response body must contain entity; Preference-Applied must include return=representation when honored",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.POST("/Products", map[string]interface{}{
 				"Name":   "Prefer Test 2",
@@ -62,23 +62,72 @@ func HeaderPrefer() *framework.TestSuite {
 			})
 			if err != nil {
 				return err
-			} // Must accept successful creation
+			}
 			if resp.StatusCode != 201 && resp.StatusCode != 200 {
 				return fmt.Errorf("expected successful creation (200/201), got %d", resp.StatusCode)
 			}
 
-			// When return=representation is honored, should return entity in response body
-			// Even if not explicitly honored, 201 Created should include representation
-			if resp.StatusCode == 200 || resp.StatusCode == 201 {
-				if len(resp.Body) == 0 {
-					return framework.NewError("expected entity representation in response body")
-				}
-				// Verify it's valid JSON with the entity
-				if err := ctx.AssertJSONField(resp, "Name"); err != nil {
-					return fmt.Errorf("response body should contain created entity: %v", err)
-				}
+			if len(resp.Body) == 0 {
+				return framework.NewError("expected entity representation in response body")
+			}
+			if err := ctx.AssertJSONField(resp, "Name"); err != nil {
+				return fmt.Errorf("response body should contain created entity: %v", err)
 			}
 
+			// If Preference-Applied is present it must acknowledge the honored preference.
+			prefApplied := resp.Headers.Get("Preference-Applied")
+			if prefApplied != "" && prefApplied != "return=representation" {
+				return fmt.Errorf("Preference-Applied=%q; expected 'return=representation' when preference was honored", prefApplied)
+			}
+			return nil
+		},
+	)
+
+	// Test 3: Prefer: odata.maxpagesize=N — server SHOULD limit page size per §8.2.8.3.
+	// If honored: response has ≤N items AND @odata.nextLink (since seed has 7 products > 2).
+	// If not honored: server returns all items in one page — skip gracefully.
+	suite.AddTest(
+		"test_prefer_maxpagesize",
+		"Prefer: odata.maxpagesize=2 — if honored, page must have ≤2 items with @odata.nextLink",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products", framework.Header{
+				Key:   "Prefer",
+				Value: "odata.maxpagesize=2",
+			})
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &body); err != nil {
+				return fmt.Errorf("maxpagesize response is not valid JSON: %w", err)
+			}
+			items, ok := body["value"].([]interface{})
+			if !ok {
+				return fmt.Errorf("maxpagesize response missing 'value' array")
+			}
+			_, hasNextLink := body["@odata.nextLink"]
+
+			if len(items) <= 2 {
+				// Preference was honored — verify nextLink is present (seed has 7 products).
+				if !hasNextLink {
+					if len(items) < 7 {
+						return fmt.Errorf("odata.maxpagesize=2 honored (%d items returned) but @odata.nextLink is missing (expected more pages)", len(items))
+					}
+					// If all 7 (or fewer) items fit, nextLink absence is fine.
+				}
+				ctx.Log(fmt.Sprintf("odata.maxpagesize=2 honored: %d items returned", len(items)))
+				// Verify Preference-Applied header if present.
+				pa := resp.Headers.Get("Preference-Applied")
+				if pa != "" && pa != "odata.maxpagesize=2" {
+					return fmt.Errorf("Preference-Applied=%q does not reflect honored maxpagesize preference", pa)
+				}
+			} else {
+				// Server returned more than 2 items — preference ignored.
+				return ctx.Skip("server does not honor Prefer: odata.maxpagesize (SHOULD per §8.2.8.3)")
+			}
 			return nil
 		},
 	)

@@ -139,10 +139,11 @@ func CreateEntity() *framework.TestSuite {
 		},
 	)
 
-	// Test 4: POST with Prefer: return=minimal should return 201 Created with empty body
+	// Test 4: POST with Prefer: return=minimal — server SHOULD return 204 + OData-EntityId,
+	// or MAY return 201 with the full representation if preference is not honoured.
 	suite.AddTest(
 		"test_prefer_minimal",
-		"POST with Prefer: return=minimal returns 201",
+		"POST with Prefer: return=minimal returns 201 or 204",
 		func(ctx *framework.TestContext) error {
 			payload, err := buildProductPayload(ctx, "ComplianceTestProduct4", 399.99)
 			if err != nil {
@@ -154,9 +155,18 @@ func CreateEntity() *framework.TestSuite {
 				return err
 			}
 
-			// Per OData v4.01 spec, POST with return=minimal should return 201 Created with empty body
-			if resp.StatusCode != 201 {
-				return fmt.Errorf("expected status 201, got %d", resp.StatusCode)
+			// Per §8.2.8.7: when return=minimal is honoured, respond with 204 No Content
+			// and OData-EntityId.  When not honoured, respond with 201 + full entity.
+			if resp.StatusCode != 201 && resp.StatusCode != 204 {
+				return fmt.Errorf("expected 201 or 204 for return=minimal, got %d", resp.StatusCode)
+			}
+
+			if resp.StatusCode == 204 {
+				// MUST carry OData-EntityId so the client can locate the created entity.
+				entityId := resp.Headers.Get("OData-EntityId")
+				if entityId == "" {
+					return framework.NewError("204 response with return=minimal MUST include OData-EntityId (§8.2.8.7)")
+				}
 			}
 
 			location := resp.Headers.Get("Location")
@@ -180,10 +190,10 @@ func CreateEntity() *framework.TestSuite {
 		},
 	)
 
-	// Test 5: OData-EntityId header should be present in 201 response
+	// Test 5: OData-EntityId header MUST be present when server honours return=minimal.
 	suite.AddTest(
 		"test_odata_entityid_header",
-		"OData-EntityId header in 201 response",
+		"OData-EntityId header present when return=minimal is honoured",
 		func(ctx *framework.TestContext) error {
 			payload, err := buildProductPayload(ctx, "ComplianceTestProduct5", 499.99)
 			if err != nil {
@@ -195,17 +205,23 @@ func CreateEntity() *framework.TestSuite {
 				return err
 			}
 
-			// Per OData v4.01 spec, POST with return=minimal should return 201 Created with empty body
-			if resp.StatusCode != 201 {
-				return fmt.Errorf("expected status 201, got %d", resp.StatusCode)
+			// 204 = preference honoured: OData-EntityId is MANDATORY.
+			// 201 = preference not honoured: OData-EntityId is optional (prefer to check).
+			if resp.StatusCode == 204 {
+				entityID := resp.Headers.Get("OData-EntityId")
+				if entityID == "" {
+					return framework.NewError("204 with return=minimal MUST include OData-EntityId header (§8.2.8.7)")
+				}
+				return nil
 			}
-
-			entityID := resp.Headers.Get("OData-EntityId")
-			if entityID == "" {
-				return fmt.Errorf("OData-EntityId header missing")
+			if resp.StatusCode == 201 {
+				entityID := resp.Headers.Get("OData-EntityId")
+				if entityID == "" {
+					return fmt.Errorf("OData-EntityId header missing from 201 response")
+				}
+				return nil
 			}
-
-			return nil
+			return fmt.Errorf("expected 201 or 204 for return=minimal, got %d", resp.StatusCode)
 		},
 	)
 

@@ -145,14 +145,48 @@ func QueryApplyRollup() *framework.TestSuite {
 	// Test 4: filter before rollup
 	suite.AddTest(
 		"test_filter_before_rollup",
-		"filter before rollup applies to input rows before aggregation",
+		"filter before rollup: grand-total matches oracle sum; row count = categories+1",
 		func(ctx *framework.TestContext) error {
-			query := url.QueryEscape("filter(Price gt 0)/groupby((rollup(null,CategoryID)),aggregate(Price with sum as Total))")
-			resp, err := ctx.GET("/Products?$apply=" + query)
+			// Oracle: products with Price > 0 (all products, since Price is always positive)
+			stats, err := computePriceStats(ctx, func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price > 0
+			})
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, 200)
+
+			// Compute expected distinct CategoryID count over filtered products.
+			all, err := fetchAllProducts(ctx)
+			if err != nil {
+				return err
+			}
+			catSet := map[string]struct{}{}
+			for _, p := range all {
+				if price, ok := productFloat(p, "Price"); ok && price > 0 {
+					catSet[productString(p, "CategoryID")] = struct{}{}
+				}
+			}
+			expectedRows := len(catSet) + 1 // per-category rows + grand total
+
+			rows, err := applyRows(ctx, "filter(Price gt 0)/groupby((rollup(null,CategoryID)),aggregate(Price with sum as Total))")
+			if err != nil {
+				return err
+			}
+			if len(rows) != expectedRows {
+				return fmt.Errorf("filter+rollup: expected %d rows (%d categories+1 grand total), got %d",
+					expectedRows, len(catSet), len(rows))
+			}
+			// Verify the grand-total row matches the oracle sum.
+			for _, row := range rows {
+				cat, hasCat := row["CategoryID"]
+				if hasCat && cat == nil {
+					if err := assertNumField(row, "Total", stats.sum); err != nil {
+						return fmt.Errorf("grand total row: %w", err)
+					}
+				}
+			}
+			return nil
 		},
 	)
 

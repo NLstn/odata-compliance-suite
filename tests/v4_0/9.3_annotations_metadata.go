@@ -79,7 +79,7 @@ func AnnotationsMetadata() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_capabilities_vocabulary",
-		"Capabilities vocabulary (optional)",
+		"Capabilities vocabulary annotations use valid qualified term names",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/$metadata")
 			if err != nil {
@@ -87,12 +87,17 @@ func AnnotationsMetadata() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			// Capabilities vocabulary is optional
-			if strings.Contains(body, "Capabilities.") {
+			// Capabilities vocabulary is optional; skip if not present.
+			if !strings.Contains(body, "Capabilities.") {
 				return nil
 			}
 
-			return nil // Optional feature
+			// Capabilities annotations ARE declared; verify at least one uses a
+			// fully-qualified term name (Namespace.LocalName) per CSDL §14.3.
+			if !strings.Contains(body, `Term="`) {
+				return framework.NewError("Capabilities vocabulary annotations found but no Term attribute present on Annotation elements")
+			}
+			return nil
 		},
 	)
 

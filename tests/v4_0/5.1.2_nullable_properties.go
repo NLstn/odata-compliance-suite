@@ -363,5 +363,46 @@ func NullableProperties() *framework.TestSuite {
 		},
 	)
 
+	// Test: Omitting a Nullable=false property from POST must return 400 (CSDL §6.2.2)
+	// Distinct from sending null: the property is absent from the request body entirely.
+	suite.AddTest(
+		"test_nonnullable_omit_required_field",
+		"Omitting a Nullable=false property from POST returns 400 (CSDL §6.2.2)",
+		func(ctx *framework.TestContext) error {
+			pid, err := firstEntityID(ctx, "Products")
+			if err != nil {
+				return err
+			}
+			// POST a ProductDescription without the required Description field.
+			resp, err := ctx.POST("/ProductDescriptions", map[string]interface{}{
+				"ProductID":   pid,
+				"LanguageKey": "T6",
+				// "Description" omitted intentionally — Nullable=false
+				"LongText": "Some text",
+			})
+			if err != nil {
+				return err
+			}
+			// A Nullable=false property with no declared DefaultValue must cause 400.
+			// If the server assigns a default (e.g. empty string) and returns 201,
+			// skip rather than fail — the spec allows default-value behaviour.
+			if resp.StatusCode == 201 {
+				// Check that Description got a non-null value (server applied a default).
+				var created map[string]interface{}
+				if err := json.Unmarshal(resp.Body, &created); err != nil {
+					return fmt.Errorf("POST succeeded but response is not JSON: %w", err)
+				}
+				if v, ok := created["Description"]; ok && v != nil {
+					return ctx.Skip("server applied a default value for omitted Nullable=false Description — 201 is acceptable")
+				}
+				return framework.NewError("POST succeeded (201) but Description is null or absent — Nullable=false violation (CSDL §6.2.2)")
+			}
+			if resp.StatusCode != 400 {
+				return fmt.Errorf("expected 400 for omitted Nullable=false property, got %d", resp.StatusCode)
+			}
+			return nil
+		},
+	)
+
 	return suite
 }

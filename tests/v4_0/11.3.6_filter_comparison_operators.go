@@ -32,13 +32,25 @@ func FilterComparisonOperators() *framework.TestSuite {
 	// Test 1: eq (equals) operator
 	suite.AddTest(
 		"test_eq_operator",
-		"eq (equals) operator works",
+		"eq (equals) operator: every returned product has Status=1 (InStock)",
 		func(ctx *framework.TestContext) error {
 			items, err := fetchComparisonItems(ctx, "Status eq 1")
 			if err != nil {
 				return err
 			}
-			return ctx.AssertMinCollectionSize(items, 1)
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
+			}
+			return ctx.AssertAllEntitiesSatisfy(items, "Status eq 1", func(entity map[string]interface{}) (bool, string) {
+				status, err := enumStatusValue(entity)
+				if err != nil {
+					return false, err.Error()
+				}
+				if status != 1 {
+					return false, fmt.Sprintf("found Status value %d, expected exactly 1 (InStock)", status)
+				}
+				return true, ""
+			})
 		},
 	)
 
@@ -156,26 +168,44 @@ func FilterComparisonOperators() *framework.TestSuite {
 	// Test 7: eq with string
 	suite.AddTest(
 		"test_eq_string",
-		"eq operator works with strings",
+		"eq operator with strings: every returned product has Name='Laptop'",
 		func(ctx *framework.TestContext) error {
 			items, err := fetchComparisonItems(ctx, "Name eq 'Laptop'")
 			if err != nil {
 				return err
 			}
-			return ctx.AssertMinCollectionSize(items, 1)
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
+			}
+			return ctx.AssertAllEntitiesSatisfy(items, "Name eq 'Laptop'", func(entity map[string]interface{}) (bool, string) {
+				name, _ := entity["Name"].(string)
+				if name != "Laptop" {
+					return false, fmt.Sprintf("found Name=%q, expected 'Laptop'", name)
+				}
+				return true, ""
+			})
 		},
 	)
 
 	// Test 8: ne with string
 	suite.AddTest(
 		"test_ne_string",
-		"ne operator works with strings",
+		"ne operator works with strings: no returned product has Name='Laptop'",
 		func(ctx *framework.TestContext) error {
 			items, err := fetchComparisonItems(ctx, "Name ne 'Laptop'")
 			if err != nil {
 				return err
 			}
-			return ctx.AssertMinCollectionSize(items, 1)
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
+			}
+			return ctx.AssertAllEntitiesSatisfy(items, "Name ne 'Laptop'", func(entity map[string]interface{}) (bool, string) {
+				name, _ := entity["Name"].(string)
+				if name == "Laptop" {
+					return false, "found Name='Laptop' but filter was Name ne 'Laptop'"
+				}
+				return true, ""
+			})
 		},
 	)
 

@@ -1,6 +1,7 @@
 package v4_0
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 
@@ -41,14 +42,37 @@ func AdvancedApply() *framework.TestSuite {
 	// Test 2: groupby with multiple properties
 	suite.AddTest(
 		"test_groupby_multiple_properties",
-		"groupby with multiple grouping properties",
+		"groupby with multiple grouping properties returns distinct (CategoryID,Status) pairs",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("groupby((CategoryID,Status))")
-			resp, err := ctx.GET("/Products?$apply=" + filter)
+			all, err := fetchAllProducts(ctx)
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, 200)
+			// Compute distinct (CategoryID,Status) pairs in Go.
+			type pair struct{ cat, status string }
+			distinctPairs := map[pair]struct{}{}
+			for _, p := range all {
+				cat := productString(p, "CategoryID")
+				status := fmt.Sprintf("%v", p["Status"])
+				distinctPairs[pair{cat, status}] = struct{}{}
+			}
+			rows, err := applyRows(ctx, "groupby((CategoryID,Status))")
+			if err != nil {
+				return err
+			}
+			if len(rows) != len(distinctPairs) {
+				return fmt.Errorf("groupby((CategoryID,Status)): expected %d distinct pairs, got %d rows",
+					len(distinctPairs), len(rows))
+			}
+			for i, row := range rows {
+				if _, ok := row["CategoryID"]; !ok {
+					return fmt.Errorf("row %d missing CategoryID", i)
+				}
+				if _, ok := row["Status"]; !ok {
+					return fmt.Errorf("row %d missing Status", i)
+				}
+			}
+			return nil
 		},
 	)
 
@@ -121,28 +145,87 @@ func AdvancedApply() *framework.TestSuite {
 	// Test 5: Filter before groupby
 	suite.AddTest(
 		"test_filter_before_groupby",
-		"Filter before groupby transformation",
+		"filter() before groupby/aggregate: per-group count matches oracle",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("filter(Price gt 50)/groupby((CategoryID),aggregate($count as Count))")
-			resp, err := ctx.GET("/Products?$apply=" + filter)
+			all, err := fetchAllProducts(ctx)
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, 200)
+			// Oracle: count products with Price > 50 per CategoryID.
+			expectedCounts := map[string]int{}
+			for _, p := range all {
+				price, ok := productFloat(p, "Price")
+				if !ok || price <= 50 {
+					continue
+				}
+				cat := productString(p, "CategoryID")
+				expectedCounts[cat]++
+			}
+			rows, err := applyRows(ctx, "filter(Price gt 50)/groupby((CategoryID),aggregate($count as Count))")
+			if err != nil {
+				return err
+			}
+			if len(rows) != len(expectedCounts) {
+				return fmt.Errorf("filter+groupby: expected %d category groups, got %d", len(expectedCounts), len(rows))
+			}
+			for i, row := range rows {
+				cat := productString(row, "CategoryID")
+				want, ok := expectedCounts[cat]
+				if !ok {
+					return fmt.Errorf("row %d: unexpected CategoryID %q in result", i, cat)
+				}
+				got, err := numField(row, "Count")
+				if err != nil {
+					return fmt.Errorf("row %d: %w", i, err)
+				}
+				if !aggApproxEqual(got, float64(want)) {
+					return fmt.Errorf("row %d CategoryID=%q: Count=%v, expected %d", i, cat, got, want)
+				}
+			}
+			return nil
 		},
 	)
 
 	// Test 6: Multiple transformations in sequence
 	suite.AddTest(
 		"test_transformation_pipeline",
-		"Transformation pipeline",
+		"filter/groupby/filter pipeline: only categories with >1 product (Price>10) returned",
 		func(ctx *framework.TestContext) error {
-			filter := url.QueryEscape("filter(Price gt 10)/groupby((CategoryID))/filter($count gt 1)")
-			resp, err := ctx.GET("/Products?$apply=" + filter)
+			all, err := fetchAllProducts(ctx)
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, 200)
+			// Oracle: count products with Price > 10 per CategoryID;
+			// keep only categories with count > 1.
+			groupCounts := map[string]int{}
+			for _, p := range all {
+				price, ok := productFloat(p, "Price")
+				if !ok || price <= 10 {
+					continue
+				}
+				groupCounts[productString(p, "CategoryID")]++
+			}
+			expectedCats := map[string]struct{}{}
+			for cat, cnt := range groupCounts {
+				if cnt > 1 {
+					expectedCats[cat] = struct{}{}
+				}
+			}
+			rows, err := applyRows(ctx, "filter(Price gt 10)/groupby((CategoryID))/filter($count gt 1)")
+			if err != nil {
+				return err
+			}
+			if len(rows) != len(expectedCats) {
+				return fmt.Errorf("pipeline: expected %d categories with >1 product, got %d rows",
+					len(expectedCats), len(rows))
+			}
+			for i, row := range rows {
+				cat := productString(row, "CategoryID")
+				if _, ok := expectedCats[cat]; !ok {
+					return fmt.Errorf("row %d: CategoryID=%q unexpected in filtered result", i, cat)
+				}
+			}
+			return nil
 		},
 	)
 
@@ -225,21 +308,40 @@ func AdvancedApply() *framework.TestSuite {
 	// Test 10: $apply with $top
 	suite.AddTest(
 		"test_apply_with_top",
-		"$apply works with $top",
+		"$apply with $top: returns at most 2 rows",
 		func(ctx *framework.TestContext) error {
+			rows, err := applyRows(ctx, "groupby((CategoryID),aggregate($count as Count))")
+			if err != nil {
+				return err
+			}
+			totalGroups := len(rows)
+
 			applyFilter := url.QueryEscape("groupby((CategoryID),aggregate($count as Count))")
 			resp, err := ctx.GET("/Products?$apply=" + applyFilter + "&$top=2")
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, 200)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			topRows, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if len(topRows) > 2 {
+				return fmt.Errorf("$top=2 returned %d rows (more than 2)", len(topRows))
+			}
+			if totalGroups >= 2 && len(topRows) < 2 {
+				return fmt.Errorf("$top=2 with %d total groups should return 2 rows, got %d", totalGroups, len(topRows))
+			}
+			return nil
 		},
 	)
 
 	// Test 11: $apply with $orderby
 	suite.AddTest(
 		"test_apply_with_orderby",
-		"$apply works with $orderby",
+		"$apply with $orderby: groups are sorted descending by Total",
 		func(ctx *framework.TestContext) error {
 			applyFilter := url.QueryEscape("groupby((CategoryID),aggregate(Price with sum as Total))")
 			orderby := url.QueryEscape("Total desc")
@@ -247,7 +349,27 @@ func AdvancedApply() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, 200)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			rows, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			for i := 1; i < len(rows); i++ {
+				prev, err := numField(rows[i-1], "Total")
+				if err != nil {
+					return fmt.Errorf("row %d Total: %w", i-1, err)
+				}
+				curr, err := numField(rows[i], "Total")
+				if err != nil {
+					return fmt.Errorf("row %d Total: %w", i, err)
+				}
+				if prev < curr {
+					return fmt.Errorf("$orderby Total desc violated at index %d: %v < %v", i, prev, curr)
+				}
+			}
+			return nil
 		},
 	)
 
@@ -279,6 +401,135 @@ func AdvancedApply() *framework.TestSuite {
 				return err
 			}
 			return ctx.AssertStatusCode(resp, 400)
+		},
+	)
+
+	// Test: aggregate over a navigation property path (OData Data Aggregation §6.2.1)
+	// 'Descriptions/aggregate($count as DescCount)' counts related Descriptions per product
+	// in a groupby, or in a top-level apply produces one row per product.
+	suite.AddTest(
+		"test_aggregate_over_navigation_path",
+		"aggregate() over a navigation property path counts related entities (§6.2.1)",
+		func(ctx *framework.TestContext) error {
+			// Baseline: total number of description rows.
+			baselineResp, err := ctx.GET("/ProductDescriptions?$count=true&$top=0")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(baselineResp, 200); err != nil {
+				return err
+			}
+			var baseline map[string]interface{}
+			if err := json.Unmarshal(baselineResp.Body, &baseline); err != nil {
+				return fmt.Errorf("failed to parse /ProductDescriptions count: %w", err)
+			}
+			totalDescs, ok := baseline["@odata.count"].(float64)
+			if !ok {
+				return framework.NewError("baseline /ProductDescriptions missing @odata.count")
+			}
+
+			// aggregate(Descriptions/$count as DescCount) should produce the total
+			// description count across all products in a single aggregate row.
+			resp, err := ctx.GET("/Products?$apply=" + url.QueryEscape("aggregate(Descriptions/$count as DescCount)"))
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode == 400 || resp.StatusCode == 501 {
+				return ctx.Skip("aggregate over navigation path not supported (400/501)")
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			var body struct {
+				Value []map[string]interface{} `json:"value"`
+			}
+			if err := json.Unmarshal(resp.Body, &body); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
+			}
+			if len(body.Value) == 0 {
+				return framework.NewError("aggregate over navigation path returned empty value array")
+			}
+			rawDesc, ok := firstPresent(body.Value[0], "DescCount", "desccount")
+			if !ok {
+				return framework.NewError("aggregate(Descriptions/$count as DescCount) response missing DescCount")
+			}
+			descCount, ok := rawDesc.(float64)
+			if !ok {
+				return fmt.Errorf("DescCount is not numeric: %T", rawDesc)
+			}
+			if int(descCount) != int(totalDescs) {
+				return fmt.Errorf("navigation aggregate DescCount=%d expected %d (total description rows)", int(descCount), int(totalDescs))
+			}
+			return nil
+		},
+	)
+
+	// Test: $apply=groupby()/aggregate() combined with an external $filter system query option.
+	// Per OData Data Aggregation §6.4, system query options such as $filter are applied AFTER
+	// $apply on the transformed result set. This test distinguishes internal pipeline filters
+	// (filter() inside $apply) from the external $filter option — the server must allow $filter
+	// to reference properties introduced by the aggregation (e.g. Total from aggregate()).
+	suite.AddTest(
+		"test_external_filter_on_apply_result",
+		"$filter=Total gt N applied outside $apply filters the aggregated result rows (§6.4)",
+		func(ctx *framework.TestContext) error {
+			sums, _, err := computeCategoryGroups(ctx)
+			if err != nil {
+				return err
+			}
+
+			// Oracle: which categories have a per-category Price sum > 100?
+			expectedGroups := map[string]float64{}
+			for cat, sum := range sums {
+				if sum > 100 {
+					expectedGroups[cat] = sum
+				}
+			}
+
+			// $apply groups+aggregates; external $filter filters the aggregated rows.
+			applyExpr := url.QueryEscape("groupby((CategoryID),aggregate(Price with sum as Total))")
+			filterExpr := url.QueryEscape("Total gt 100")
+			resp, err := ctx.GET("/Products?$apply=" + applyExpr + "&$filter=" + filterExpr)
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode == 400 || resp.StatusCode == 501 {
+				return ctx.Skip("$filter on aggregated property not supported after $apply (400/501)")
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			var body struct {
+				Value []map[string]interface{} `json:"value"`
+			}
+			if err := json.Unmarshal(resp.Body, &body); err != nil {
+				return fmt.Errorf("external $filter response not valid JSON: %w", err)
+			}
+
+			if len(body.Value) != len(expectedGroups) {
+				return fmt.Errorf("$apply+$filter: expected %d groups with Total > 100, got %d",
+					len(expectedGroups), len(body.Value))
+			}
+			for i, row := range body.Value {
+				total, err := numField(row, "Total")
+				if err != nil {
+					return fmt.Errorf("row %d: %w", i, err)
+				}
+				if total <= 100 {
+					return fmt.Errorf("row %d: $filter=Total gt 100 not applied — Total=%v leaked through", i, total)
+				}
+				cat := productString(row, "CategoryID")
+				want, ok := expectedGroups[cat]
+				if !ok {
+					return fmt.Errorf("row %d: CategoryID=%q not in oracle (unexpected group)", i, cat)
+				}
+				if !aggApproxEqual(total, want) {
+					return fmt.Errorf("row %d: CategoryID=%q Total=%v expected %v", i, cat, total, want)
+				}
+			}
+			return nil
 		},
 	)
 

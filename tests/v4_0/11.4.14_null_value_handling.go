@@ -109,31 +109,56 @@ func NullValueHandling() *framework.TestSuite {
 		},
 	)
 
-	// Test 4: Filter for null values using eq null
+	// Test 4: Filter for null values — every returned product must have Description == null.
 	suite.AddTest(
 		"test_filter_eq_null",
-		"Filter for null values using eq null",
+		"Filter for null values: every returned entity has the filtered property as null",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$filter=Description eq null")
 			if err != nil {
 				return err
 			}
-
-			return ctx.AssertStatusCode(resp, 200)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			for i, p := range items {
+				desc, hasKey := p["Description"]
+				// Description must be absent or explicitly null.
+				if hasKey && desc != nil {
+					return fmt.Errorf("Products[%d] has non-null Description=%v but filter was Description eq null", i, desc)
+				}
+			}
+			return nil
 		},
 	)
 
-	// Test 5: Filter for non-null values using ne null
+	// Test 5: Filter for non-null values — every returned product must have Description != null.
 	suite.AddTest(
 		"test_filter_ne_null",
-		"Filter for non-null values using ne null",
+		"Filter for non-null values: every returned entity has the filtered property as non-null",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$filter=Description ne null")
 			if err != nil {
 				return err
 			}
-
-			return ctx.AssertStatusCode(resp, 200)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			for i, p := range items {
+				desc, hasKey := p["Description"]
+				if !hasKey || desc == nil {
+					return fmt.Errorf("Products[%d] has null/absent Description but filter was Description ne null", i)
+				}
+			}
+			return nil
 		},
 	)
 

@@ -1,6 +1,10 @@
 package v4_0
 
-import "github.com/nlstn/odata-compliance-suite/framework"
+import (
+	"net/url"
+
+	"github.com/nlstn/odata-compliance-suite/framework"
+)
 
 // InvalidQueryParameters creates the 8.1.6 Invalid Query Parameters test suite
 func InvalidQueryParameters() *framework.TestSuite {
@@ -121,6 +125,33 @@ func InvalidQueryParameters() *framework.TestSuite {
 			}
 
 			// Should return 400 for invalid property
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
+	// $filter referencing a property that does not exist must return 400 per OData §11.2.5.1.
+	// The service cannot evaluate an expression against an unknown property path.
+	suite.AddTest(
+		"test_filter_nonexistent_property",
+		"$filter on nonexistent property returns 400 Bad Request",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products?$filter=" + url.QueryEscape("NonExistentProperty eq 'X'"))
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
+	// $orderby referencing a nonexistent property must return 400.
+	suite.AddTest(
+		"test_orderby_nonexistent_property",
+		"$orderby on nonexistent property returns 400 Bad Request",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products?$orderby=" + url.QueryEscape("NonExistentProperty asc"))
+			if err != nil {
+				return err
+			}
 			return ctx.AssertODataError(resp, 400, "")
 		},
 	)

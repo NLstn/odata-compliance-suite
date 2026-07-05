@@ -72,7 +72,7 @@ func StreamProperties() *framework.TestSuite {
 	// Test 2: Request media entity $value (binary content)
 	suite.AddTest(
 		"test_media_entity_value",
-		"Request media entity binary content",
+		"Request media entity binary content — Content-Type must not be application/json",
 		func(ctx *framework.TestContext) error {
 			mediaPath, err := getMediaPath(ctx, 0)
 			if err != nil {
@@ -84,6 +84,12 @@ func StreamProperties() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
+				// Per OData Protocol §11.2.3: $value on a media entity returns the
+				// raw binary content; Content-Type must be a non-JSON media type.
+				ct := resp.Headers.Get("Content-Type")
+				if strings.Contains(ct, "application/json") {
+					return fmt.Errorf("media entity $value Content-Type=%q must not be application/json (must be a binary MIME type)", ct)
+				}
 				return nil
 			}
 
@@ -343,7 +349,7 @@ func StreamProperties() *framework.TestSuite {
 	// Test 12: Stream property $value
 	suite.AddTest(
 		"test_stream_property_value",
-		"Stream property $value access",
+		"Stream property $value — Content-Type must not be application/json",
 		func(ctx *framework.TestContext) error {
 			path, err := getProductPath(ctx)
 			if err != nil {
@@ -355,6 +361,12 @@ func StreamProperties() *framework.TestSuite {
 			}
 
 			if resp.StatusCode == 200 {
+				// Per OData Protocol §11.2.3: $value on a stream property returns the
+				// raw binary content; Content-Type must be a non-JSON media type.
+				ct := resp.Headers.Get("Content-Type")
+				if strings.Contains(ct, "application/json") {
+					return fmt.Errorf("stream property $value Content-Type=%q must not be application/json", ct)
+				}
 				return nil
 			}
 

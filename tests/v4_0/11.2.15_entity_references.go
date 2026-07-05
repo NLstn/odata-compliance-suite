@@ -53,7 +53,7 @@ func EntityReferences() *framework.TestSuite {
 	// Test 2: Get reference to collection
 	suite.AddTest(
 		"test_entity_ref_collection",
-		"Get references to entity collection",
+		"Get references to entity collection: each element must include @odata.id",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products/$ref")
 			if err != nil {
@@ -64,16 +64,27 @@ func EntityReferences() *framework.TestSuite {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
-			// Should return collection of references
 			var result map[string]interface{}
 			if err := json.Unmarshal(resp.Body, &result); err != nil {
 				return fmt.Errorf("failed to parse JSON: %w", err)
 			}
 
-			if _, ok := result["value"]; !ok {
+			refs, ok := result["value"].([]interface{})
+			if !ok {
 				return fmt.Errorf("response missing value array")
 			}
 
+			// Per OData v4 §11.4.6.1, each reference element MUST include @odata.id.
+			for i, r := range refs {
+				ref, ok := r.(map[string]interface{})
+				if !ok {
+					return fmt.Errorf("reference element %d is not an object", i)
+				}
+				id, ok := ref["@odata.id"].(string)
+				if !ok || id == "" {
+					return fmt.Errorf("reference element %d missing or empty @odata.id", i)
+				}
+			}
 			return nil
 		},
 	)

@@ -1,7 +1,9 @@
 package v4_0
 
 import (
+	"encoding/json"
 	"fmt"
+	"math"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -66,16 +68,34 @@ func ReturningResults() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertBodyContains(resp, "Representation Return Test")
+			// The response body must be a valid entity with the submitted values.
+			var entity map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &entity); err != nil {
+				return fmt.Errorf("POST return=representation body is not valid JSON: %w", err)
+			}
+			if _, ok := entity["ID"]; !ok {
+				return fmt.Errorf("POST return=representation response missing ID field")
+			}
+			name, _ := entity["Name"].(string)
+			if name != "Representation Return Test" {
+				return fmt.Errorf("POST return=representation: Name=%q, expected %q", name, "Representation Return Test")
+			}
+			price, ok := entity["Price"].(float64)
+			if !ok {
+				return fmt.Errorf("POST return=representation response missing Price field")
+			}
+			if math.Abs(price-149.99) > 0.001 {
+				return fmt.Errorf("POST return=representation: Price=%.2f, expected 149.99", price)
+			}
+			return nil
 		},
 	)
 
 	// Test 3: PATCH with return=representation returns entity
 	suite.AddTest(
 		"test_patch_return_representation",
-		"PATCH with return=representation returns 200 with entity",
+		"PATCH with return=representation returns 200 with updated entity",
 		func(ctx *framework.TestContext) error {
-			// First create an entity
 			createPayload := map[string]interface{}{
 				"Name":   "Patch Test",
 				"Price":  50.00,
@@ -96,12 +116,8 @@ func ReturningResults() *framework.TestSuite {
 				return err
 			}
 
-			id, ok := createData["ID"].(string)
-			if !ok {
-				return framework.NewError("Could not extract entity ID")
-			}
+			id := fmt.Sprintf("%v", createData["ID"])
 
-			// Now PATCH with return=representation
 			updatePayload := map[string]interface{}{
 				"Price": 75.00,
 			}
@@ -117,7 +133,19 @@ func ReturningResults() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertBodyContains(patchResp, `"Price":75`)
+			// Parse the returned entity and verify Price is exactly 75.0.
+			var patchData map[string]interface{}
+			if err := ctx.GetJSON(patchResp, &patchData); err != nil {
+				return fmt.Errorf("PATCH return=representation body not valid JSON: %w", err)
+			}
+			price, ok := patchData["Price"].(float64)
+			if !ok {
+				return framework.NewError("PATCH return=representation response missing Price field")
+			}
+			if math.Abs(price-75.0) > 0.001 {
+				return fmt.Errorf("PATCH return=representation: Price=%v, expected 75.0", price)
+			}
+			return nil
 		},
 	)
 
@@ -147,10 +175,7 @@ func ReturningResults() *framework.TestSuite {
 				return err
 			}
 
-			id, ok := createData["ID"].(string)
-			if !ok {
-				return framework.NewError("Could not extract entity ID")
-			}
+			id := fmt.Sprintf("%v", createData["ID"])
 
 			// Now PATCH with return=minimal
 			updatePayload := map[string]interface{}{

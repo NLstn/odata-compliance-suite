@@ -279,7 +279,7 @@ func AddressingOperations() *framework.TestSuite {
 	// Test 10: Metadata includes operations
 	suite.AddTest(
 		"test_metadata_operations",
-		"Metadata includes operations",
+		"Metadata declares at least one Function or Action element",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/$metadata")
 			if err != nil {
@@ -290,15 +290,18 @@ func AddressingOperations() *framework.TestSuite {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
-			// Metadata should be valid XML
 			bodyStr := string(resp.Body)
 			if len(bodyStr) == 0 {
 				return fmt.Errorf("metadata response is empty")
 			}
 
-			// Basic XML validation
 			if !framework.ContainsAny(bodyStr, "<edmx:Edmx", "<?xml") {
 				return fmt.Errorf("metadata response is not valid XML")
+			}
+
+			// The compliance server declares bound/unbound operations; verify they appear in the CSDL.
+			if !strings.Contains(bodyStr, "<Function") && !strings.Contains(bodyStr, "<Action") {
+				return framework.NewError("metadata declares no Function or Action elements; bound/unbound operations must be declared in CSDL")
 			}
 
 			return nil

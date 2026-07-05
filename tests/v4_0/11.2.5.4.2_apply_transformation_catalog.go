@@ -1216,5 +1216,43 @@ func ApplyTransformationCatalog() *framework.TestSuite {
 		},
 	)
 
+	// nest() transformation: wraps a related collection as a nested property on each row.
+	// Spec: OData Data Aggregation Extension §6.3.1.
+	// Syntax: nest(NavigationPath as alias).  Skips on 400/501 (optional feature).
+	suite.AddTest(
+		"test_apply_nest",
+		"nest() transformation wraps related collection as a nested property per entity (§6.3.1)",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products?$apply=" + url.QueryEscape("nest(Descriptions as D)") + "&$top=10")
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode == 400 || resp.StatusCode == 501 {
+				return ctx.Skip("nest() transformation not supported (400/501)")
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if len(items) == 0 {
+				return ctx.Skip("no products returned — cannot verify nest() output")
+			}
+			// Each row must have a nested property (alias D) that is an array.
+			for i, item := range items {
+				nested, ok := firstPresent(item, "D", "d")
+				if !ok {
+					return fmt.Errorf("row %d: nest(Descriptions as D) result missing alias D", i)
+				}
+				if _, isArray := nested.([]interface{}); !isArray {
+					return fmt.Errorf("row %d: nest() alias D must be an array, got %T", i, nested)
+				}
+			}
+			return nil
+		},
+	)
+
 	return suite
 }

@@ -398,33 +398,25 @@ func NumericBoundaryTests() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_byte_boundary_values",
-		"Byte type range validation (0-255)",
+		"Out-of-range Status value returns 200 (empty) or 400 — not 500",
 		func(ctx *framework.TestContext) error {
-			// Byte should be 0-255
-			// Test with value outside range
+			// Status is a flags enum. A value of 256 is outside the declared member range.
+			// The server must return 200 (empty results) or 400 (invalid value), not 500.
 			resp, err := ctx.GET("/Products?$filter=Status eq 256")
 			if err != nil {
 				return err
 			}
-
-			// Depending on how Status is typed, this might error or succeed
-			if resp.StatusCode == 400 {
-				ctx.Log("Byte overflow correctly rejected")
-			} else if resp.StatusCode == 200 {
-				// Might be stored as larger int type
-				ctx.Log("Value accepted (Status may not be Byte type)")
+			if resp.StatusCode != 200 && resp.StatusCode != 400 {
+				return fmt.Errorf("Status eq 256: expected 200 or 400, got %d (500 would be a server error)", resp.StatusCode)
 			}
 
-			// Test negative value
+			// Same check for a negative enum value.
 			resp2, err := ctx.GET("/Products?$filter=Status eq -1")
 			if err != nil {
 				return err
 			}
-
-			if resp2.StatusCode == 400 {
-				ctx.Log("Negative byte value correctly rejected")
-			} else if resp2.StatusCode == 200 {
-				ctx.Log("Negative value accepted (Status may be signed type)")
+			if resp2.StatusCode != 200 && resp2.StatusCode != 400 {
+				return fmt.Errorf("Status eq -1: expected 200 or 400, got %d (500 would be a server error)", resp2.StatusCode)
 			}
 
 			return nil

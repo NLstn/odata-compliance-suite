@@ -98,9 +98,19 @@ func WildcardSelectExpand() *framework.TestSuite {
 			if !ok {
 				return fmt.Errorf("expected product to be an object")
 			}
-			// Product has a navigation property to Descriptions — it must be expanded.
+			// $expand=* must expand ALL navigation properties; at minimum verify two
+			// distinct nav properties (Descriptions and Category) are present and that
+			// Descriptions is serialised as a JSON array.
 			if _, ok := product["Descriptions"]; !ok {
-				return fmt.Errorf("expected 'Descriptions' to be expanded with $expand=*")
+				return fmt.Errorf("expected 'Descriptions' nav property to be expanded with $expand=*")
+			}
+			descs, ok := product["Descriptions"].([]interface{})
+			if !ok {
+				return fmt.Errorf("expanded 'Descriptions' must be a JSON array, got %T", product["Descriptions"])
+			}
+			_ = descs
+			if _, ok := product["Category"]; !ok {
+				return fmt.Errorf("expected 'Category' nav property to be expanded with $expand=*")
 			}
 			return nil
 		},

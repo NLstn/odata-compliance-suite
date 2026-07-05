@@ -3,6 +3,7 @@ package v4_0
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -250,6 +251,64 @@ func CanonicalURL() *framework.TestSuite {
 			}
 
 			return nil
+		},
+	)
+
+	// Test 5: /$entity?@odata.id=<url> — entity dereference via canonical URL
+	suite.AddTest(
+		"test_entity_dereference_via_odata_id",
+		"/$entity?@odata.id=<url> returns the referenced entity (OData §11.5.4.1)",
+		func(ctx *framework.TestContext) error {
+			// Step 1: fetch a product and extract its @odata.id.
+			resp, err := ctx.GET("/Products?$top=1&$select=ID")
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode != 200 {
+				return fmt.Errorf("GET /Products?$top=1 failed: status %d", resp.StatusCode)
+			}
+
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &body); err != nil {
+				return fmt.Errorf("failed to parse products: %w", err)
+			}
+			value, ok := body["value"].([]interface{})
+			if !ok || len(value) == 0 {
+				return framework.NewError("no products available for entity-dereference test")
+			}
+			product, ok := value[0].(map[string]interface{})
+			if !ok {
+				return framework.NewError("first product is not a JSON object")
+			}
+			odataID, ok := product["@odata.id"].(string)
+			if !ok || odataID == "" {
+				return fmt.Errorf("product missing @odata.id (needed for entity-dereference test)")
+			}
+
+			// Step 2: dereference via /$entity?@odata.id=<url>.
+			// The @odata.id may be absolute or relative; percent-encode it so colons and
+			// slashes in an absolute URL don't corrupt the query string.
+			derefResp, err := ctx.GET("/$entity?@odata.id=" + url.QueryEscape(odataID))
+			if err != nil {
+				return err
+			}
+			switch derefResp.StatusCode {
+			case 200:
+				// Verify the returned entity has an ID field.
+				var entity map[string]interface{}
+				if err := json.Unmarshal(derefResp.Body, &entity); err != nil {
+					return fmt.Errorf("/$entity response is not valid JSON: %w", err)
+				}
+				if _, ok := entity["ID"]; !ok {
+					return framework.NewError("/$entity response missing 'ID' field")
+				}
+				return nil
+			case 404, 501:
+				// Optional feature — server may not support /$entity endpoint.
+				return ctx.Skip("/$entity endpoint not implemented (404/501)")
+			default:
+				return fmt.Errorf("/$entity?@odata.id=... returned unexpected status %d", derefResp.StatusCode)
+			}
 		},
 	)
 
