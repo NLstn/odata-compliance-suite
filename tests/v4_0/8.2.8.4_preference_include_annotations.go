@@ -40,7 +40,7 @@ func PreferenceIncludeAnnotations() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_include_annotations_preference_applied_echoed",
-		"Preference-Applied echoes odata.include-annotations when honored",
+		"If Preference-Applied is returned it must include odata.include-annotations",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$top=3",
 				framework.Header{Key: "Prefer", Value: `odata.include-annotations="*"`})
@@ -52,14 +52,12 @@ func PreferenceIncludeAnnotations() *framework.TestSuite {
 				return framework.NewError(fmt.Sprintf("expected 2xx, got %d", resp.StatusCode))
 			}
 
+			// Per OData Protocol §8.2.8, servers SHOULD (not MUST) include Preference-Applied.
+			// If the header is present, it must acknowledge the honored preference.
 			applied := resp.Headers.Get("Preference-Applied")
-			if applied == "" {
-				return framework.NewError("Preference-Applied header must be set when odata.include-annotations is honored")
-			}
-
-			if !strings.Contains(applied, "odata.include-annotations") {
+			if applied != "" && !strings.Contains(applied, "odata.include-annotations") {
 				return framework.NewError(fmt.Sprintf(
-					"Preference-Applied must contain odata.include-annotations, got %q", applied))
+					"Preference-Applied present but does not include odata.include-annotations, got %q", applied))
 			}
 
 			return nil

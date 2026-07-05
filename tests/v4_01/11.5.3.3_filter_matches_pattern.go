@@ -244,6 +244,101 @@ func MatchesPatternFilter() *framework.TestSuite {
 		},
 	)
 
+	// Test 7a: ERE `+` quantifier — `e+` matches names containing one or more 'e'.
+	// In POSIX BRE, `+` is a literal character; a BRE server would match only names
+	// containing 'e+', which none do, returning 0 results. An ERE server returns all
+	// names containing 'e'.
+	suite.AddTest(
+		"test_matchespattern_ere_plus_quantifier",
+		"matchesPattern treats '+' as ERE one-or-more quantifier, not a literal character",
+		func(ctx *framework.TestContext) error {
+			pattern := `e+`
+			filterExpr := fmt.Sprintf("matchesPattern(Name,'%s')", pattern)
+			encodedFilter := url.QueryEscape(filterExpr)
+			resp, err := ctx.GETWithHeaders(
+				"/Products?$filter="+encodedFilter,
+				map[string]string{"OData-MaxVersion": "4.01"},
+			)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
+			}
+			entities, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if len(entities) == 0 {
+				return framework.NewError(
+					"matchesPattern(Name,'e+') returned 0 results; " +
+						"'+' must be treated as ERE one-or-more quantifier (POSIX ERE), " +
+						"not a literal character (BRE behavior)")
+			}
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				return fmt.Errorf("invalid test pattern %q: %w", pattern, err)
+			}
+			for i, entity := range entities {
+				name, ok := entity["Name"].(string)
+				if !ok {
+					continue
+				}
+				if !re.MatchString(name) {
+					return framework.NewError(fmt.Sprintf("entity %d has Name=%q which does not match ERE pattern %q", i, name, pattern))
+				}
+			}
+			return nil
+		},
+	)
+
+	// Test 7b: ERE `|` alternation — `Laptop|Coffee` matches names containing
+	// 'Laptop' OR 'Coffee'. In POSIX BRE, `|` is a literal; a BRE server would
+	// return 0 results since no product name contains the literal string "Laptop|Coffee".
+	suite.AddTest(
+		"test_matchespattern_ere_alternation",
+		"matchesPattern treats '|' as ERE alternation operator, not a literal character",
+		func(ctx *framework.TestContext) error {
+			pattern := `Laptop|Coffee`
+			filterExpr := fmt.Sprintf("matchesPattern(Name,'%s')", pattern)
+			encodedFilter := url.QueryEscape(filterExpr)
+			resp, err := ctx.GETWithHeaders(
+				"/Products?$filter="+encodedFilter,
+				map[string]string{"OData-MaxVersion": "4.01"},
+			)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
+			}
+			entities, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if len(entities) == 0 {
+				return framework.NewError(
+					"matchesPattern(Name,'Laptop|Coffee') returned 0 results; " +
+						"'|' must be treated as ERE alternation operator (POSIX ERE), " +
+						"not a literal character (BRE behavior)")
+			}
+			re, err := regexp.Compile(pattern)
+			if err != nil {
+				return fmt.Errorf("invalid test pattern %q: %w", pattern, err)
+			}
+			for i, entity := range entities {
+				name, ok := entity["Name"].(string)
+				if !ok {
+					continue
+				}
+				if !re.MatchString(name) {
+					return framework.NewError(fmt.Sprintf("entity %d has Name=%q which does not match ERE pattern %q", i, name, pattern))
+				}
+			}
+			return nil
+		},
+	)
+
 	// Test 7: matchesPattern is rejected when OData-MaxVersion: 4.0 is negotiated (4.01-only feature)
 	suite.AddTest(
 		"test_matchespattern_version_negotiation_4_0_rejected",

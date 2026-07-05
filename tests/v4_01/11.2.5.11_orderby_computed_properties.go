@@ -15,72 +15,72 @@ func OrderByComputedProperties() *framework.TestSuite {
 		"https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part2-url-conventions.html#sec_SystemQueryOptioncompute",
 	)
 
-	// Test 1: Compute a property and order by it
+	// Test 1: Compute a property and order by it — verify ascending sort order.
 	suite.AddTest(
 		"test_orderby_computed",
-		"OrderBy computed property",
+		"OrderBy computed property returns entities in ascending computed-value order",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$compute=Price mul 1.1 as TaxedPrice&$orderby=TaxedPrice")
 			if err != nil {
 				return err
 			}
-
 			if err := requireStatusOK(resp); err != nil {
 				return err
 			}
-
 			entities, err := decodeCollection(resp)
 			if err != nil {
 				return err
 			}
-
-			return ensureComputedProperties(entities, "TaxedPrice")
+			if err := ensureComputedProperties(entities, "TaxedPrice"); err != nil {
+				return err
+			}
+			return assertComputedSortOrder(entities, "TaxedPrice", true)
 		},
 	)
 
-	// Test 2: OrderBy with multiple computed properties
+	// Test 2: Multiple computed properties — verify descending sort on DiscountPrice.
 	suite.AddTest(
 		"test_orderby_multiple_computed",
-		"OrderBy with multiple computed properties",
+		"OrderBy with multiple computed properties sorts by the specified computed field",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$compute=Price mul 0.9 as DiscountPrice,Price mul 1.1 as TaxedPrice&$orderby=DiscountPrice desc")
 			if err != nil {
 				return err
 			}
-
 			if err := requireStatusOK(resp); err != nil {
 				return err
 			}
-
 			entities, err := decodeCollection(resp)
 			if err != nil {
 				return err
 			}
-
-			return ensureComputedProperties(entities, "DiscountPrice", "TaxedPrice")
+			if err := ensureComputedProperties(entities, "DiscountPrice", "TaxedPrice"); err != nil {
+				return err
+			}
+			return assertComputedSortOrder(entities, "DiscountPrice", false)
 		},
 	)
 
-	// Test 3: OrderBy computed property with direction
+	// Test 3: Descending sort on computed property.
 	suite.AddTest(
 		"test_orderby_computed_desc",
-		"OrderBy computed with desc direction",
+		"OrderBy computed with desc direction returns entities in descending order",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$compute=Price mul 2 as DoublePrice&$orderby=DoublePrice desc")
 			if err != nil {
 				return err
 			}
-
 			if err := requireStatusOK(resp); err != nil {
 				return err
 			}
-
 			entities, err := decodeCollection(resp)
 			if err != nil {
 				return err
 			}
-
-			return ensureComputedProperties(entities, "DoublePrice")
+			if err := ensureComputedProperties(entities, "DoublePrice"); err != nil {
+				return err
+			}
+			return assertComputedSortOrder(entities, "DoublePrice", false)
 		},
 	)
 
@@ -130,26 +130,38 @@ func OrderByComputedProperties() *framework.TestSuite {
 		},
 	)
 
-	// Test 6: OrderBy computed with filter
+	// Test 6: OrderBy computed with filter — every entity must satisfy
+	// SalePrice gt 50 AND entities must be in ascending SalePrice order.
 	suite.AddTest(
 		"test_orderby_computed_with_filter",
-		"OrderBy computed with $filter",
+		"OrderBy computed with $filter: results satisfy filter and are sorted",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$compute=Price mul 0.8 as SalePrice&$filter=SalePrice gt 50&$orderby=SalePrice")
 			if err != nil {
 				return err
 			}
-
 			if err := requireStatusOK(resp); err != nil {
 				return err
 			}
-
 			entities, err := decodeCollection(resp)
 			if err != nil {
 				return err
 			}
-
-			return ensureComputedProperties(entities, "SalePrice")
+			if err := ensureComputedProperties(entities, "SalePrice"); err != nil {
+				return err
+			}
+			// Verify filter predicate satisfied.
+			for i, e := range entities {
+				sp, err := entityFloat(e, "SalePrice")
+				if err != nil {
+					return fmt.Errorf("entity %d SalePrice: %w", i, err)
+				}
+				if sp <= 50 {
+					return framework.NewError(
+						fmt.Sprintf("entity %d has SalePrice=%v but filter was SalePrice gt 50", i, sp))
+				}
+			}
+			return assertComputedSortOrder(entities, "SalePrice", true)
 		},
 	)
 

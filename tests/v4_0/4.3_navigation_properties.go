@@ -131,7 +131,7 @@ func NavigationProperties() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_navigation_with_filter",
-		"Navigation property supports $filter",
+		"Navigation property with $filter: every returned product has Price > 50",
 		func(ctx *framework.TestContext) error {
 			catPath, err := firstEntityPath(ctx, "Categories")
 			if err != nil {
@@ -142,7 +142,6 @@ func NavigationProperties() *framework.TestSuite {
 				return err
 			}
 
-			// $filter on navigation is a core OData query option
 			if resp.StatusCode == 404 {
 				return framework.NewError("Navigation property with $filter not found - must be supported")
 			}
@@ -151,6 +150,21 @@ func NavigationProperties() *framework.TestSuite {
 				return err
 			}
 
+			var result struct {
+				Value []map[string]interface{} `json:"value"`
+			}
+			if err := json.Unmarshal(resp.Body, &result); err != nil {
+				return fmt.Errorf("failed to parse response: %w", err)
+			}
+			for i, p := range result.Value {
+				price, ok := p["Price"].(float64)
+				if !ok {
+					return fmt.Errorf("entity %d: Price missing or non-numeric", i)
+				}
+				if price <= 50 {
+					return fmt.Errorf("entity %d: Price=%v violates filter Price gt 50", i, price)
+				}
+			}
 			return nil
 		},
 	)

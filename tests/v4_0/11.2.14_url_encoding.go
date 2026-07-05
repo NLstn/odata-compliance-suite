@@ -236,19 +236,18 @@ func URLEncoding() *framework.TestSuite {
 	// Test 12: Case sensitivity of query options
 	suite.AddTest(
 		"test_query_option_case",
-		"Query option case handling",
+		"$FILTER (uppercase) must be rejected with 400 — system query options are case-sensitive",
 		func(ctx *framework.TestContext) error {
-			// Query options should be case-insensitive (though lowercase is recommended)
+			// OData URL Conventions §2.1: system query options are case-sensitive.
+			// $FILTER is not a valid system query option (only $filter is); the server
+			// must treat it as an unknown custom option and respond with 400.
 			resp, err := ctx.GET("/Products?$FILTER=Status%20eq%201")
 			if err != nil {
 				return err
 			}
-
-			// Some implementations may be case-sensitive
-			if resp.StatusCode != 200 && resp.StatusCode != 400 {
-				return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+			if resp.StatusCode != 400 {
+				return fmt.Errorf("$FILTER (uppercase) must be rejected with 400 per OData §2.1; got %d", resp.StatusCode)
 			}
-
 			return nil
 		},
 	)

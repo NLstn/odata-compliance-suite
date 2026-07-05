@@ -94,19 +94,14 @@ func MetadataLevels() *framework.TestSuite {
 				return fmt.Errorf("metadata=full missing @odata.context")
 			}
 
-			// Check for type annotations (@odata.type or @odata.id)
-			hasTypeAnnotations := false
-			for key := range result {
-				if key == "@odata.type" || key == "@odata.id" {
-					hasTypeAnnotations = true
-					break
-				}
+			// metadata=full must include @odata.id AND @odata.type.
+			// @odata.id is also present under minimal; @odata.type is what distinguishes full metadata.
+			if _, ok := result["@odata.id"]; !ok {
+				return fmt.Errorf("metadata=full single entity missing @odata.id")
 			}
-
-			if !hasTypeAnnotations {
-				return fmt.Errorf("metadata=full missing type annotations (@odata.type or @odata.id)")
+			if _, ok := result["@odata.type"]; !ok {
+				return fmt.Errorf("metadata=full single entity missing @odata.type (required by OData JSON Format §4.2)")
 			}
-
 			return nil
 		},
 	)
@@ -310,7 +305,7 @@ func MetadataLevels() *framework.TestSuite {
 	// Test 6: Collection with metadata=full
 	suite.AddTest(
 		"test_collection_metadata_full",
-		"Collection with metadata=full includes @odata.context",
+		"Collection with metadata=full includes @odata.context and per-item @odata.id",
 		func(ctx *framework.TestContext) error {
 			format := url.QueryEscape("application/json;odata.metadata=full")
 			resp, err := ctx.GET("/Products?$top=2&$format=" + format)
@@ -330,6 +325,17 @@ func MetadataLevels() *framework.TestSuite {
 				return fmt.Errorf("collection metadata=full missing @odata.context")
 			}
 
+			// Per OData JSON Format §4.2, full metadata must include @odata.id on each item.
+			items, _ := result["value"].([]interface{})
+			for i, item := range items {
+				entity, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if _, ok := entity["@odata.id"]; !ok {
+					return fmt.Errorf("collection metadata=full item %d missing @odata.id", i)
+				}
+			}
 			return nil
 		},
 	)

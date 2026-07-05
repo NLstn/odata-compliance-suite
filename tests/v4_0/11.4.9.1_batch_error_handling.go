@@ -140,13 +140,125 @@ Accept: application/json
 				return err
 			}
 
-			// Should have error JSON structure or 404
 			body := string(resp.Body)
-			if strings.Contains(body, `"error"`) || strings.Contains(body, "404") {
-				return nil
+			// Batch response MUST embed a 404 sub-response for the non-existent entity.
+			if !strings.Contains(body, "HTTP/1.1 404") {
+				return framework.NewError("batch sub-response for non-existent entity must include an HTTP/1.1 404 status line")
+			}
+			// Sub-response body MUST be a structured OData error with "error", "code", and "message"
+			// per OData JSON Format §9.
+			if !strings.Contains(body, `"error"`) {
+				return framework.NewError(`batch error sub-response must contain an "error" key per OData JSON Format §9`)
+			}
+			if !strings.Contains(body, `"code"`) || !strings.Contains(body, `"message"`) {
+				return framework.NewError(`batch error object must contain "code" and "message" properties per OData JSON Format §9.3`)
+			}
+			return nil
+		},
+	)
+
+	// Test 4: Changeset atomicity — failed changeset must roll back all prior
+	// operations within the same changeset (OData §11.4.9 requires atomic execution).
+	suite.AddTest(
+		"test_changeset_atomicity_rollback",
+		"Failed changeset rolls back all prior operations within the changeset (§11.4.9)",
+		func(ctx *framework.TestContext) error {
+			ids, err := fetchEntityIDs(ctx, "Products", 1)
+			if err != nil {
+				return err
+			}
+			if len(ids) == 0 {
+				return fmt.Errorf("need at least one product for changeset atomicity test")
+			}
+			productID := ids[0]
+			productPath := fmt.Sprintf("/Products(%s)", productID)
+
+			// Record original Name so we can verify rollback.
+			getResp, err := ctx.GET(productPath)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(getResp, 200); err != nil {
+				return err
+			}
+			var originalEntity map[string]interface{}
+			if err := ctx.GetJSON(getResp, &originalEntity); err != nil {
+				return err
+			}
+			originalName, _ := originalEntity["Name"].(string)
+
+			// Changeset: valid PATCH on real product followed by DELETE on nonexistent
+			// entity (must 404). If the server supports changeset atomicity the PATCH
+			// must be rolled back.
+			changedName := "Atomicity Test Should Be Rolled Back"
+			batchBoundary := "batch_atomicity"
+			changesetBoundary := "changeset_atomicity"
+			batchBody := fmt.Sprintf(`--%[1]s
+Content-Type: multipart/mixed; boundary=%[2]s
+
+--%[2]s
+Content-Type: application/http
+Content-Transfer-Encoding: binary
+
+PATCH %[3]s HTTP/1.1
+Content-Type: application/json
+
+{"Name":%[4]q}
+
+--%[2]s
+Content-Type: application/http
+Content-Transfer-Encoding: binary
+
+DELETE /Products(%[5]s) HTTP/1.1
+
+
+--%[2]s--
+
+--%[1]s--`,
+				batchBoundary, changesetBoundary,
+				productPath, changedName,
+				nonExistingUUID)
+
+			resp, err := ctx.POSTRaw("/$batch", []byte(batchBody),
+				fmt.Sprintf("multipart/mixed; boundary=%s", batchBoundary))
+			if err != nil {
+				return err
+			}
+			// The outer batch envelope always returns 200 even when a changeset fails.
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
 			}
 
-			return framework.NewError("Expected error payload or 404 marker in batch response")
+			// The DELETE on the nonexistent entity must produce a 4xx sub-response.
+			body := string(resp.Body)
+			if !strings.Contains(body, "HTTP/1.1 4") {
+				return framework.NewError(
+					"expected a 4xx sub-response for DELETE on nonexistent entity; " +
+						"changeset did not fail as required")
+			}
+
+			// Verify atomicity: the PATCH on the real product must have been rolled back.
+			verifyResp, err := ctx.GET(productPath)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(verifyResp, 200); err != nil {
+				return err
+			}
+			var currentEntity map[string]interface{}
+			if err := ctx.GetJSON(verifyResp, &currentEntity); err != nil {
+				return err
+			}
+			currentName, _ := currentEntity["Name"].(string)
+			if currentName == changedName {
+				return framework.NewError(
+					fmt.Sprintf("changeset atomicity violated: PATCH was not rolled back after "+
+						"changeset failure; product Name is %q but should still be %q "+
+						"(OData §11.4.9 requires atomic changesets)",
+						currentName, originalName))
+			}
+
+			return nil
 		},
 	)
 

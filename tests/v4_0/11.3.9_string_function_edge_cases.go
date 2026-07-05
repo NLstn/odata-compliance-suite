@@ -161,45 +161,21 @@ func RegisterStringFunctionEdgeCasesTests(suite *framework.TestSuite) {
 }
 
 func testContainsEmptyString(ctx *framework.TestContext) error {
-	filter := url.QueryEscape("contains(Name,'')")
-	resp, err := ctx.GET(fmt.Sprintf("/Products?$filter=%s", filter))
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-	}
-
-	return nil
+	// Empty string is contained in every string — all products must be returned.
+	return assertProductFilter(ctx, "contains(Name,'')",
+		func(_ map[string]interface{}) bool { return true })
 }
 
 func testStartswithEmptyString(ctx *framework.TestContext) error {
-	filter := url.QueryEscape("startswith(Name,'')")
-	resp, err := ctx.GET(fmt.Sprintf("/Products?$filter=%s", filter))
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-	}
-
-	return nil
+	// Every string starts with "" — all products must be returned.
+	return assertProductFilter(ctx, "startswith(Name,'')",
+		func(_ map[string]interface{}) bool { return true })
 }
 
 func testEndswithEmptyString(ctx *framework.TestContext) error {
-	filter := url.QueryEscape("endswith(Name,'')")
-	resp, err := ctx.GET(fmt.Sprintf("/Products?$filter=%s", filter))
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-	}
-
-	return nil
+	// Every string ends with "" — all products must be returned.
+	return assertProductFilter(ctx, "endswith(Name,'')",
+		func(_ map[string]interface{}) bool { return true })
 }
 
 func testLengthPositive(ctx *framework.TestContext) error {
@@ -358,17 +334,12 @@ func testConcatMultiple(ctx *framework.TestContext) error {
 }
 
 func testContainsCaseInsensitive(ctx *framework.TestContext) error {
-	filter := url.QueryEscape("contains(tolower(Name),'laptop')")
-	resp, err := ctx.GET(fmt.Sprintf("/Products?$filter=%s", filter))
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-	}
-
-	return nil
+	// tolower(Name) must match 'laptop' for any product whose Name contains "Laptop".
+	return assertProductFilter(ctx, "contains(tolower(Name),'laptop')",
+		func(p map[string]interface{}) bool {
+			name, _ := p["Name"].(string)
+			return strings.Contains(strings.ToLower(name), "laptop")
+		})
 }
 
 func testNestedStringFunctions(ctx *framework.TestContext) error {
@@ -402,31 +373,22 @@ func testStringFunctionOnNull(ctx *framework.TestContext) error {
 
 func testVeryLongString(ctx *framework.TestContext) error {
 	longString := strings.Repeat("A", 1000)
-	filter := url.QueryEscape(fmt.Sprintf("contains(Name,'%s')", longString))
-	resp, err := ctx.GET(fmt.Sprintf("/Products?$filter=%s", filter))
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-	}
-
-	return nil
+	// No product name is 1000 characters long — result must be empty.
+	return assertProductFilter(ctx, fmt.Sprintf("contains(Name,'%s')", longString),
+		func(p map[string]interface{}) bool {
+			name, _ := p["Name"].(string)
+			return strings.Contains(name, longString)
+		})
 }
 
 func testSpecialRegexChars(ctx *framework.TestContext) error {
-	filter := url.QueryEscape("contains(Name,'.*+?[]')")
-	resp, err := ctx.GET(fmt.Sprintf("/Products?$filter=%s", filter))
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-	}
-
-	return nil
+	// No product name contains the literal string '.*+?[]' — result must be empty,
+	// verifying metacharacters are not misinterpreted as regex operators.
+	return assertProductFilter(ctx, "contains(Name,'.*+?[]')",
+		func(p map[string]interface{}) bool {
+			name, _ := p["Name"].(string)
+			return strings.Contains(name, ".*+?[]")
+		})
 }
 
 func testUnicodeInStringFunctions(ctx *framework.TestContext) error {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -16,49 +17,79 @@ func QueryCompute() *framework.TestSuite {
 		"https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part1-protocol.html#sec_SystemQueryOptioncompute",
 	)
 
-	// Test 1: Simple $compute with arithmetic
+	// Test 1: Simple $compute with arithmetic — verify PriceWithTax == Price * 1.1.
 	suite.AddTest(
 		"test_compute_arithmetic",
-		"Simple $compute with arithmetic (OData v4.01)",
+		"Simple $compute with arithmetic returns correct computed values (OData v4.01)",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$compute=Price mul 1.1 as PriceWithTax")
 			if err != nil {
 				return err
 			}
-
 			if err := requireStatusOK(resp); err != nil {
 				return err
 			}
-
 			entities, err := decodeCollection(resp)
 			if err != nil {
 				return err
 			}
-
-			return ensureComputedProperties(entities, "PriceWithTax")
+			if err := ensureComputedProperties(entities, "PriceWithTax"); err != nil {
+				return err
+			}
+			for i, e := range entities {
+				price, err := entityFloat(e, "Price")
+				if err != nil {
+					return fmt.Errorf("entity %d Price: %w", i, err)
+				}
+				taxed, err := entityFloat(e, "PriceWithTax")
+				if err != nil {
+					return fmt.Errorf("entity %d PriceWithTax: %w", i, err)
+				}
+				expected := price * 1.1
+				if math.Abs(taxed-expected) > 0.01 {
+					return framework.NewError(fmt.Sprintf(
+						"entity %d: PriceWithTax=%.4f but expected Price*1.1=%.4f (Price=%.4f)",
+						i, taxed, expected, price))
+				}
+			}
+			return nil
 		},
 	)
 
-	// Test 2: $compute with string function
+	// Test 2: $compute with string function — verify UpperName == toupper(Name).
 	suite.AddTest(
 		"test_compute_string_function",
-		"$compute with string function",
+		"$compute with string function returns correct computed string values",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$compute=toupper(Name) as UpperName")
 			if err != nil {
 				return err
 			}
-
 			if err := requireStatusOK(resp); err != nil {
 				return err
 			}
-
 			entities, err := decodeCollection(resp)
 			if err != nil {
 				return err
 			}
-
-			return ensureComputedProperties(entities, "UpperName")
+			if err := ensureComputedProperties(entities, "UpperName"); err != nil {
+				return err
+			}
+			for i, e := range entities {
+				name, _ := e["Name"].(string)
+				upperName, _ := e["UpperName"].(string)
+				if name == "" {
+					continue
+				}
+				// Go's strings.ToUpper matches OData toupper semantics for ASCII names.
+				expectedUpper := strings.ToUpper(name)
+				if upperName != expectedUpper {
+					return framework.NewError(fmt.Sprintf(
+						"entity %d: UpperName=%q but expected toupper(Name)=%q (Name=%q)",
+						i, upperName, expectedUpper, name))
+				}
+			}
+			return nil
 		},
 	)
 
@@ -117,49 +148,59 @@ func QueryCompute() *framework.TestSuite {
 		},
 	)
 
-	// Test 4: $compute with $filter
+	// Test 4: $compute with $filter — every entity must have PriceWithTax > 100.
 	suite.AddTest(
 		"test_compute_with_filter",
-		"$compute combined with $filter",
+		"$compute combined with $filter returns only entities satisfying the filter on the computed property",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$compute=Price mul 1.1 as PriceWithTax&$filter=PriceWithTax gt 100")
 			if err != nil {
 				return err
 			}
-
 			if err := requireStatusOK(resp); err != nil {
 				return err
 			}
-
 			entities, err := decodeCollection(resp)
 			if err != nil {
 				return err
 			}
-
-			return ensureComputedProperties(entities, "PriceWithTax")
+			if err := ensureComputedProperties(entities, "PriceWithTax"); err != nil {
+				return err
+			}
+			for i, e := range entities {
+				taxed, err := entityFloat(e, "PriceWithTax")
+				if err != nil {
+					return fmt.Errorf("entity %d PriceWithTax: %w", i, err)
+				}
+				if taxed <= 100 {
+					return framework.NewError(fmt.Sprintf(
+						"entity %d: PriceWithTax=%.4f but filter was PriceWithTax gt 100", i, taxed))
+				}
+			}
+			return nil
 		},
 	)
 
-	// Test 5: $compute with $orderby
+	// Test 5: $compute with $orderby — entities must be sorted ascending by HalfPrice.
 	suite.AddTest(
 		"test_compute_with_orderby",
-		"$compute combined with $orderby",
+		"$compute combined with $orderby returns entities sorted by the computed property",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$compute=Price div 2 as HalfPrice&$orderby=HalfPrice")
 			if err != nil {
 				return err
 			}
-
 			if err := requireStatusOK(resp); err != nil {
 				return err
 			}
-
 			entities, err := decodeCollection(resp)
 			if err != nil {
 				return err
 			}
-
-			return ensureComputedProperties(entities, "HalfPrice")
+			if err := ensureComputedProperties(entities, "HalfPrice"); err != nil {
+				return err
+			}
+			return assertComputedSortOrder(entities, "HalfPrice", true)
 		},
 	)
 

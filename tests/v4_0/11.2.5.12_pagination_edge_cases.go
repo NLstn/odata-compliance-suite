@@ -244,17 +244,59 @@ func PaginationEdgeCases() *framework.TestSuite {
 	// Test 9: Combining $top and $skip
 	suite.AddTest(
 		"test_top_and_skip_combined",
-		"Combining $top and $skip",
+		"$top=2&$skip=2 returns the correct slice of the sorted collection",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=3&$skip=2")
+			// Get full sorted set with $orderby to have a deterministic ordering.
+			allResp, err := ctx.GET("/Products?$orderby=ID asc&$select=ID")
 			if err != nil {
 				return err
 			}
-
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			if err := ctx.AssertStatusCode(allResp, 200); err != nil {
+				return err
+			}
+			var allBody map[string]interface{}
+			if err := json.Unmarshal(allResp.Body, &allBody); err != nil {
+				return fmt.Errorf("full list response not valid JSON: %w", err)
+			}
+			allItems, ok := allBody["value"].([]interface{})
+			if !ok || len(allItems) < 4 {
+				return ctx.Skip(fmt.Sprintf("need at least 4 products to test skip+top (got %d)", len(allItems)))
 			}
 
+			// Get page with $top=2&$skip=2 under the same ordering.
+			resp, err := ctx.GET("/Products?$orderby=ID asc&$select=ID&$top=2&$skip=2")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			var pageBody map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &pageBody); err != nil {
+				return fmt.Errorf("page response not valid JSON: %w", err)
+			}
+			pageItems, ok := pageBody["value"].([]interface{})
+			if !ok {
+				return fmt.Errorf("page response missing 'value' array")
+			}
+			if len(pageItems) != 2 {
+				return fmt.Errorf("$top=2&$skip=2 returned %d items (expected 2)", len(pageItems))
+			}
+
+			// The two items must be exactly items[2] and items[3] from the full set.
+			for i, pi := range pageItems {
+				pageItem, ok := pi.(map[string]interface{})
+				if !ok {
+					return fmt.Errorf("page item %d is not an object", i)
+				}
+				fullItem, ok := allItems[2+i].(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if fmt.Sprintf("%v", pageItem["ID"]) != fmt.Sprintf("%v", fullItem["ID"]) {
+					return fmt.Errorf("page item %d ID=%v expected %v ($skip=2 gave wrong entity)", i, pageItem["ID"], fullItem["ID"])
+				}
+			}
 			return nil
 		},
 	)
@@ -277,20 +319,44 @@ func PaginationEdgeCases() *framework.TestSuite {
 		},
 	)
 
-	// Test 11: $top and $skip with $orderby
+	// Test 11: $top and $skip with $orderby — the returned page must be
+	// correctly ordered and must represent the skipped offset within the sorted set.
 	suite.AddTest(
 		"test_pagination_with_orderby",
-		"Pagination with $orderby",
+		"$top=3&$skip=1 with $orderby returns items 2-4 in sorted order",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$orderby=Price desc&$top=3&$skip=1")
+			resp, err := ctx.GET("/Products?$orderby=Price desc&$select=ID,Price&$top=3&$skip=1")
 			if err != nil {
 				return err
 			}
-
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &body); err != nil {
+				return fmt.Errorf("response not valid JSON: %w", err)
+			}
+			items, ok := body["value"].([]interface{})
+			if !ok {
+				return fmt.Errorf("response missing 'value' array")
+			}
+			if len(items) == 0 {
+				return ctx.Skip("no items returned for $orderby=Price desc&$top=3&$skip=1")
 			}
 
+			// The returned items must be in descending Price order.
+			for i := 1; i < len(items); i++ {
+				prev, ok1 := items[i-1].(map[string]interface{})
+				curr, ok2 := items[i].(map[string]interface{})
+				if !ok1 || !ok2 {
+					continue
+				}
+				prevPrice, p1 := prev["Price"].(float64)
+				currPrice, p2 := curr["Price"].(float64)
+				if p1 && p2 && prevPrice < currPrice {
+					return fmt.Errorf("$orderby=Price desc violated at index %d: prev=%.2f < curr=%.2f", i, prevPrice, currPrice)
+				}
+			}
 			return nil
 		},
 	)

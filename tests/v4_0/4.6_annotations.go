@@ -1,6 +1,7 @@
 package v4_0
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -84,7 +85,24 @@ func MetadataAnnotations() *framework.TestSuite {
 				return nil // No annotation terms, skip
 			}
 
-			// Terms should contain '.' for qualified names
+			// Per CSDL §14.3: every Term attribute MUST be a qualified name (Namespace.LocalName).
+			idx := 0
+			for {
+				pos := strings.Index(body[idx:], `Term="`)
+				if pos == -1 {
+					break
+				}
+				pos += idx + len(`Term="`)
+				end := strings.Index(body[pos:], `"`)
+				if end == -1 {
+					break
+				}
+				term := body[pos : pos+end]
+				if !strings.Contains(term, ".") {
+					return fmt.Errorf("annotation Term=%q is not a qualified name (must be Namespace.LocalName)", term)
+				}
+				idx = pos + end + 1
+			}
 			return nil
 		},
 	)
@@ -99,12 +117,34 @@ func MetadataAnnotations() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			// Qualifiers are optional, so just check if present they're valid
-			if strings.Contains(body, `Qualifier=`) {
-				return nil
+			if !strings.Contains(body, `Qualifier="`) {
+				return nil // Qualifiers are optional
 			}
 
-			return nil // Qualifiers are optional
+			// Per CSDL §14.3: Qualifier must be a SimpleIdentifier — starts with letter or '_',
+			// contains only letters, digits, or '_', and is non-empty.
+			idx := 0
+			for {
+				pos := strings.Index(body[idx:], `Qualifier="`)
+				if pos == -1 {
+					break
+				}
+				pos += idx + len(`Qualifier="`)
+				end := strings.Index(body[pos:], `"`)
+				if end == -1 {
+					break
+				}
+				q := body[pos : pos+end]
+				if q == "" {
+					return framework.NewError("empty Qualifier value is not a valid SimpleIdentifier")
+				}
+				first := q[0]
+				if !((first >= 'A' && first <= 'Z') || (first >= 'a' && first <= 'z') || first == '_') {
+					return fmt.Errorf("Qualifier=%q must start with a letter or underscore (SimpleIdentifier)", q)
+				}
+				idx = pos + end + 1
+			}
+			return nil
 		},
 	)
 

@@ -1,6 +1,7 @@
 package v4_0
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -128,5 +129,105 @@ func RegisterLambdaOperatorsTests(suite *framework.TestSuite) {
 						return productString(d, "CustomName") == "Promo"
 					})
 				})
+		})
+
+	// any() without a predicate: bare non-emptiness test (§11.2.9).
+	// A product satisfies Descriptions/any() iff it has at least one Description.
+	suite.AddTest(
+		"Lambda any without predicate",
+		"any() without predicate returns entities with a non-empty related collection",
+		func(ctx *framework.TestContext) error {
+			return assertProductLambdaFilter(ctx, "Descriptions/any()",
+				func(p map[string]interface{}) bool {
+					return len(productDescriptions(p)) > 0
+				})
+		})
+
+	// all() vacuous-truth: products with no descriptions satisfy all() universally
+	// (§11.2.9). An impossible predicate ('LanguageKey eq ''ZZ'') is used so only
+	// products with empty Descriptions collections can satisfy it.
+	suite.AddTest(
+		"Lambda all vacuous truth for empty collections",
+		"all() with an impossible predicate returns only products whose Descriptions collection is empty (vacuous truth §11.2.9)",
+		func(ctx *framework.TestContext) error {
+			return assertProductLambdaFilter(ctx, "Descriptions/all(d: d/LanguageKey eq 'ZZ')",
+				func(p map[string]interface{}) bool {
+					return len(productDescriptions(p)) == 0
+				})
+		})
+
+	// Multi-hop nested lambda: products that have a related product which itself has
+	// an EN description (RelatedProducts/any(r: r/Descriptions/any(d: …))).
+	// Tests that the OData URL parser and filter engine handle two levels of lambda
+	// scope correctly. Skips gracefully on 400/501 (unsupported).
+	suite.AddTest(
+		"Lambda nested two-level any",
+		"Nested any()/any() across two navigation hops returns products with an EN-described related product (§11.2.9)",
+		func(ctx *framework.TestContext) error {
+			// Fetch full collection with two-level expand to power the oracle.
+			expandResp, err := ctx.GET("/Products?$expand=RelatedProducts($expand=Descriptions)&$top=1000")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(expandResp, 200); err != nil {
+				return err
+			}
+			all, err := ctx.ParseEntityCollection(expandResp)
+			if err != nil {
+				return err
+			}
+
+			// Run the nested-lambda filter; skip if the server rejects it.
+			const filter = "RelatedProducts/any(r: r/Descriptions/any(d: d/LanguageKey eq 'EN'))"
+			filterResp, err := ctx.GET("/Products?$filter=" + filter)
+			if err != nil {
+				return err
+			}
+			if filterResp.StatusCode == 400 || filterResp.StatusCode == 501 {
+				return ctx.Skip("nested two-level lambda not supported (400/501)")
+			}
+			if err := ctx.AssertStatusCode(filterResp, 200); err != nil {
+				return err
+			}
+			got, err := ctx.ParseEntityCollection(filterResp)
+			if err != nil {
+				return err
+			}
+
+			// Oracle: product matches iff any related product has an EN description.
+			expected := map[string]bool{}
+			for _, p := range all {
+				related, _ := p["RelatedProducts"].([]interface{})
+				for _, r := range related {
+					rp, ok := r.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					if hasDescription(rp, func(d map[string]interface{}) bool {
+						return strings.EqualFold(productString(d, "LanguageKey"), "EN")
+					}) {
+						expected[productID(p)] = true
+						break
+					}
+				}
+			}
+
+			gotSet := map[string]bool{}
+			for _, p := range got {
+				gotSet[productID(p)] = true
+			}
+			for id := range expected {
+				if !gotSet[id] {
+					return fmt.Errorf("nested-lambda filter %q: product %s satisfies predicate but was not returned (got %d, expected %d)",
+						filter, id, len(gotSet), len(expected))
+				}
+			}
+			for id := range gotSet {
+				if !expected[id] {
+					return fmt.Errorf("nested-lambda filter %q: product %s was returned but does not satisfy predicate (got %d, expected %d)",
+						filter, id, len(gotSet), len(expected))
+				}
+			}
+			return nil
 		})
 }

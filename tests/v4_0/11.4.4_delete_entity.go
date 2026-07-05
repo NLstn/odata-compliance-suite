@@ -76,6 +76,54 @@ func DeleteEntity() *framework.TestSuite {
 		},
 	)
 
+	// Test 2b: Second DELETE on deleted entity returns 404
+	suite.AddTest(
+		"test_delete_idempotency",
+		"Second DELETE on already-deleted entity returns 404",
+		func(ctx *framework.TestContext) error {
+			payload, err := buildProductPayload(ctx, "Delete Idempotency", 15.00)
+			if err != nil {
+				return err
+			}
+			createResp, err := ctx.POST("/Products", payload)
+			if err != nil {
+				return err
+			}
+			if createResp.StatusCode != 201 {
+				return fmt.Errorf("could not create test entity (status: %d)", createResp.StatusCode)
+			}
+
+			var createResult map[string]interface{}
+			if err := json.Unmarshal(createResp.Body, &createResult); err != nil {
+				return fmt.Errorf("failed to parse created entity: %w", err)
+			}
+			deleteID, err := parseEntityID(createResult["ID"])
+			if err != nil {
+				return err
+			}
+			entityPath := fmt.Sprintf("/Products(%s)", deleteID)
+
+			// First DELETE — must succeed.
+			resp1, err := ctx.DELETE(entityPath)
+			if err != nil {
+				return err
+			}
+			if resp1.StatusCode != 204 {
+				return fmt.Errorf("first DELETE expected 204, got %d", resp1.StatusCode)
+			}
+
+			// Second DELETE — entity is gone; must return 404.
+			resp2, err := ctx.DELETE(entityPath)
+			if err != nil {
+				return err
+			}
+			if resp2.StatusCode != 404 {
+				return fmt.Errorf("second DELETE expected 404 (entity already deleted), got %d", resp2.StatusCode)
+			}
+			return nil
+		},
+	)
+
 	// Test 3: Verify entity is actually deleted
 	suite.AddTest(
 		"test_verify_deleted",

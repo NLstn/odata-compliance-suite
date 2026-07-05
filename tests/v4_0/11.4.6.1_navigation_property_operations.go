@@ -1,7 +1,9 @@
 package v4_0
 
 import (
+	"fmt"
 	"net/url"
+	"sort"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -64,10 +66,11 @@ func NavigationPropertyOperations() *framework.TestSuite {
 		},
 	)
 
-	// Test 3: Navigation property with $filter
+	// Test 3: Navigation property with $filter — all returned descriptions must
+	// have LanguageKey eq 'EN'.
 	suite.AddTest(
 		"test_nav_property_filter",
-		"Navigation property with $filter",
+		"Navigation property $filter returns only items matching the predicate",
 		func(ctx *framework.TestContext) error {
 			prodPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
@@ -78,19 +81,31 @@ func NavigationPropertyOperations() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-
 			if resp.StatusCode == 404 {
 				return framework.NewError("Navigation property access returning 404, likely routing issue")
 			}
-
-			return ctx.AssertStatusCode(resp, 200)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			for i, d := range items {
+				lk, _ := d["LanguageKey"].(string)
+				if lk != "EN" {
+					return fmt.Errorf("Descriptions[%d].LanguageKey=%q but filter was LanguageKey eq 'EN'", i, lk)
+				}
+			}
+			return nil
 		},
 	)
 
-	// Test 4: Navigation property with $select
+	// Test 4: Navigation property with $select — returned items must contain only
+	// the requested fields (LanguageKey and Description).
 	suite.AddTest(
 		"test_nav_property_select",
-		"Navigation property with $select",
+		"Navigation property $select restricts fields to requested set",
 		func(ctx *framework.TestContext) error {
 			prodPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
@@ -100,19 +115,32 @@ func NavigationPropertyOperations() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-
 			if resp.StatusCode == 404 {
 				return framework.NewError("Navigation property access returning 404, likely routing issue")
 			}
-
-			return ctx.AssertStatusCode(resp, 200)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			// ProductID is a key property of Descriptions and is always returned per spec.
+			allowed := []string{"ProductID", "LanguageKey", "Description", "@odata.etag", "@odata.id", "@odata.type"}
+			for i, item := range items {
+				if err := ctx.AssertEntityOnlyAllowedFields(item, allowed...); err != nil {
+					return fmt.Errorf("Descriptions[%d]: %w", i, err)
+				}
+			}
+			return nil
 		},
 	)
 
-	// Test 5: Navigation property with $orderby
+	// Test 5: Navigation property with $orderby — items must be sorted ascending
+	// by LanguageKey.
 	suite.AddTest(
 		"test_nav_property_orderby",
-		"Navigation property with $orderby",
+		"Navigation property $orderby sorts results by the specified field",
 		func(ctx *framework.TestContext) error {
 			prodPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
@@ -122,19 +150,37 @@ func NavigationPropertyOperations() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-
 			if resp.StatusCode == 404 {
 				return framework.NewError("Navigation property access returning 404, likely routing issue")
 			}
-
-			return ctx.AssertStatusCode(resp, 200)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			keys := make([]string, 0, len(items))
+			for _, d := range items {
+				lk, _ := d["LanguageKey"].(string)
+				keys = append(keys, lk)
+			}
+			sorted := append([]string(nil), keys...)
+			sort.Strings(sorted)
+			for i := range keys {
+				if keys[i] != sorted[i] {
+					return fmt.Errorf("Descriptions not sorted by LanguageKey asc: position %d got %q, expected %q; full order: %v",
+						i, keys[i], sorted[i], keys)
+				}
+			}
+			return nil
 		},
 	)
 
-	// Test 6: Navigation property with $top
+	// Test 6: Navigation property with $top — at most 2 items must be returned.
 	suite.AddTest(
 		"test_nav_property_top",
-		"Navigation property with $top",
+		"Navigation property $top=2 returns at most 2 items",
 		func(ctx *framework.TestContext) error {
 			prodPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
@@ -144,12 +190,20 @@ func NavigationPropertyOperations() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-
 			if resp.StatusCode == 404 {
 				return framework.NewError("Navigation property access returning 404, likely routing issue")
 			}
-
-			return ctx.AssertStatusCode(resp, 200)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if len(items) > 2 {
+				return fmt.Errorf("$top=2 must return at most 2 items; got %d", len(items))
+			}
+			return nil
 		},
 	)
 
@@ -193,26 +247,46 @@ func NavigationPropertyOperations() *framework.TestSuite {
 		},
 	)
 
-	// Test 9: Navigation property with combined query options
+	// Test 9: Navigation property with combined query options — verify filter,
+	// select, and orderby all apply correctly at once.
 	suite.AddTest(
 		"test_nav_property_combined_options",
-		"Navigation property with combined options",
+		"Navigation property with $filter, $select, $orderby applies all constraints simultaneously",
 		func(ctx *framework.TestContext) error {
 			prodPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
 				return err
 			}
 			filter := url.QueryEscape("LanguageKey eq 'EN'")
-			resp, err := ctx.GET(prodPath + "/Descriptions?$filter=" + filter + "&$select=Description&$orderby=LanguageKey")
+			resp, err := ctx.GET(prodPath + "/Descriptions?$filter=" + filter + "&$select=LanguageKey,Description&$orderby=LanguageKey")
 			if err != nil {
 				return err
 			}
-
 			if resp.StatusCode == 404 {
 				return framework.NewError("Navigation property access returning 404, likely routing issue")
 			}
-
-			return ctx.AssertStatusCode(resp, 200)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			// All returned items must satisfy the filter.
+			for i, d := range items {
+				lk, _ := d["LanguageKey"].(string)
+				if lk != "EN" {
+					return fmt.Errorf("Descriptions[%d].LanguageKey=%q violates $filter=LanguageKey eq 'EN'", i, lk)
+				}
+			}
+			// $select=LanguageKey,Description — ProductID is always returned as key.
+			allowed := []string{"ProductID", "LanguageKey", "Description", "@odata.etag", "@odata.id", "@odata.type"}
+			for i, d := range items {
+				if err := ctx.AssertEntityOnlyAllowedFields(d, allowed...); err != nil {
+					return fmt.Errorf("Descriptions[%d]: %w", i, err)
+				}
+			}
+			return nil
 		},
 	)
 

@@ -3,6 +3,7 @@ package v4_0
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -114,10 +115,14 @@ func ModifyRelationships() *framework.TestSuite {
 				return fmt.Errorf("failed to parse verification response: %w", err)
 			}
 
-			if _, ok := result["@odata.id"]; !ok {
-				return fmt.Errorf("verification response missing @odata.id")
+			odataIDStr, ok := result["@odata.id"].(string)
+			if !ok || odataIDStr == "" {
+				return fmt.Errorf("verification response missing or empty @odata.id")
 			}
-
+			// The ref must point to the category we set.
+			if !strings.Contains(odataIDStr, categoryID) {
+				return fmt.Errorf("updated $ref @odata.id=%q does not reference category %q", odataIDStr, categoryID)
+			}
 			return nil
 		},
 	)
@@ -175,10 +180,22 @@ func ModifyRelationships() *framework.TestSuite {
 				return fmt.Errorf("failed to parse verification response: %w", err)
 			}
 
-			if _, ok := result["value"]; !ok {
-				return fmt.Errorf("verification response missing value array")
+			refs, ok := result["value"].([]interface{})
+			if !ok {
+				return fmt.Errorf("verification response missing or non-array value field")
 			}
-
+			// Verify the second product actually appears in the reference collection.
+			found := false
+			for _, r := range refs {
+				ref, _ := r.(map[string]interface{})
+				if id, _ := ref["@odata.id"].(string); strings.Contains(id, productIDs[1]) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("after POST $ref, product %q not found in RelatedProducts/$ref collection", productIDs[1])
+			}
 			return nil
 		},
 	)

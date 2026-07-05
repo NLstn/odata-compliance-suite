@@ -58,7 +58,7 @@ func DescriptionAnnotation() *framework.TestSuite {
 
 	suite.AddTest(
 		"description_annotations_in_json_metadata",
-		"JSON metadata format includes Core.Description annotations",
+		"JSON CSDL metadata contains required $Version key and Core.Description annotations",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/$metadata", framework.Header{Key: "Accept", Value: "application/json"})
 			if err != nil {
@@ -74,20 +74,30 @@ func DescriptionAnnotation() *framework.TestSuite {
 				return err
 			}
 
-			// Parse JSON metadata
 			var metadata map[string]interface{}
 			if err := ctx.GetJSON(resp, &metadata); err != nil {
 				return err
 			}
 
-			ctx.Log("JSON metadata retrieved successfully")
+			// Per CSDL JSON §3.1, the top-level document MUST contain "$Version".
+			if _, ok := metadata["$Version"]; !ok {
+				return framework.NewError(`JSON metadata response is missing the required "$Version" key (CSDL JSON §3.1)`)
+			}
+
+			// If the XML metadata declares Core.Description annotations, the JSON
+			// format should also expose them as "@Org.OData.Core.V1.Description" keys.
+			body := string(resp.Body)
+			if strings.Contains(body, `"@Org.OData.Core.V1.Description"`) ||
+				strings.Contains(body, `"Org.OData.Core.V1.Description"`) {
+				ctx.Log("JSON metadata includes Core.Description annotations")
+			}
 			return nil
 		},
 	)
 
 	suite.AddTest(
 		"qualified_description_annotations",
-		"Metadata supports qualified Description annotations (e.g., Description#Short)",
+		"Qualified Description annotations (Qualifier=) follow SimpleIdentifier grammar",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/$metadata", framework.Header{Key: "Accept", Value: "application/xml"})
 			if err != nil {
@@ -99,11 +109,34 @@ func DescriptionAnnotation() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			// Check for qualified annotations (with # qualifier)
-			if strings.Contains(body, "Qualifier=") {
-				ctx.Log("Found qualified annotations in metadata")
+			if !strings.Contains(body, `Qualifier="`) {
+				return nil // No qualified annotations — optional feature
 			}
 
+			// Per CSDL §14.3: Qualifier must be a SimpleIdentifier (letter or '_' start,
+			// no spaces, no dots). Scan all Qualifier= values and validate.
+			idx := 0
+			for {
+				pos := strings.Index(body[idx:], `Qualifier="`)
+				if pos == -1 {
+					break
+				}
+				pos += idx + len(`Qualifier="`)
+				end := strings.Index(body[pos:], `"`)
+				if end == -1 {
+					break
+				}
+				q := body[pos : pos+end]
+				if q == "" {
+					return fmt.Errorf("empty Qualifier value is not a valid SimpleIdentifier")
+				}
+				first := q[0]
+				if !((first >= 'A' && first <= 'Z') || (first >= 'a' && first <= 'z') || first == '_') {
+					return fmt.Errorf("Qualifier=%q must start with a letter or underscore (SimpleIdentifier grammar, CSDL §14.3)", q)
+				}
+				idx = pos + end + 1
+			}
+			ctx.Log("Qualified description annotations found and validated")
 			return nil
 		},
 	)

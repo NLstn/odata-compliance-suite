@@ -15,28 +15,46 @@ func HEADRequests() *framework.TestSuite {
 	)
 	invalidProductPath := nonExistingEntityPath("Products")
 
-	// Test 1: HEAD request on entity collection
+	// Test 1: HEAD request on entity collection — Content-Type must match GET
 	suite.AddTest(
 		"test_head_collection",
-		"HEAD request on entity collection",
+		"HEAD on collection: status 200, no body, Content-Type matches GET",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.HEAD("/Products")
+			headResp, err := ctx.HEAD("/Products")
 			if err != nil {
 				return err
 			}
-
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			if headResp.StatusCode != 200 {
+				return fmt.Errorf("HEAD expected status 200, got %d", headResp.StatusCode)
+			}
+			if len(headResp.Body) > 0 {
+				return fmt.Errorf("HEAD response must have no body, got %d bytes", len(headResp.Body))
 			}
 
+			getResp, err := ctx.GET("/Products?$top=1")
+			if err != nil {
+				return err
+			}
+			if getResp.StatusCode != 200 {
+				return fmt.Errorf("GET /Products expected 200, got %d", getResp.StatusCode)
+			}
+
+			headCT := headResp.Headers.Get("Content-Type")
+			getCT := getResp.Headers.Get("Content-Type")
+			if headCT == "" {
+				return fmt.Errorf("HEAD /Products missing Content-Type header")
+			}
+			if headCT != getCT {
+				return fmt.Errorf("Content-Type mismatch: HEAD=%q GET=%q", headCT, getCT)
+			}
 			return nil
 		},
 	)
 
-	// Test 2: HEAD request on single entity
+	// Test 2: HEAD request on single entity — Content-Type must match GET
 	suite.AddTest(
 		"test_head_entity",
-		"HEAD request on single entity",
+		"HEAD on entity: status 200, no body, Content-Type matches GET",
 		func(ctx *framework.TestContext) error {
 			productPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
@@ -45,15 +63,34 @@ func HEADRequests() *framework.TestSuite {
 				}
 				return err
 			}
-			resp, err := ctx.HEAD(productPath)
+
+			headResp, err := ctx.HEAD(productPath)
 			if err != nil {
 				return err
 			}
-
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			if headResp.StatusCode != 200 {
+				return fmt.Errorf("HEAD expected status 200, got %d", headResp.StatusCode)
+			}
+			if len(headResp.Body) > 0 {
+				return fmt.Errorf("HEAD response must have no body, got %d bytes", len(headResp.Body))
 			}
 
+			getResp, err := ctx.GET(productPath)
+			if err != nil {
+				return err
+			}
+			if getResp.StatusCode != 200 {
+				return fmt.Errorf("GET entity expected 200, got %d", getResp.StatusCode)
+			}
+
+			headCT := headResp.Headers.Get("Content-Type")
+			getCT := getResp.Headers.Get("Content-Type")
+			if headCT == "" {
+				return fmt.Errorf("HEAD response missing Content-Type header")
+			}
+			if headCT != getCT {
+				return fmt.Errorf("Content-Type mismatch: HEAD=%q GET=%q", headCT, getCT)
+			}
 			return nil
 		},
 	)

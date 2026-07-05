@@ -242,5 +242,50 @@ func AddressingEntities() *framework.TestSuite {
 		},
 	)
 
+	// $crossjoin(E1,E2) addresses the Cartesian product of two entity sets (OData Part 2 §4.14).
+	// go-odata does not implement this endpoint; the test skips on 404/501 and validates
+	// the response structure if the server returns 200.
+	suite.AddTest(
+		"test_crossjoin_basic",
+		"$crossjoin(Products,Categories) returns cross-product with properties from both sets (§4.14)",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/$crossjoin(Products,Categories)?$top=5")
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return ctx.Skip("$crossjoin not implemented (404/501)")
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &body); err != nil {
+				return fmt.Errorf("$crossjoin response is not valid JSON: %w", err)
+			}
+			rows, ok := body["value"].([]interface{})
+			if !ok {
+				return fmt.Errorf("$crossjoin response missing 'value' array")
+			}
+			if len(rows) == 0 {
+				return ctx.Skip("$crossjoin returned empty result set — cannot validate row structure")
+			}
+			// Each row must be an object; the spec requires @id on each item.
+			for i, r := range rows {
+				row, ok := r.(map[string]interface{})
+				if !ok {
+					return fmt.Errorf("crossjoin row %d is not an object", i)
+				}
+				// Each cross-join row must address both sides; we expect namespace-qualified
+				// property bags (Products/... and Categories/...). Accept either property-bag
+				// keys or at least an @odata.id annotation.
+				if len(row) == 0 {
+					return fmt.Errorf("crossjoin row %d is empty — expected at least @odata.id or namespace-qualified properties", i)
+				}
+			}
+			return nil
+		},
+	)
+
 	return suite
 }
