@@ -2,7 +2,6 @@ package v4_0
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -19,18 +18,20 @@ func DateTimeOfDayTypes() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_date_in_metadata",
-		"Edm.Date type appears in metadata",
+		"Edm.Date type appears in metadata as a genuine Property declaration",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/$metadata")
+			refs, err := propertiesDeclaredWithType(ctx, "Edm.Date")
 			if err != nil {
 				return err
 			}
-
-			body := string(resp.Body)
-			if !strings.Contains(body, `Type="Edm.Date"`) {
-				return nil // Optional type
+			if len(refs) == 0 {
+				return ctx.Skip("Edm.Date is an optional primitive type not used by this model")
 			}
-
+			for _, ref := range refs {
+				if ref.Property == "" {
+					return framework.NewError("EntityType " + ref.EntityType + " declares an Edm.Date property with no Name attribute")
+				}
+			}
 			return nil
 		},
 	)
@@ -116,18 +117,20 @@ func DateTimeOfDayTypes() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_timeofday_in_metadata",
-		"Edm.TimeOfDay type appears in metadata",
+		"Edm.TimeOfDay type appears in metadata as a genuine Property declaration",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/$metadata")
+			refs, err := propertiesDeclaredWithType(ctx, "Edm.TimeOfDay")
 			if err != nil {
 				return err
 			}
-
-			body := string(resp.Body)
-			if !strings.Contains(body, `Type="Edm.TimeOfDay"`) {
-				return nil // Optional type
+			if len(refs) == 0 {
+				return ctx.Skip("Edm.TimeOfDay is an optional primitive type not used by this model")
 			}
-
+			for _, ref := range refs {
+				if ref.Property == "" {
+					return framework.NewError("EntityType " + ref.EntityType + " declares an Edm.TimeOfDay property with no Name attribute")
+				}
+			}
 			return nil
 		},
 	)

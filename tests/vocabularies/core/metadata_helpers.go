@@ -123,6 +123,66 @@ func hasAnnotation(metadataXML []byte, target, term string) (bool, error) {
 	return false, nil
 }
 
+// coreAnnotationHit is a single <Annotation> match found inside an external
+// <Annotations Target="..."> block, carrying whichever value form it used.
+type coreAnnotationHit struct {
+	Target     string
+	Bool       *bool
+	String     *string
+	EnumMember *string
+}
+
+type coreAnnotationsDoc struct {
+	DataServices struct {
+		Schemas []struct {
+			Annotations []struct {
+				Target      string `xml:"Target,attr"`
+				Annotations []struct {
+					Term       string  `xml:"Term,attr"`
+					Bool       *bool   `xml:"Bool,attr"`
+					String     *string `xml:"String,attr"`
+					EnumMember *string `xml:"EnumMember,attr"`
+				} `xml:"Annotation"`
+			} `xml:"Annotations"`
+		} `xml:"Schema"`
+	} `xml:"DataServices"`
+}
+
+// findAnnotationsByTerm scans every external <Annotations Target="..."> block
+// in the metadata document for <Annotation Term="term"> and returns one hit
+// per match, whatever attribute form (Bool/String/EnumMember) it used. It
+// accepts both the "Core." alias and the fully-qualified "Org.OData.Core.V1."
+// form of term. Inline annotations nested directly inside a Property or
+// EntityType element are not scanned — this model only ever emits the
+// external-Annotations-block form.
+func findAnnotationsByTerm(metadataXML []byte, term string) ([]coreAnnotationHit, error) {
+	var doc coreAnnotationsDoc
+	if err := xml.Unmarshal(metadataXML, &doc); err != nil {
+		return nil, fmt.Errorf("failed to parse metadata XML: %w", err)
+	}
+
+	shortForm := "Core." + strings.TrimPrefix(term, "Org.OData.Core.V1.")
+	longForm := "Org.OData.Core.V1." + strings.TrimPrefix(term, "Core.")
+
+	var hits []coreAnnotationHit
+	for _, schema := range doc.DataServices.Schemas {
+		for _, block := range schema.Annotations {
+			for _, ann := range block.Annotations {
+				if ann.Term != shortForm && ann.Term != longForm {
+					continue
+				}
+				hits = append(hits, coreAnnotationHit{
+					Target:     block.Target,
+					Bool:       ann.Bool,
+					String:     ann.String,
+					EnumMember: ann.EnumMember,
+				})
+			}
+		}
+	}
+	return hits, nil
+}
+
 func assertODataError(resp *framework.HTTPResponse) error {
 	var payload map[string]interface{}
 	if err := json.Unmarshal(resp.Body, &payload); err != nil {

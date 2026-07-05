@@ -17,18 +17,20 @@ func BinaryType() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_binary_in_metadata",
-		"Edm.Binary type appears in metadata",
+		"Edm.Binary type appears in metadata as a genuine Property declaration",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/$metadata")
+			refs, err := propertiesDeclaredWithType(ctx, "Edm.Binary")
 			if err != nil {
 				return err
 			}
-
-			body := string(resp.Body)
-			if !strings.Contains(body, `Type="Edm.Binary"`) {
-				return nil // Optional type
+			if len(refs) == 0 {
+				return ctx.Skip("Edm.Binary is an optional primitive type not used by this model")
 			}
-
+			for _, ref := range refs {
+				if ref.Property == "" {
+					return framework.NewError("EntityType " + ref.EntityType + " declares an Edm.Binary property with no Name attribute")
+				}
+			}
 			return nil
 		},
 	)
@@ -37,9 +39,12 @@ func BinaryType() *framework.TestSuite {
 		"test_binary_literal_format",
 		"Binary literal binary'base64' returns entities whose Data matches",
 		func(ctx *framework.TestContext) error {
-			// base64 of "test" is "dGVzdA=="
-			return assertProductFilter(ctx, "Data eq binary'dGVzdA=='", func(p map[string]interface{}) bool {
-				return productString(p, "Data") == "dGVzdA=="
+			// base64url (unpadded, per OData JSON Format §7.1) of "test" is "dGVzdA".
+			// go-odata's $filter binary literal parser currently rejects this
+			// spec-correct unpadded form and only accepts padded base64: filed
+			// NLstn/go-odata#801.
+			return assertProductFilter(ctx, "Data eq binary'dGVzdA'", func(p map[string]interface{}) bool {
+				return productString(p, "Data") == "dGVzdA"
 			})
 		},
 	)
@@ -141,10 +146,11 @@ func BinaryType() *framework.TestSuite {
 				if !isStr {
 					return fmt.Errorf("Data value is non-null but not a string (got %T); Edm.Binary must be base64-encoded in JSON", d)
 				}
-				// Validate that the string contains only base64 characters
+				// OData JSON Format §7.1 mandates base64url (RFC 4648 §5) without
+				// padding: only A-Z, a-z, 0-9, '-', '_' — never '+', '/', or '='.
 				for _, ch := range s {
-					if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '+' || ch == '/' || ch == '-' || ch == '_' || ch == '=') {
-						return fmt.Errorf("Data value %q contains non-base64 character %q", s, ch)
+					if !((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+						return fmt.Errorf("Data value %q contains %q; Edm.Binary must use unpadded base64url (no '+', '/', or '=') per OData JSON Format §7.1", s, ch)
 					}
 				}
 			}

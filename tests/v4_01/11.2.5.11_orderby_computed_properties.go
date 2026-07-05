@@ -84,10 +84,12 @@ func OrderByComputedProperties() *framework.TestSuite {
 		},
 	)
 
-	// Test 4: OrderBy mixing computed and regular properties
+	// Test 4: OrderBy mixing computed and regular properties — verify the
+	// compound sort: CategoryID ascending, then MarkedUpPrice descending
+	// within each CategoryID group.
 	suite.AddTest(
 		"test_orderby_mixed",
-		"OrderBy mixing computed and regular",
+		"OrderBy mixing computed and regular properties respects the compound sort order",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$compute=Price mul 1.2 as MarkedUpPrice&$orderby=CategoryID,MarkedUpPrice desc")
 			if err != nil {
@@ -103,14 +105,17 @@ func OrderByComputedProperties() *framework.TestSuite {
 				return err
 			}
 
-			return ensureComputedProperties(entities, "MarkedUpPrice")
+			if err := ensureComputedProperties(entities, "MarkedUpPrice"); err != nil {
+				return err
+			}
+			return assertGroupedSortOrder(entities, "CategoryID", "MarkedUpPrice", false)
 		},
 	)
 
-	// Test 5: OrderBy computed with select
+	// Test 5: OrderBy computed with select — verify ascending sort order.
 	suite.AddTest(
 		"test_orderby_computed_with_select",
-		"OrderBy computed with $select",
+		"OrderBy computed with $select returns entities in ascending computed order",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$compute=Price mul 1.08 as FinalPrice&$select=Name,FinalPrice&$orderby=FinalPrice")
 			if err != nil {
@@ -126,7 +131,10 @@ func OrderByComputedProperties() *framework.TestSuite {
 				return err
 			}
 
-			return ensureComputedProperties(entities, "FinalPrice")
+			if err := ensureComputedProperties(entities, "FinalPrice"); err != nil {
+				return err
+			}
+			return assertComputedSortOrder(entities, "FinalPrice", true)
 		},
 	)
 
@@ -165,10 +173,11 @@ func OrderByComputedProperties() *framework.TestSuite {
 		},
 	)
 
-	// Test 7: OrderBy computed with top
+	// Test 7: OrderBy computed with top — verify descending order and the
+	// $top=3 bound.
 	suite.AddTest(
 		"test_orderby_computed_with_top",
-		"OrderBy computed with $top",
+		"OrderBy computed with $top respects both the sort order and the page size",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$compute=Price div 2 as HalfPrice&$orderby=HalfPrice desc&$top=3")
 			if err != nil {
@@ -184,14 +193,21 @@ func OrderByComputedProperties() *framework.TestSuite {
 				return err
 			}
 
-			return ensureComputedProperties(entities, "HalfPrice")
+			if err := ensureComputedProperties(entities, "HalfPrice"); err != nil {
+				return err
+			}
+			if len(entities) > 3 {
+				return framework.NewError(fmt.Sprintf("$top=3 but got %d entities", len(entities)))
+			}
+			return assertComputedSortOrder(entities, "HalfPrice", false)
 		},
 	)
 
-	// Test 8: OrderBy regular property still works with compute present
+	// Test 8: OrderBy regular property still works with compute present —
+	// verify Name is actually in ascending order.
 	suite.AddTest(
 		"test_orderby_regular_with_compute",
-		"OrderBy regular property with compute present",
+		"OrderBy regular property with compute present sorts by the regular property",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$compute=Price mul 1.5 as HighPrice&$orderby=Name")
 			if err != nil {
@@ -207,16 +223,20 @@ func OrderByComputedProperties() *framework.TestSuite {
 				return err
 			}
 
-			return ensureComputedProperties(entities, "HighPrice")
+			if err := ensureComputedProperties(entities, "HighPrice"); err != nil {
+				return err
+			}
+			return assertStringSortOrder(entities, "Name", true)
 		},
 	)
 
-	// Test 9: Response includes computed properties when ordered
+	// Test 9: Response includes computed properties when ordered — verify
+	// the computed value is actually Price*2, not just present.
 	suite.AddTest(
 		"test_response_includes_computed",
-		"Response includes computed properties",
+		"Response includes a correctly-computed DoublePrice value",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$compute=Price mul 2 as DoublePrice&$select=Name,DoublePrice&$orderby=DoublePrice&$top=1")
+			resp, err := ctx.GET("/Products?$compute=Price mul 2 as DoublePrice&$select=Name,Price,DoublePrice&$orderby=DoublePrice&$top=1")
 			if err != nil {
 				return err
 			}
@@ -230,7 +250,21 @@ func OrderByComputedProperties() *framework.TestSuite {
 				return err
 			}
 
-			return ensureComputedProperties(entities, "DoublePrice")
+			if err := ensureComputedProperties(entities, "DoublePrice"); err != nil {
+				return err
+			}
+			price, err := entityFloat(entities[0], "Price")
+			if err != nil {
+				return fmt.Errorf("entity Price: %w", err)
+			}
+			doublePrice, err := entityFloat(entities[0], "DoublePrice")
+			if err != nil {
+				return fmt.Errorf("entity DoublePrice: %w", err)
+			}
+			if diff := doublePrice - price*2; diff > 0.01 || diff < -0.01 {
+				return framework.NewError(fmt.Sprintf("DoublePrice=%v does not equal Price*2=%v", doublePrice, price*2))
+			}
+			return nil
 		},
 	)
 

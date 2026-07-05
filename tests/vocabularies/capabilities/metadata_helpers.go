@@ -12,6 +12,13 @@ type capabilitiesMetadata struct {
 	insertRestricted []entitySetInfo
 	updateRestricted []entitySetInfo
 	deleteRestricted []entitySetInfo
+	filterRestricted []entitySetInfo
+	sortRestricted   []entitySetInfo
+	expandRestricted []entitySetInfo
+	countRestricted  []entitySetInfo
+	searchRestricted []entitySetInfo
+	readRestricted   []entitySetInfo
+	selectRestricted []entitySetInfo
 }
 
 type entitySetInfo struct {
@@ -151,20 +158,51 @@ func parseCapabilitiesMetadata(metadataXML []byte) (capabilitiesMetadata, error)
 		}
 	}
 
+	// isDisabled reports whether key is present in record and explicitly set
+	// to false. A missing key must NOT be treated as false — Go's zero value
+	// for an absent map entry is indistinguishable from an explicit `false`,
+	// so a plain `record[key] == false` would wrongly flag every entity set
+	// that declares ANY restriction record as also restricting THIS capability.
+	isDisabled := func(record map[string]bool, key string) bool {
+		value, ok := record[key]
+		return ok && !value
+	}
+
 	capability := capabilitiesMetadata{}
 	for setName, record := range restrictions {
 		setInfo, err := buildEntitySetInfo(setName, entitySetTypes, entityTypeMap)
 		if err != nil {
 			return capabilitiesMetadata{}, err
 		}
-		if record["Org.OData.Capabilities.V1.InsertRestrictions:Insertable"] == false {
+		if isDisabled(record, "Org.OData.Capabilities.V1.InsertRestrictions:Insertable") {
 			capability.insertRestricted = append(capability.insertRestricted, setInfo)
 		}
-		if record["Org.OData.Capabilities.V1.UpdateRestrictions:Updatable"] == false {
+		if isDisabled(record, "Org.OData.Capabilities.V1.UpdateRestrictions:Updatable") {
 			capability.updateRestricted = append(capability.updateRestricted, setInfo)
 		}
-		if record["Org.OData.Capabilities.V1.DeleteRestrictions:Deletable"] == false {
+		if isDisabled(record, "Org.OData.Capabilities.V1.DeleteRestrictions:Deletable") {
 			capability.deleteRestricted = append(capability.deleteRestricted, setInfo)
+		}
+		if isDisabled(record, "Org.OData.Capabilities.V1.FilterRestrictions:Filterable") {
+			capability.filterRestricted = append(capability.filterRestricted, setInfo)
+		}
+		if isDisabled(record, "Org.OData.Capabilities.V1.SortRestrictions:Sortable") {
+			capability.sortRestricted = append(capability.sortRestricted, setInfo)
+		}
+		if isDisabled(record, "Org.OData.Capabilities.V1.ExpandRestrictions:Expandable") {
+			capability.expandRestricted = append(capability.expandRestricted, setInfo)
+		}
+		if isDisabled(record, "Org.OData.Capabilities.V1.CountRestrictions:Countable") {
+			capability.countRestricted = append(capability.countRestricted, setInfo)
+		}
+		if isDisabled(record, "Org.OData.Capabilities.V1.SearchRestrictions:Searchable") {
+			capability.searchRestricted = append(capability.searchRestricted, setInfo)
+		}
+		if isDisabled(record, "Org.OData.Capabilities.V1.ReadRestrictions:Readable") {
+			capability.readRestricted = append(capability.readRestricted, setInfo)
+		}
+		if isDisabled(record, "Org.OData.Capabilities.V1.SelectSupport:Supported") {
+			capability.selectRestricted = append(capability.selectRestricted, setInfo)
 		}
 	}
 

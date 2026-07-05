@@ -2,7 +2,6 @@ package v4_0
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -17,18 +16,20 @@ func SingleType() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_single_in_metadata",
-		"Edm.Single type appears in metadata",
+		"Edm.Single type appears in metadata as a genuine Property declaration",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/$metadata")
+			refs, err := propertiesDeclaredWithType(ctx, "Edm.Single")
 			if err != nil {
 				return err
 			}
-
-			body := string(resp.Body)
-			if !strings.Contains(body, `Type="Edm.Single"`) {
-				return nil // Optional type
+			if len(refs) == 0 {
+				return ctx.Skip("Edm.Single is an optional primitive type not used by this model")
 			}
-
+			for _, ref := range refs {
+				if ref.Property == "" {
+					return framework.NewError("EntityType " + ref.EntityType + " declares an Edm.Single property with no Name attribute")
+				}
+			}
 			return nil
 		},
 	)

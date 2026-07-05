@@ -785,6 +785,16 @@ func main() {
 			Version: "vocabularies",
 			Suite:   core.DescriptionAnnotation,
 		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "vocab_core_permissions",
+			Version: "vocabularies",
+			Suite:   core.PermissionsAnnotation,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "vocab_core_operation_available",
+			Version: "vocabularies",
+			Suite:   core.OperationAvailableAnnotation,
+		})
 
 		// Capabilities vocabulary tests
 		testSuites = append(testSuites, TestSuiteInfo{
@@ -801,6 +811,31 @@ func main() {
 			Name:    "vocab_capabilities_delete",
 			Version: "vocabularies",
 			Suite:   capabilities.DeleteRestrictions,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "vocab_capabilities_filter",
+			Version: "vocabularies",
+			Suite:   capabilities.FilterRestrictions,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "vocab_capabilities_sort",
+			Version: "vocabularies",
+			Suite:   capabilities.SortRestrictions,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "vocab_capabilities_expand",
+			Version: "vocabularies",
+			Suite:   capabilities.ExpandRestrictions,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "vocab_capabilities_count",
+			Version: "vocabularies",
+			Suite:   capabilities.CountRestrictions,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "vocab_capabilities_select_support",
+			Version: "vocabularies",
+			Suite:   capabilities.SelectSupport,
 		})
 	}
 
@@ -1140,12 +1175,19 @@ func main() {
 		"11.6_annotations":            {framework.LevelAdvanced, "Annotations"},
 		"14.1_vocabulary_annotations": {framework.LevelAdvanced, "Annotations"},
 		// --- Vocabularies ---
-		"vocab_core_computed":       {framework.LevelAdvanced, "Vocabularies"},
-		"vocab_core_immutable":      {framework.LevelAdvanced, "Vocabularies"},
-		"vocab_core_description":    {framework.LevelMinimal, "Vocabularies"},
-		"vocab_capabilities_insert": {framework.LevelIntermediate, "Vocabularies"},
-		"vocab_capabilities_update": {framework.LevelIntermediate, "Vocabularies"},
-		"vocab_capabilities_delete": {framework.LevelIntermediate, "Vocabularies"},
+		"vocab_core_computed":               {framework.LevelAdvanced, "Vocabularies"},
+		"vocab_core_immutable":              {framework.LevelAdvanced, "Vocabularies"},
+		"vocab_core_description":            {framework.LevelMinimal, "Vocabularies"},
+		"vocab_capabilities_insert":         {framework.LevelIntermediate, "Vocabularies"},
+		"vocab_capabilities_update":         {framework.LevelIntermediate, "Vocabularies"},
+		"vocab_capabilities_delete":         {framework.LevelIntermediate, "Vocabularies"},
+		"vocab_capabilities_filter":         {framework.LevelIntermediate, "Vocabularies"},
+		"vocab_capabilities_sort":           {framework.LevelIntermediate, "Vocabularies"},
+		"vocab_capabilities_expand":         {framework.LevelIntermediate, "Vocabularies"},
+		"vocab_capabilities_count":          {framework.LevelIntermediate, "Vocabularies"},
+		"vocab_capabilities_select_support": {framework.LevelIntermediate, "Vocabularies"},
+		"vocab_core_permissions":            {framework.LevelAdvanced, "Vocabularies"},
+		"vocab_core_operation_available":    {framework.LevelAdvanced, "Vocabularies"},
 	}
 
 	// Prepare suites (apply pattern filter) so we can compute totals for concise progress output

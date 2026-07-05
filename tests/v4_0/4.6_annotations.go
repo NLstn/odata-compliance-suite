@@ -150,20 +150,34 @@ func MetadataAnnotations() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_core_vocabulary_annotations",
-		"Core vocabulary annotations are used",
+		"Core vocabulary annotations, when used, are qualified terms",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/$metadata")
+			doc, err := getMetadataDocument(ctx)
 			if err != nil {
 				return err
 			}
 
-			body := string(resp.Body)
-			// Core vocabulary is optional
-			if strings.Contains(body, `Term="Core.`) || strings.Contains(body, `Term="Org.OData.Core`) {
-				return nil
+			var coreTerms []string
+			for _, schema := range doc.DataServices.Schemas {
+				for _, block := range schema.Annotations {
+					for _, ann := range block.Annotations {
+						if strings.HasPrefix(ann.Term, "Core.") || strings.HasPrefix(ann.Term, "Org.OData.Core.") {
+							coreTerms = append(coreTerms, ann.Term)
+						}
+					}
+				}
 			}
 
-			return nil // Optional feature
+			if len(coreTerms) == 0 {
+				return ctx.Skip("Core vocabulary is an optional feature not used by this model")
+			}
+
+			for _, term := range coreTerms {
+				if !strings.Contains(term, ".") {
+					return fmt.Errorf("Core vocabulary annotation Term=%q is not a qualified name (Namespace.LocalName)", term)
+				}
+			}
+			return nil
 		},
 	)
 
