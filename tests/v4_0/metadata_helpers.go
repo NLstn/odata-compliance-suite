@@ -128,6 +128,35 @@ func entityTypeDeclared(ctx *framework.TestContext, entityTypeName string) (bool
 	return false, nil
 }
 
+// propertyTypeRef identifies a single Property element declared with a
+// particular Edm type, scoped to the EntityType that declares it.
+type propertyTypeRef struct {
+	EntityType string
+	Property   string
+}
+
+// propertiesDeclaredWithType scans every EntityType in the metadata document
+// for Property elements whose Type attribute exactly equals edmType. Unlike a
+// raw substring search over the metadata body, this only matches genuine
+// structural Property/@Type attributes.
+func propertiesDeclaredWithType(ctx *framework.TestContext, edmType string) ([]propertyTypeRef, error) {
+	doc, err := getMetadataDocument(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var refs []propertyTypeRef
+	for _, schema := range doc.DataServices.Schemas {
+		for _, entityType := range schema.EntityTypes {
+			for _, property := range entityType.Properties {
+				if property.Type == edmType {
+					refs = append(refs, propertyTypeRef{EntityType: entityType.Name, Property: property.Name})
+				}
+			}
+		}
+	}
+	return refs, nil
+}
+
 func entityTypeForEntitySet(ctx *framework.TestContext, entitySetName string) (string, error) {
 	doc, err := getMetadataDocument(ctx)
 	if err != nil {
@@ -157,6 +186,25 @@ func entityTypeHasProperty(ctx *framework.TestContext, entityTypeName, propertyN
 	for _, property := range entityType.Properties {
 		if property.Name == propertyName {
 			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// entityTypeHasStringProperty reports whether entityTypeName declares
+// propertyName with Type="Edm.String".
+func entityTypeHasStringProperty(ctx *framework.TestContext, entityTypeName, propertyName string) (bool, error) {
+	doc, err := getMetadataDocument(ctx)
+	if err != nil {
+		return false, err
+	}
+	entityType, _, ok := findCsdlEntityType(doc, entityTypeName)
+	if !ok {
+		return false, nil
+	}
+	for _, property := range entityType.Properties {
+		if property.Name == propertyName {
+			return property.Type == "Edm.String", nil
 		}
 	}
 	return false, nil

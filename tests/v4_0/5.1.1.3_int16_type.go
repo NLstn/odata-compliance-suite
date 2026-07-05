@@ -2,7 +2,6 @@ package v4_0
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -17,18 +16,20 @@ func Int16Type() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_int16_in_metadata",
-		"Edm.Int16 type appears in metadata",
+		"Edm.Int16 type appears in metadata as a genuine Property declaration",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/$metadata")
+			refs, err := propertiesDeclaredWithType(ctx, "Edm.Int16")
 			if err != nil {
 				return err
 			}
-
-			body := string(resp.Body)
-			if !strings.Contains(body, `Type="Edm.Int16"`) {
-				return nil // Optional type
+			if len(refs) == 0 {
+				return ctx.Skip("Edm.Int16 is an optional primitive type not used by this model")
 			}
-
+			for _, ref := range refs {
+				if ref.Property == "" {
+					return framework.NewError("EntityType " + ref.EntityType + " declares an Edm.Int16 property with no Name attribute")
+				}
+			}
 			return nil
 		},
 	)

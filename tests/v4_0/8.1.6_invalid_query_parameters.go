@@ -156,5 +156,52 @@ func InvalidQueryParameters() *framework.TestSuite {
 		},
 	)
 
+	// A date/time filter function applied to a property whose CSDL-declared
+	// type is Edm.String is a literal/function type mismatch and MUST be
+	// rejected with 400 per the $filter grammar (OData §5.1.1.6/§11.2.5.1),
+	// not silently evaluated to an empty (or any) result.
+	// go-odata does not perform this check: filed NLstn/go-odata#800.
+	suite.AddTest(
+		"test_year_function_on_string_property_rejected",
+		"year() applied to an Edm.String property returns 400 Bad Request",
+		func(ctx *framework.TestContext) error {
+			isString, err := entityTypeHasStringProperty(ctx, "Product", "Name")
+			if err != nil {
+				return err
+			}
+			if !isString {
+				return ctx.Skip("Product.Name is not declared Edm.String in this model")
+			}
+			resp, err := ctx.GET("/Products?$filter=" + url.QueryEscape("year(Name) eq 2024"))
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
+	// An unquoted date literal compared against an Edm.String property is a
+	// literal/property type mismatch and MUST be rejected with 400, not
+	// silently evaluated as if the literal were a string.
+	// go-odata does not perform this check: filed NLstn/go-odata#800.
+	suite.AddTest(
+		"test_date_literal_against_string_property_rejected",
+		"Unquoted date literal compared to an Edm.String property returns 400 Bad Request",
+		func(ctx *framework.TestContext) error {
+			isString, err := entityTypeHasStringProperty(ctx, "Product", "Name")
+			if err != nil {
+				return err
+			}
+			if !isString {
+				return ctx.Skip("Product.Name is not declared Edm.String in this model")
+			}
+			resp, err := ctx.GET("/Products?$filter=" + url.QueryEscape("Name eq 2024-01-15"))
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
 	return suite
 }
