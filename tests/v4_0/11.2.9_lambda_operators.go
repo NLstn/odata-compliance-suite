@@ -186,11 +186,6 @@ func RegisterLambdaOperatorsTests(suite *framework.TestSuite) {
 			if filterResp.StatusCode == 400 || filterResp.StatusCode == 501 {
 				return ctx.Skip("nested two-level lambda not supported (400/501)")
 			}
-			// 500 from a SQL error on M2M navigation property — server bug, not a test failure.
-			// Tracked as go-odata#783.
-			if filterResp.StatusCode == 500 {
-				return ctx.Skip("nested two-level lambda on M2M nav property returns 500 — see go-odata#783")
-			}
 			if err := ctx.AssertStatusCode(filterResp, 200); err != nil {
 				return err
 			}
