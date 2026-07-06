@@ -40,9 +40,7 @@ func BinaryType() *framework.TestSuite {
 		"Binary literal binary'base64' returns entities whose Data matches",
 		func(ctx *framework.TestContext) error {
 			// base64url (unpadded, per OData JSON Format §7.1) of "test" is "dGVzdA".
-			// go-odata's $filter binary literal parser currently rejects this
-			// spec-correct unpadded form and only accepts padded base64: filed
-			// NLstn/go-odata#801.
+			// Filed and fixed as NLstn/go-odata#801.
 			return assertProductFilter(ctx, "Data eq binary'dGVzdA'", func(p map[string]interface{}) bool {
 				return productString(p, "Data") == "dGVzdA"
 			})
