@@ -40,6 +40,41 @@ func JSONBatch() *framework.TestSuite {
 		return map[string]interface{}{"requests": reqs}
 	}
 
+	parseResponses := func(body []byte) (map[string]map[string]interface{}, error) {
+		var envelope struct {
+			Responses []map[string]interface{} `json:"responses"`
+		}
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			return nil, fmt.Errorf("failed to parse JSON batch response: %w", err)
+		}
+		responses := make(map[string]map[string]interface{}, len(envelope.Responses))
+		for i, response := range envelope.Responses {
+			id, ok := response["id"].(string)
+			if !ok || id == "" {
+				return nil, fmt.Errorf("response item %d is missing its request id", i)
+			}
+			if _, duplicate := responses[id]; duplicate {
+				return nil, fmt.Errorf("response id %q occurs more than once", id)
+			}
+			if _, ok := response["status"].(float64); !ok {
+				return nil, fmt.Errorf("response %q is missing its numeric status", id)
+			}
+			responses[id] = response
+		}
+		return responses, nil
+	}
+
+	expectRejected := func(ctx *framework.TestContext, body map[string]interface{}) error {
+		resp, err := postJSONBatch(ctx, body)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode != 400 {
+			return fmt.Errorf("invalid JSON batch status = %d, want 400: %s", resp.StatusCode, string(resp.Body))
+		}
+		return nil
+	}
+
 	// ── §19.2  JSON batch envelope accepted ──────────────────────────────────
 
 	suite.AddTest(
@@ -110,22 +145,15 @@ func JSONBatch() *framework.TestSuite {
 				return err
 			}
 
-			var envelope map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &envelope); err != nil {
-				return framework.NewError(fmt.Sprintf("failed to parse response: %v", err))
+			responses, err := parseResponses(resp.Body)
+			if err != nil {
+				return err
 			}
-
-			responses, ok := envelope["responses"].([]interface{})
-			if !ok || len(responses) == 0 {
+			if len(responses) == 0 {
 				return framework.NewError("expected at least one response")
 			}
-
-			r0, ok := responses[0].(map[string]interface{})
-			if !ok {
-				return framework.NewError("response item is not an object")
-			}
-			if r0["id"] != "my-unique-request-id" {
-				return framework.NewError(fmt.Sprintf("expected id %q, got %v", "my-unique-request-id", r0["id"]))
+			if _, ok := responses["my-unique-request-id"]; !ok {
+				return framework.NewError("response did not echo request id \"my-unique-request-id\"")
 			}
 			return nil
 		},
@@ -148,17 +176,17 @@ func JSONBatch() *framework.TestSuite {
 				return err
 			}
 
-			var envelope map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &envelope); err != nil {
-				return framework.NewError(fmt.Sprintf("failed to parse response: %v", err))
-			}
-
-			responses, ok := envelope["responses"].([]interface{})
-			if !ok {
-				return framework.NewError("no 'responses' array")
+			responses, err := parseResponses(resp.Body)
+			if err != nil {
+				return err
 			}
 			if len(responses) != 2 {
 				return framework.NewError(fmt.Sprintf("expected 2 responses, got %d", len(responses)))
+			}
+			for _, id := range []string{"r1", "r2"} {
+				if _, ok := responses[id]; !ok {
+					return fmt.Errorf("batch response is missing request id %q", id)
+				}
 			}
 			return nil
 		},
@@ -191,24 +219,22 @@ func JSONBatch() *framework.TestSuite {
 				return err
 			}
 
-			var envelope map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &envelope); err != nil {
-				return framework.NewError(fmt.Sprintf("failed to parse response: %v", err))
+			responses, err := parseResponses(resp.Body)
+			if err != nil {
+				return err
 			}
-
-			responses, ok := envelope["responses"].([]interface{})
-			if !ok || len(responses) != 2 {
+			if len(responses) != 2 {
 				return framework.NewError(fmt.Sprintf("expected 2 responses, got %d", len(responses)))
 			}
 
-			r1 := responses[0].(map[string]interface{})
-			r2 := responses[1].(map[string]interface{})
+			r1, ok1 := responses["r1"]
+			r2, ok2 := responses["r2"]
+			if !ok1 || !ok2 {
+				return framework.NewError("batch response is missing r1 or r2")
+			}
 
 			if r1["status"] == float64(200) {
 				return framework.NewError("r1 should have failed (entity not found)")
-			}
-			if r2["id"] != "r2" {
-				return framework.NewError(fmt.Sprintf("expected r2 id, got %v", r2["id"]))
 			}
 			if r2["status"] != float64(424) {
 				return framework.NewError(fmt.Sprintf("expected r2 status 424, got %v", r2["status"]))
@@ -221,7 +247,7 @@ func JSONBatch() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_json_batch_atomicitygroup_rollback",
-		"When a request in an atomicityGroup fails, all group responses become 424",
+		"A failed atomicityGroup rolls back all changes and echoes the group id",
 		func(ctx *framework.TestContext) error {
 			// r1 succeeds (creates entity); r2 fails (non-existent delete).
 			// Both are in the same atomicityGroup, so both should end up as 4xx.
@@ -248,22 +274,24 @@ func JSONBatch() *framework.TestSuite {
 				return err
 			}
 
-			var envelope map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &envelope); err != nil {
-				return framework.NewError(fmt.Sprintf("failed to parse response: %v", err))
+			responses, err := parseResponses(resp.Body)
+			if err != nil {
+				return err
 			}
-
-			responses, ok := envelope["responses"].([]interface{})
-			if !ok || len(responses) != 2 {
+			if len(responses) != 2 {
 				return framework.NewError(fmt.Sprintf("expected 2 responses, got %d", len(responses)))
 			}
 
-			r1 := responses[0].(map[string]interface{})
-			if r1["status"] != float64(424) {
-				return framework.NewError(fmt.Sprintf("expected r1 status 424 (rolled back), got %v", r1["status"]))
+			r1, ok1 := responses["r1"]
+			r2, ok2 := responses["r2"]
+			if !ok1 || !ok2 {
+				return framework.NewError("batch response is missing r1 or r2")
 			}
-
-			r2 := responses[1].(map[string]interface{})
+			for id, response := range map[string]map[string]interface{}{"r1": r1, "r2": r2} {
+				if response["atomicityGroup"] != "g1" {
+					return fmt.Errorf("response %s atomicityGroup = %v, want g1", id, response["atomicityGroup"])
+				}
+			}
 			if r2["status"] == float64(200) || r2["status"] == float64(201) {
 				return framework.NewError(fmt.Sprintf("expected r2 to fail, got status %v", r2["status"]))
 			}
@@ -317,21 +345,138 @@ func JSONBatch() *framework.TestSuite {
 				return err
 			}
 
-			var envelope map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &envelope); err != nil {
-				return framework.NewError(fmt.Sprintf("failed to parse response: %v", err))
+			responses, err := parseResponses(resp.Body)
+			if err != nil {
+				return err
 			}
-
-			responses, ok := envelope["responses"].([]interface{})
-			if !ok || len(responses) != 2 {
+			if len(responses) != 2 {
 				return framework.NewError(fmt.Sprintf("expected 2 responses with continue-on-error, got %d", len(responses)))
 			}
 
-			r2 := responses[1].(map[string]interface{})
+			r2, ok := responses["r2"]
+			if !ok {
+				return framework.NewError("batch response is missing r2")
+			}
 			if r2["status"] != float64(200) {
 				return framework.NewError(fmt.Sprintf("expected r2 status 200 (continued after error), got %v", r2["status"]))
 			}
 			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_json_batch_default_continues_on_error",
+		"Without continue-on-error=false, independent requests continue after a failure",
+		func(ctx *framework.TestContext) error {
+			resp, err := postJSONBatch(ctx, makeRequests(
+				map[string]interface{}{"id": "r1", "method": "GET", "url": "Products(2147483647)"},
+				map[string]interface{}{"id": "r2", "method": "GET", "url": "Products?$top=1"},
+			))
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			responses, err := parseResponses(resp.Body)
+			if err != nil {
+				return err
+			}
+			r2, ok := responses["r2"]
+			if !ok {
+				return framework.NewError("batch response is missing independent request r2")
+			}
+			if r2["status"] != float64(200) {
+				return fmt.Errorf("independent r2 status = %v, want 200; processing stops only for continue-on-error=false", r2["status"])
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_json_batch_response_header_names_lowercase",
+		"Header names inside JSON batch response objects are lowercase",
+		func(ctx *framework.TestContext) error {
+			resp, err := postJSONBatch(ctx, makeRequests(
+				map[string]interface{}{"id": "r1", "method": "GET", "url": "Products?$top=1"},
+			))
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			responses, err := parseResponses(resp.Body)
+			if err != nil {
+				return err
+			}
+			r1, ok := responses["r1"]
+			if !ok {
+				return framework.NewError("batch response is missing r1")
+			}
+			headers, ok := r1["headers"].(map[string]interface{})
+			if !ok || len(headers) == 0 {
+				return framework.NewError("successful JSON batch response item is missing headers")
+			}
+			for name := range headers {
+				if name != strings.ToLower(name) {
+					return fmt.Errorf("JSON batch response header name %q is not lowercase", name)
+				}
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_json_batch_requires_requests_member",
+		"JSON batch envelope without the required requests member is rejected",
+		func(ctx *framework.TestContext) error {
+			return expectRejected(ctx, map[string]interface{}{})
+		},
+	)
+
+	suite.AddTest(
+		"test_json_batch_rejects_duplicate_ids",
+		"JSON batch request identifiers must be unique",
+		func(ctx *framework.TestContext) error {
+			return expectRejected(ctx, makeRequests(
+				map[string]interface{}{"id": "same", "method": "GET", "url": "/"},
+				map[string]interface{}{"id": "same", "method": "GET", "url": "/"},
+			))
+		},
+	)
+
+	suite.AddTest(
+		"test_json_batch_rejects_forward_dependency",
+		"dependsOn cannot reference a later request",
+		func(ctx *framework.TestContext) error {
+			return expectRejected(ctx, makeRequests(
+				map[string]interface{}{"id": "r1", "method": "GET", "url": "/", "dependsOn": []string{"r2"}},
+				map[string]interface{}{"id": "r2", "method": "GET", "url": "/"},
+			))
+		},
+	)
+
+	suite.AddTest(
+		"test_json_batch_requires_adjacent_atomicity_group",
+		"Requests in the same atomicityGroup must be adjacent",
+		func(ctx *framework.TestContext) error {
+			return expectRejected(ctx, makeRequests(
+				map[string]interface{}{"id": "r1", "method": "GET", "url": "/", "atomicityGroup": "g1"},
+				map[string]interface{}{"id": "r2", "method": "GET", "url": "/"},
+				map[string]interface{}{"id": "r3", "method": "GET", "url": "/", "atomicityGroup": "g1"},
+			))
+		},
+	)
+
+	suite.AddTest(
+		"test_json_batch_separates_request_and_group_ids",
+		"Request identifiers and atomicityGroup identifiers must be distinct",
+		func(ctx *framework.TestContext) error {
+			return expectRejected(ctx, makeRequests(
+				map[string]interface{}{"id": "g1", "method": "GET", "url": "/"},
+				map[string]interface{}{"id": "r2", "method": "GET", "url": "/", "atomicityGroup": "g1"},
+			))
 		},
 	)
 

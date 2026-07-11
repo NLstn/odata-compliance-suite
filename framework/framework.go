@@ -40,9 +40,10 @@ type TestSuite struct {
 
 // Test represents a single test case
 type Test struct {
-	Name        string
-	Description string
-	Fn          func(*TestContext) error
+	Name                 string
+	Description          string
+	RequiredCapabilities []RequiredCapability
+	Fn                   func(*TestContext) error
 }
 
 // TestResults tracks the results of test execution
@@ -122,6 +123,18 @@ func (s *TestSuite) AddTest(name, description string, fn func(*TestContext) erro
 	})
 }
 
+// AddTestWithCapabilities adds a test whose optional feature dependencies are
+// evaluated independently from the rest of its suite. This avoids skipping
+// unrelated tests when a suite covers more than one capability.
+func (s *TestSuite) AddTestWithCapabilities(name, description string, required []RequiredCapability, fn func(*TestContext) error) {
+	s.Tests = append(s.Tests, Test{
+		Name:                 name,
+		Description:          description,
+		RequiredCapabilities: required,
+		Fn:                   fn,
+	})
+}
+
 // Run executes all tests in the suite
 func (s *TestSuite) Run() error {
 	if s.Verbose {
@@ -164,17 +177,77 @@ func (s *TestSuite) Run() error {
 		}
 	}
 
+	// If every test in a mixed-capability suite is gated, record the skips
+	// without requiring the service-specific reseed action.
+	if s.Capabilities != nil && !s.Strict && len(s.Tests) > 0 {
+		allUnsupported := true
+		reasons := make([]string, len(s.Tests))
+		for i, test := range s.Tests {
+			reason, unsupported := s.unsupportedCapability(test.RequiredCapabilities)
+			if !unsupported {
+				allUnsupported = false
+				break
+			}
+			reasons[i] = reason
+		}
+		if allUnsupported {
+			for i, test := range s.Tests {
+				s.Results.Total++
+				s.Results.Skipped++
+				s.Results.Details = append(s.Results.Details, TestDetail{
+					Name:   test.Description,
+					Status: StatusSkip,
+					Error:  reasons[i],
+				})
+			}
+			if !s.Quiet {
+				fmt.Fprintln(s.Out, "Skipped (all test capabilities are declared unsupported)")
+			}
+			return nil
+		}
+	}
+
 	// Reseed the database once at the beginning of the suite to ensure clean state
 	// Tests within a suite may depend on data created by previous tests
 	if err := s.reseedDatabase(); err != nil {
-		if s.Verbose {
-			fmt.Fprintf(s.Out, "\n⚠ WARNING: Failed to reseed database before suite '%s': %v\n", s.Name, err)
-			fmt.Fprintln(s.Out, "Continuing with existing data...")
+		setupErr := fmt.Errorf("suite setup failed: could not reseed reference data: %w", err)
+		for _, test := range s.Tests {
+			s.Results.Total++
+			s.Results.Failed++
+			s.Results.Details = append(s.Results.Details, TestDetail{
+				Name:   test.Description,
+				Status: StatusFail,
+				Error:  setupErr.Error(),
+			})
 		}
+		if s.Verbose {
+			fmt.Fprintf(s.Out, "\n✗ SETUP FAILURE: %v\n", setupErr)
+		} else if !s.Quiet {
+			fmt.Fprintln(s.Out, "Failed")
+		}
+		if !s.Quiet {
+			s.PrintSummary()
+		}
+		return setupErr
 	}
 
 	for i, test := range s.Tests {
 		s.Results.Total++
+		if s.Capabilities != nil && !s.Strict {
+			if reason, unsupported := s.unsupportedCapability(test.RequiredCapabilities); unsupported {
+				s.Results.Skipped++
+				s.Results.Details = append(s.Results.Details, TestDetail{
+					Name:   test.Description,
+					Status: StatusSkip,
+					Error:  reason,
+				})
+				if s.Verbose {
+					fmt.Fprintf(s.Out, "\n⊘ SKIP: %s\n", test.Description)
+					fmt.Fprintf(s.Out, "  Reason: %s\n", reason)
+				}
+				continue
+			}
+		}
 		ctx := &TestContext{
 			suite:  s,
 			name:   test.Name,
@@ -235,6 +308,15 @@ func (s *TestSuite) Run() error {
 		return fmt.Errorf("%d test(s) failed", s.Results.Failed)
 	}
 	return nil
+}
+
+func (s *TestSuite) unsupportedCapability(required []RequiredCapability) (string, bool) {
+	for _, req := range required {
+		if !s.Capabilities.Supports(req) {
+			return s.Capabilities.SkipReason(req), true
+		}
+	}
+	return "", false
 }
 
 // PrintSummary prints the test summary in standardized format

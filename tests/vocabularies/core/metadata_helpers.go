@@ -36,22 +36,12 @@ func metadataNamespace(metadataXML []byte) (string, error) {
 
 func hasAnnotation(metadataXML []byte, target, term string) (bool, error) {
 	decoder := xml.NewDecoder(bytes.NewReader(metadataXML))
-	inTargetAnnotations := false
-	inTargetElement := false
-	targetDepth := 0
-	currentDepth := 0
-
-	// Parse target to extract entity type and property if present
-	// Format: "Namespace.EntityType/PropertyName" or "Namespace.EntityType"
-	var targetEntityType, targetProperty string
-	if strings.Contains(target, "/") {
-		parts := strings.Split(target, "/")
-		targetEntityType = parts[0]
-		if len(parts) > 1 {
-			targetProperty = parts[1]
-		}
-	} else {
-		targetEntityType = target
+	targetEntityType, targetProperty, _ := strings.Cut(target, "/")
+	var schemaNamespace, currentType, currentProperty, externalTarget string
+	termMatches := func(candidate string) bool {
+		return candidate == term ||
+			strings.TrimPrefix(candidate, "Core.") == strings.TrimPrefix(term, "Org.OData.Core.V1.") ||
+			strings.TrimPrefix(candidate, "Org.OData.Core.V1.") == strings.TrimPrefix(term, "Core.")
 	}
 
 	for {
@@ -64,63 +54,54 @@ func hasAnnotation(metadataXML []byte, target, term string) (bool, error) {
 		}
 		switch node := token.(type) {
 		case xml.StartElement:
-			currentDepth++
 			switch node.Name.Local {
+			case "Schema":
+				schemaNamespace = attribute(node, "Namespace")
 			case "Annotations":
-				// Check for external Annotations block with Target attribute
-				inTargetAnnotations = false
-				for _, attr := range node.Attr {
-					if attr.Name.Local == "Target" && attr.Value == target {
-						inTargetAnnotations = true
-						break
-					}
-				}
+				externalTarget = attribute(node, "Target")
 			case "EntityType", "ComplexType":
-				// Check if this is the target entity/complex type
-				for _, attr := range node.Attr {
-					if attr.Name.Local == "Name" {
-						if strings.HasSuffix(targetEntityType, "."+attr.Value) || targetEntityType == attr.Value {
-							inTargetElement = true
-							targetDepth = currentDepth
-						}
-					}
+				name := attribute(node, "Name")
+				currentType = name
+				if schemaNamespace != "" {
+					currentType = schemaNamespace + "." + name
 				}
 			case "Property":
-				// Check for inline annotations within Property element
-				if inTargetElement && targetProperty != "" {
-					for _, attr := range node.Attr {
-						if attr.Name.Local == "Name" && attr.Value == targetProperty {
-							// We're in the target property, check for inline annotations
-							// Continue processing to find Annotation child elements
-						}
-					}
-				}
+				currentProperty = attribute(node, "Name")
 			case "Annotation":
-				// Check if this annotation matches our term
-				for _, attr := range node.Attr {
-					if attr.Name.Local == "Term" && attr.Value == term {
-						// Found the annotation in either:
-						// 1. External Annotations block (inTargetAnnotations)
-						// 2. Inline within the target element (inTargetElement)
-						if inTargetAnnotations || (inTargetElement && currentDepth > targetDepth) {
-							return true, nil
-						}
-					}
+				if !termMatches(attribute(node, "Term")) {
+					continue
+				}
+				if externalTarget == target {
+					return true, nil
+				}
+				typeMatches := currentType == targetEntityType || strings.HasSuffix(targetEntityType, "."+currentType)
+				if typeMatches && ((targetProperty == "" && currentProperty == "") || currentProperty == targetProperty) {
+					return true, nil
 				}
 			}
 		case xml.EndElement:
-			if node.Name.Local == "Annotations" {
-				inTargetAnnotations = false
+			switch node.Name.Local {
+			case "Annotations":
+				externalTarget = ""
+			case "Property":
+				currentProperty = ""
+			case "EntityType", "ComplexType":
+				currentType = ""
+			case "Schema":
+				schemaNamespace = ""
 			}
-			if node.Name.Local == "EntityType" || node.Name.Local == "ComplexType" {
-				if inTargetElement && currentDepth == targetDepth {
-					inTargetElement = false
-				}
-			}
-			currentDepth--
 		}
 	}
 	return false, nil
+}
+
+func attribute(start xml.StartElement, name string) string {
+	for _, attr := range start.Attr {
+		if attr.Name.Local == name {
+			return attr.Value
+		}
+	}
+	return ""
 }
 
 // coreAnnotationHit is a single <Annotation> match found inside an external

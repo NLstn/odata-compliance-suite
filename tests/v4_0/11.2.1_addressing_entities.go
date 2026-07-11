@@ -3,6 +3,8 @@ package v4_0
 import (
 	"encoding/json"
 	"fmt"
+	"mime"
+	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -14,11 +16,17 @@ func AddressingEntities() *framework.TestSuite {
 		"Tests various ways to address entities according to OData v4 specification.",
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part2-url-conventions/odata-v4.0-errata03-os-part2-url-conventions-complete.html#sec_AddressingEntities",
 	)
+	readCap := []framework.RequiredCapability{framework.Require(framework.CapRead, "Products")}
+	readByKeyCaps := []framework.RequiredCapability{
+		framework.Require(framework.CapRead, "Products"),
+		framework.Require(framework.CapIndexByKey, "Products"),
+	}
 
 	// Test 1: Address entity set returns collection
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_entity_set",
 		"Addressing entity set returns collection",
+		readCap,
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products")
 			if err != nil {
@@ -33,7 +41,7 @@ func AddressingEntities() *framework.TestSuite {
 				return fmt.Errorf("failed to parse JSON: %w", err)
 			}
 
-			if _, ok := result["value"]; !ok {
+			if _, ok := result["value"].([]interface{}); !ok {
 				return fmt.Errorf("response missing 'value' array")
 			}
 
@@ -42,9 +50,10 @@ func AddressingEntities() *framework.TestSuite {
 	)
 
 	// Test 2: Address single entity by key
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_single_entity",
 		"Addressing single entity by key",
+		readByKeyCaps,
 		func(ctx *framework.TestContext) error {
 			// First get a product ID
 			allResp, err := ctx.GET("/Products?$top=1")
@@ -86,8 +95,12 @@ func AddressingEntities() *framework.TestSuite {
 				return fmt.Errorf("failed to parse JSON: %w", err)
 			}
 
-			if _, ok := result["ID"]; !ok {
+			returnedID, ok := result["ID"]
+			if !ok {
 				return fmt.Errorf("response missing 'ID' field")
+			}
+			if fmt.Sprint(returnedID) != fmt.Sprint(productID) {
+				return fmt.Errorf("returned entity ID %v does not match requested key %v", returnedID, productID)
 			}
 
 			return nil
@@ -95,9 +108,10 @@ func AddressingEntities() *framework.TestSuite {
 	)
 
 	// Test 3: Non-existent entity returns 404
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_nonexistent_entity",
 		"Non-existent entity returns 404",
+		readByKeyCaps,
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products(00000000-0000-0000-0000-000000000000)")
 			if err != nil {
@@ -129,9 +143,10 @@ func AddressingEntities() *framework.TestSuite {
 	)
 
 	// Test 5: Accessing property of entity
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_entity_property",
 		"Accessing property of entity",
+		readByKeyCaps,
 		func(ctx *framework.TestContext) error {
 			// First get a product ID
 			allResp, err := ctx.GET("/Products?$top=1")
@@ -158,6 +173,7 @@ func AddressingEntities() *framework.TestSuite {
 			}
 
 			productID := firstItem["ID"]
+			expectedName := firstItem["Name"]
 
 			// Test property access
 			resp, err := ctx.GET(fmt.Sprintf("/Products(%v)/Name", productID))
@@ -165,17 +181,19 @@ func AddressingEntities() *framework.TestSuite {
 				return err
 			}
 
-			// Accept both 200 (property access supported) or 404 (not supported)
-			if resp.StatusCode == 200 {
-				var result map[string]interface{}
-				if err := json.Unmarshal(resp.Body, &result); err != nil {
-					return fmt.Errorf("failed to parse JSON: %w", err)
-				}
-				if _, ok := result["value"]; !ok {
-					return fmt.Errorf("property response missing 'value' field")
-				}
-			} else if resp.StatusCode != 404 {
-				return fmt.Errorf("expected status 200 or 404, got %d", resp.StatusCode)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			var result map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &result); err != nil {
+				return fmt.Errorf("failed to parse JSON: %w", err)
+			}
+			propertyValue, ok := result["value"]
+			if !ok {
+				return fmt.Errorf("property response missing 'value' field")
+			}
+			if fmt.Sprint(propertyValue) != fmt.Sprint(expectedName) {
+				return fmt.Errorf("property response value %v does not match entity Name %v", propertyValue, expectedName)
 			}
 
 			return nil
@@ -183,9 +201,10 @@ func AddressingEntities() *framework.TestSuite {
 	)
 
 	// Test 6: Accessing raw value of property
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_property_raw_value",
 		"Accessing raw value of property with $value",
+		readByKeyCaps,
 		func(ctx *framework.TestContext) error {
 			// First get a product ID
 			allResp, err := ctx.GET("/Products?$top=1")
@@ -212,6 +231,7 @@ func AddressingEntities() *framework.TestSuite {
 			}
 
 			productID := firstItem["ID"]
+			expectedName := fmt.Sprint(firstItem["Name"])
 
 			// Test $value access
 			resp, err := ctx.GET(fmt.Sprintf("/Products(%v)/Name/$value", productID))
@@ -219,23 +239,15 @@ func AddressingEntities() *framework.TestSuite {
 				return err
 			}
 
-			// Accept both 200 ($value supported) or 404 (not supported)
-			if resp.StatusCode == 200 {
-				// Should return raw text, not JSON
-				bodyStr := string(resp.Body)
-				if len(bodyStr) == 0 {
-					return fmt.Errorf("$value response is empty")
-				}
-				// Verify it's not JSON by checking for common JSON markers
-				var testJSON map[string]interface{}
-				if json.Unmarshal(resp.Body, &testJSON) == nil {
-					// It's valid JSON, which means it's probably not raw value
-					if _, hasValue := testJSON["value"]; hasValue {
-						return fmt.Errorf("$value should return raw text, not JSON with 'value' field")
-					}
-				}
-			} else if resp.StatusCode != 404 {
-				return fmt.Errorf("expected status 200 or 404, got %d", resp.StatusCode)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			if string(resp.Body) != expectedName {
+				return fmt.Errorf("$value body %q does not match property value %q", string(resp.Body), expectedName)
+			}
+			mediaType, _, err := mime.ParseMediaType(resp.Headers.Get("Content-Type"))
+			if err != nil || !strings.EqualFold(mediaType, "text/plain") {
+				return fmt.Errorf("string $value Content-Type = %q, want text/plain", resp.Headers.Get("Content-Type"))
 			}
 
 			return nil

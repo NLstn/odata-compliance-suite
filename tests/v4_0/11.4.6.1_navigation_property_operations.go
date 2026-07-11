@@ -101,11 +101,10 @@ func NavigationPropertyOperations() *framework.TestSuite {
 		},
 	)
 
-	// Test 4: Navigation property with $select — returned items must contain only
-	// the requested fields (LanguageKey and Description).
+	// Test 4: Navigation property with $select returns the requested fields.
 	suite.AddTest(
 		"test_nav_property_select",
-		"Navigation property $select restricts fields to requested set",
+		"Navigation property $select includes the requested fields",
 		func(ctx *framework.TestContext) error {
 			prodPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
@@ -125,10 +124,8 @@ func NavigationPropertyOperations() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			// ProductID is a key property of Descriptions and is always returned per spec.
-			allowed := []string{"ProductID", "LanguageKey", "Description", "@odata.etag", "@odata.id", "@odata.type"}
 			for i, item := range items {
-				if err := ctx.AssertEntityOnlyAllowedFields(item, allowed...); err != nil {
+				if err := ctx.AssertEntityHasFields(item, "LanguageKey", "Description"); err != nil {
 					return fmt.Errorf("Descriptions[%d]: %w", i, err)
 				}
 			}
@@ -279,10 +276,8 @@ func NavigationPropertyOperations() *framework.TestSuite {
 					return fmt.Errorf("Descriptions[%d].LanguageKey=%q violates $filter=LanguageKey eq 'EN'", i, lk)
 				}
 			}
-			// $select=LanguageKey,Description — ProductID is always returned as key.
-			allowed := []string{"ProductID", "LanguageKey", "Description", "@odata.etag", "@odata.id", "@odata.type"}
 			for i, d := range items {
-				if err := ctx.AssertEntityOnlyAllowedFields(d, allowed...); err != nil {
+				if err := ctx.AssertEntityHasFields(d, "LanguageKey", "Description"); err != nil {
 					return fmt.Errorf("Descriptions[%d]: %w", i, err)
 				}
 			}

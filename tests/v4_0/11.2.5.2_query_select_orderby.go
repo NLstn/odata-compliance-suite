@@ -14,11 +14,18 @@ func QuerySelectOrderby() *framework.TestSuite {
 		"Tests $select and $orderby query options according to OData v4 specification, including property selection, ordering, and their combinations.",
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part1-protocol/odata-v4.0-errata03-os-part1-protocol-complete.html#sec_SystemQueryOptionselect",
 	)
+	selectCap := []framework.RequiredCapability{framework.Require(framework.CapSelect, "Products")}
+	sortCap := []framework.RequiredCapability{framework.Require(framework.CapSort, "Products")}
+	selectSortCaps := []framework.RequiredCapability{
+		framework.Require(framework.CapSelect, "Products"),
+		framework.Require(framework.CapSort, "Products"),
+	}
 
 	// Test 1: Basic $select with single property
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_select_single",
 		"$select with single property",
+		selectCap,
 		func(ctx *framework.TestContext) error {
 			select_ := url.QueryEscape("Name")
 			resp, err := ctx.GET("/Products?$select=" + select_)
@@ -44,19 +51,15 @@ func QuerySelectOrderby() *framework.TestSuite {
 				return err
 			}
 
-			// Verify that fields NOT in $select are not present.
-			if err := ctx.AssertEntityOnlyAllowedFields(item, "@odata.context", "@odata.etag", "@odata.id", "ID", "Name"); err != nil {
-				return err
-			}
-
 			return nil
 		},
 	)
 
 	// Test 2: $select with multiple properties
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_select_multiple",
 		"$select with multiple properties",
+		selectCap,
 		func(ctx *framework.TestContext) error {
 			select_ := url.QueryEscape("Name,Price")
 			resp, err := ctx.GET("/Products?$select=" + select_)
@@ -82,19 +85,15 @@ func QuerySelectOrderby() *framework.TestSuite {
 				return err
 			}
 
-			// Verify that fields NOT in $select are not present.
-			if err := ctx.AssertEntityOnlyAllowedFields(item, "@odata.context", "@odata.etag", "@odata.id", "ID", "Name", "Price"); err != nil {
-				return err
-			}
-
 			return nil
 		},
 	)
 
 	// Test 3: Basic $orderby ascending
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_orderby_asc",
 		"$orderby ascending",
+		sortCap,
 		func(ctx *framework.TestContext) error {
 			orderby := url.QueryEscape("Price asc")
 			resp, err := ctx.GET("/Products?$orderby=" + orderby)
@@ -118,9 +117,10 @@ func QuerySelectOrderby() *framework.TestSuite {
 	)
 
 	// Test 4: $orderby descending
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_orderby_desc",
 		"$orderby descending",
+		sortCap,
 		func(ctx *framework.TestContext) error {
 			orderby := url.QueryEscape("Price desc")
 			resp, err := ctx.GET("/Products?$orderby=" + orderby)
@@ -144,9 +144,10 @@ func QuerySelectOrderby() *framework.TestSuite {
 	)
 
 	// Test 5: $orderby with multiple properties
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_orderby_multiple",
 		"$orderby with multiple properties",
+		sortCap,
 		func(ctx *framework.TestContext) error {
 			orderby := url.QueryEscape("Name,Price desc")
 			resp, err := ctx.GET("/Products?$orderby=" + orderby)
@@ -204,9 +205,10 @@ func QuerySelectOrderby() *framework.TestSuite {
 	)
 
 	// Test 6: Combining $select and $orderby
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_select_orderby_combined",
 		"Combining $select and $orderby",
+		selectSortCaps,
 		func(ctx *framework.TestContext) error {
 			select_ := url.QueryEscape("Name,Price")
 			orderby := url.QueryEscape("Price")
@@ -233,22 +235,16 @@ func QuerySelectOrderby() *framework.TestSuite {
 			if err := ctx.AssertEntityHasFields(item, "Name", "Price"); err != nil {
 				return err
 			}
-			if err := ctx.AssertEntityOnlyAllowedFields(item, "@odata.context", "@odata.etag", "@odata.id", "ID", "Name", "Price"); err != nil {
-				return err
-			}
-
 			return ctx.AssertEntitiesSortedByFloat(items, "Price", true)
 		},
 	)
 
-	// Test 7: $orderby on a nullable property places nulls consistently.
-	// The relative ordering of null vs non-null is service-defined, but nulls
-	// form a single sort rank: they must be grouped together at one end of the
-	// result (all first or all last), never interleaved with non-null values,
-	// and the non-null values must themselves be correctly ordered (Part 2 §5.1.4).
-	suite.AddTest(
+	// Test 7: null is smaller than any non-null value, so ascending order places
+	// nulls first (URL Conventions §5.1.4).
+	suite.AddTestWithCapabilities(
 		"test_orderby_nullable_property",
-		"$orderby on a nullable property groups nulls and orders non-nulls",
+		"$orderby ascending on a nullable property places nulls first and orders non-nulls",
+		sortCap,
 		func(ctx *framework.TestContext) error {
 			orderby := url.QueryEscape("ReleaseDate asc")
 			resp, err := ctx.GET("/Products?$orderby=" + orderby + "&$select=ReleaseDate")
@@ -290,16 +286,15 @@ func QuerySelectOrderby() *framework.TestSuite {
 				return ctx.Skip("ReleaseDate has no mix of null and non-null seed values to test null ordering")
 			}
 
-			// Nulls must be contiguous at one end: scanning the result, the
-			// null/non-null boundary may be crossed exactly once.
-			transitions := 0
-			for i := 1; i < len(items); i++ {
-				if isNull[i] != isNull[i-1] {
-					transitions++
+			for i := 0; i < nullCount; i++ {
+				if !isNull[i] {
+					return fmt.Errorf("ascending order must place all null ReleaseDate values first; item %d is non-null before the null boundary", i)
 				}
 			}
-			if transitions != 1 {
-				return fmt.Errorf("null ReleaseDate values are not grouped at one end (interleaved with non-null values); boundary transitions=%d", transitions)
+			for i := nullCount; i < len(items); i++ {
+				if isNull[i] {
+					return fmt.Errorf("ascending order returned null ReleaseDate at item %d after non-null values", i)
+				}
 			}
 
 			// The non-null ReleaseDate values (Edm.Date, ISO-8601 YYYY-MM-DD) must

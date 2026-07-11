@@ -94,6 +94,8 @@ func TestParseCapabilityProfileAllSupported(t *testing.T) {
 		framework.CapFilter, framework.CapSort, framework.CapExpand, framework.CapCount,
 		framework.CapSearch, framework.CapInsert, framework.CapUpdate, framework.CapDelete,
 		framework.CapTop, framework.CapSkip, framework.CapBatch, framework.CapCompute,
+		framework.CapSelect, framework.CapKeyAsSegment,
+		framework.CapRead, framework.CapIndexByKey,
 	}
 	for _, cap := range caps {
 		if !profile.Supports(framework.Require(cap, "")) {
@@ -116,19 +118,21 @@ func TestSkipReason(t *testing.T) {
 	}
 }
 
-func TestParseSelectSupportComputeable(t *testing.T) {
-	// SelectSupport.Computeable=false on an entity set should gate CapCompute.
+func TestParseComputeSupported(t *testing.T) {
+	// ComputeSupported=false on an entity set gates the top-level $compute option.
+	// SelectSupport.ComputeSupported has narrower semantics: $compute nested in $select.
 	xml := []byte(`<?xml version="1.0" encoding="utf-8"?>
 <edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+	<edmx:Reference Uri="https://example.test/Org.OData.Capabilities.V1.xml">
+		<edmx:Include Namespace="Org.OData.Capabilities.V1" Alias="Capabilities"/>
+	</edmx:Reference>
   <edmx:DataServices>
     <Schema Namespace="ComputeService" xmlns="http://docs.oasis-open.org/odata/ns/edm">
-      <EntityContainer Name="Container"/>
+		<EntityContainer Name="Container">
+		  <EntitySet Name="Products" EntityType="ComputeService.Product"/>
+		</EntityContainer>
       <Annotations Target="ComputeService.Container/Products">
-        <Annotation Term="Org.OData.Capabilities.V1.SelectSupport">
-          <Record>
-            <PropertyValue Property="Computeable" Bool="false"/>
-          </Record>
-        </Annotation>
+		<Annotation Term="Capabilities.ComputeSupported" Bool="false"/>
       </Annotations>
     </Schema>
   </edmx:DataServices>
@@ -139,11 +143,121 @@ func TestParseSelectSupportComputeable(t *testing.T) {
 		t.Fatalf("ParseCapabilityProfile: %v", err)
 	}
 	if profile.Supports(framework.Require(framework.CapCompute, "Products")) {
-		t.Error("expected CapCompute unsupported on Products (SelectSupport.Computeable=false)")
+		t.Error("expected CapCompute unsupported on Products (ComputeSupported=false)")
 	}
 	// Other caps unaffected
 	if !profile.Supports(framework.Require(framework.CapFilter, "Products")) {
 		t.Error("expected CapFilter still supported")
+	}
+}
+
+func TestParseCapabilityProfileAliasesInlineAndElementNotation(t *testing.T) {
+	xml := []byte(`<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.01" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:Reference Uri="https://example.test/Org.OData.Capabilities.V1.xml">
+    <edmx:Include Namespace="Org.OData.Capabilities.V1" Alias="Cap"/>
+  </edmx:Reference>
+  <edmx:DataServices>
+    <Schema Namespace="InlineService" Alias="Self" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityContainer Name="Container">
+        <Annotation Term="Cap.TopSupported"><Bool>false</Bool></Annotation>
+        <Annotation Term="Cap.BatchSupport">
+          <Record><PropertyValue Property="Supported"><Bool>false</Bool></PropertyValue></Record>
+        </Annotation>
+        <EntitySet Name="Products" EntityType="InlineService.Product">
+          <Annotation Term="Cap.FilterRestrictions">
+            <Record><PropertyValue Property="Filterable"><Bool>false</Bool></PropertyValue></Record>
+          </Annotation>
+          <Annotation Term="Cap.ComputeSupported" Bool="false"/>
+		  <Annotation Term="Cap.SelectSupport"><Record><PropertyValue Property="Supported" Bool="false"/></Record></Annotation>
+		  <Annotation Term="Cap.KeyAsSegmentSupported" Bool="false"/>
+		  <Annotation Term="Cap.IndexableByKey" Bool="false"/>
+		  <Annotation Term="Cap.ReadRestrictions"><Record><PropertyValue Property="Readable" Bool="false"/></Record></Annotation>
+        </EntitySet>
+      </EntityContainer>
+      <Annotations Target="Self.Container/Products">
+        <Annotation Term="Cap.SortRestrictions">
+          <Record><PropertyValue Property="Sortable" Bool="false"/></Record>
+        </Annotation>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>`)
+
+	profile, err := framework.ParseCapabilityProfile(xml)
+	if err != nil {
+		t.Fatalf("ParseCapabilityProfile: %v", err)
+	}
+
+	for _, req := range []framework.RequiredCapability{
+		framework.Require(framework.CapTop, ""),
+		framework.Require(framework.CapBatch, ""),
+		framework.Require(framework.CapFilter, "Products"),
+		framework.Require(framework.CapSort, "Products"),
+		framework.Require(framework.CapCompute, "Products"),
+		framework.Require(framework.CapSelect, "Products"),
+		framework.Require(framework.CapKeyAsSegment, "Products"),
+		framework.Require(framework.CapIndexByKey, "Products"),
+		framework.Require(framework.CapRead, "Products"),
+	} {
+		if profile.Supports(req) {
+			t.Errorf("Supports(%v, %q) = true, want false", req.Cap, req.EntitySet)
+		}
+	}
+}
+
+func TestParseCapabilityProfileExternalAnnotationsAcrossSchemasAndDefaults(t *testing.T) {
+	xml := []byte(`<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="4.01" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+  <edmx:DataServices>
+    <Schema Namespace="Model" Alias="M" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <EntityContainer Name="Container">
+        <EntitySet Name="Products" EntityType="Model.Product"/>
+      </EntityContainer>
+    </Schema>
+    <Schema Namespace="Annotations" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+      <Annotations Target="M.Container">
+        <Annotation Term="Org.OData.Capabilities.V1.DefaultCapabilities">
+          <Record>
+            <PropertyValue Property="TopSupported" Bool="false"/>
+            <PropertyValue Property="FilterRestrictions">
+              <Record><PropertyValue Property="Filterable" Bool="false"/></Record>
+            </PropertyValue>
+			<PropertyValue Property="SelectSupport">
+			  <Record><PropertyValue Property="Supported" Bool="false"/></Record>
+			</PropertyValue>
+			<PropertyValue Property="IndexableByKey" Bool="false"/>
+			<PropertyValue Property="ReadRestrictions">
+			  <Record><PropertyValue Property="Readable" Bool="false"/></Record>
+			</PropertyValue>
+          </Record>
+        </Annotation>
+      </Annotations>
+      <Annotations Target="M.Container/Products">
+        <Annotation Term="Org.OData.Capabilities.V1.CountRestrictions">
+          <Record><PropertyValue Property="Countable" Bool="false"/></Record>
+        </Annotation>
+      </Annotations>
+    </Schema>
+  </edmx:DataServices>
+</edmx:Edmx>`)
+
+	profile, err := framework.ParseCapabilityProfile(xml)
+	if err != nil {
+		t.Fatalf("ParseCapabilityProfile: %v", err)
+	}
+
+	for _, req := range []framework.RequiredCapability{
+		framework.Require(framework.CapTop, "Products"),
+		framework.Require(framework.CapFilter, "Products"),
+		framework.Require(framework.CapCount, "Products"),
+		framework.Require(framework.CapSelect, "Products"),
+		framework.Require(framework.CapIndexByKey, "Products"),
+		framework.Require(framework.CapRead, "Products"),
+	} {
+		if profile.Supports(req) {
+			t.Errorf("Supports(%v, %q) = true, want false", req.Cap, req.EntitySet)
+		}
 	}
 }
 

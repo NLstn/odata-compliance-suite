@@ -339,10 +339,9 @@ func MatchesPatternFilter() *framework.TestSuite {
 		},
 	)
 
-	// Test 7: matchesPattern is rejected when OData-MaxVersion: 4.0 is negotiated (4.01-only feature)
 	suite.AddTest(
-		"test_matchespattern_version_negotiation_4_0_rejected",
-		"matchesPattern returns 400 Bad Request when OData-MaxVersion: 4.0 is negotiated (4.01-only feature)",
+		"test_matchespattern_version_negotiation_4_0_accepted",
+		"matchesPattern remains accepted when OData-MaxVersion: 4.0 constrains the response version",
 		func(ctx *framework.TestContext) error {
 			pattern := `^[A-Z]`
 			filterExpr := fmt.Sprintf("matchesPattern(Name,'%s')", pattern)
@@ -354,7 +353,7 @@ func MatchesPatternFilter() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, http.StatusBadRequest)
+			return ctx.AssertStatusCode(resp, http.StatusOK)
 		},
 	)
 

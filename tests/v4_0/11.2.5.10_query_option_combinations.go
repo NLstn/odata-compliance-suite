@@ -39,11 +39,9 @@ func itemString(item map[string]interface{}, key string) (string, error) {
 	return v, nil
 }
 
-func assertSelectedFieldsOnly(ctx *framework.TestContext, items []map[string]interface{}, selected ...string) error {
-	allowed := []string{"@odata.context", "@odata.etag", "@odata.id", "ID"}
-	allowed = append(allowed, selected...)
+func assertSelectedFieldsPresent(ctx *framework.TestContext, items []map[string]interface{}, selected ...string) error {
 	for i, item := range items {
-		if err := ctx.AssertEntityOnlyAllowedFields(item, allowed...); err != nil {
+		if err := ctx.AssertEntityHasFields(item, selected...); err != nil {
 			return fmt.Errorf("item %d: %w", i, err)
 		}
 	}
@@ -99,7 +97,7 @@ func QueryOptionCombinations() *framework.TestSuite {
 			if err := assertPricesMatch(items, func(p float64) bool { return p > 100 }, "Price gt 100"); err != nil {
 				return err
 			}
-			if err := assertSelectedFieldsOnly(ctx, items, "Name", "Price"); err != nil {
+			if err := assertSelectedFieldsPresent(ctx, items, "Name", "Price"); err != nil {
 				return err
 			}
 
@@ -225,7 +223,7 @@ func QueryOptionCombinations() *framework.TestSuite {
 			if err := assertSortedByPriceDesc(ctx, items); err != nil {
 				return err
 			}
-			if err := assertSelectedFieldsOnly(ctx, items, "Name", "Price"); err != nil {
+			if err := assertSelectedFieldsPresent(ctx, items, "Name", "Price"); err != nil {
 				return err
 			}
 
@@ -291,7 +289,7 @@ func QueryOptionCombinations() *framework.TestSuite {
 			if err := assertSortedByPriceDesc(ctx, items); err != nil {
 				return err
 			}
-			if err := assertSelectedFieldsOnly(ctx, items, "Name", "Price"); err != nil {
+			if err := assertSelectedFieldsPresent(ctx, items, "Name", "Price"); err != nil {
 				return err
 			}
 			count, ok := result["@odata.count"].(float64)

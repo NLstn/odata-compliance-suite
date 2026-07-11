@@ -1,8 +1,8 @@
 # OData v4 Compliance Test Suite
 
 A standalone, black-box compliance test suite for **OData v4.0 and v4.01**
-services. Point it at any running OData service and it reports how well that
-service conforms to the specification.
+services. Point it at any running OData service and it reports which
+specification checks pass, fail, or are not exercised.
 
 The suite is written in Go but is **language-agnostic about the service under
 test** — it only speaks HTTP. A .NET, Java, Python, Node, or Go OData service
@@ -13,7 +13,7 @@ can all be measured the same way.
 
 ## What it checks
 
-~106 suites / ~669 individual tests across:
+162 suites / 1,188 individual tests across:
 
 - Service document & metadata (`$metadata` XML + JSON)
 - Query options: `$filter`, `$select`, `$orderby`, `$top`, `$skip`, `$expand`,
@@ -27,6 +27,10 @@ can all be measured the same way.
 - Vocabulary annotations: Core, Capabilities
 - OData 4.01-specific features (`in` operator, `divby`, key-as-segments,
   JSON batch, wildcard `$select`/`$expand`, `matchesPattern`, …)
+
+The Minimal/Intermediate/Advanced summary is a suite coverage grouping, not a
+formal OASIS certification. See [`CONFORMANCE.md`](./CONFORMANCE.md); skipped
+tests make a band incomplete rather than silently counting it as met.
 
 ## Requirements
 
@@ -101,9 +105,18 @@ Supported annotations:
 | `InsertRestrictions.Insertable=false` | create / deep-insert / upsert suites |
 | `UpdateRestrictions.Updatable=false` | update / upsert suites |
 | `DeleteRestrictions.Deletable=false` | delete suite |
-| `TopSupported=false` (container) | top/skip/pagination suites |
+| `TopSupported=false` | `$top` tests |
 | `SkipSupported=false` (container) | skip/skiptoken/pagination suites |
-| `BatchSupported=false` (container) | multipart and JSON batch suites |
+| `BatchSupported=false` or `BatchSupport.Supported=false` | multipart and JSON batch suites |
+| `ComputeSupported=false` | `$compute` suites |
+| `SelectSupport.Supported=false` | `$select` tests |
+| `KeyAsSegmentSupported=false` | key-as-segment suite |
+| `ReadRestrictions.Readable=false` | entity-read tests |
+| `IndexableByKey=false` | key-addressing tests |
+
+The parser understands inline and external annotations, vocabulary/schema
+aliases, attribute or element boolean expressions, and container-level
+`DefaultCapabilities` defaults.
 
 If `$metadata` cannot be fetched or parsed, the suite warns and runs all tests
 (fail-open).
@@ -215,8 +228,8 @@ channel above.
 **Normal mode** prints a single live progress line and a final summary:
 
 ```
-Running 106 suites (669 total tests)
-Progress: suites 106/106 | tests 669/669 | passed 669 | failed 0 | skipped 0
+Running 162 suites (1188 total tests)
+Progress: suites 162/162 | tests 1188/1188 | passed 1188 | failed 0 | skipped 0
 
 Test Scripts: 106/106 passed (100%)
 Individual Tests:

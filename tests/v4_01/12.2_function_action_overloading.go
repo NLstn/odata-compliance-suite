@@ -517,7 +517,7 @@ func FunctionActionOverloading() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_function_call_syntax_version_negotiation_4_01_vs_4_0",
-		"parameterless function call without parentheses is accepted with OData-MaxVersion 4.01 and rejected when negotiated to 4.0",
+		"parameterless function call without parentheses is accepted with OData-MaxVersion 4.01 and 4.0",
 		func(ctx *framework.TestContext) error {
 			doc, err := getMetadata(ctx)
 			if err != nil {
@@ -542,11 +542,8 @@ func FunctionActionOverloading() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(v40Resp, http.StatusBadRequest); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 negotiated request must reject 4.01 parameterless function shorthand: %v", err))
-			}
-			if err := ctx.AssertODataError(v40Resp, http.StatusBadRequest, "parentheses"); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 negotiated function shorthand rejection must include strict OData error payload: %v", err))
+			if err := ctx.AssertStatusCode(v40Resp, http.StatusOK); err != nil {
+				return framework.NewError(fmt.Sprintf("parameterless function syntax must work regardless of OData-MaxVersion: %v", err))
 			}
 
 			return nil

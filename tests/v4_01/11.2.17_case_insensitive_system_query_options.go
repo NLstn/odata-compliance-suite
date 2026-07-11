@@ -283,73 +283,26 @@ func CaseInsensitiveSystemQueryOptions() *framework.TestSuite {
 	)
 
 	suite.AddTest(
-		"test_negotiated_4_0_keeps_strict_query_option_and_expression_casing",
-		"when negotiated to 4.0, mixed-case/$-less system options and upper-case expression keywords are not treated as 4.01 features",
+		"test_4_01_url_compatibility_regardless_of_maxversion",
+		"mixed-case and no-$ 4.01 URL syntax remains accepted with OData-MaxVersion: 4.0",
 		func(ctx *framework.TestContext) error {
 			headers := []framework.Header{{Key: "OData-MaxVersion", Value: "4.0"}}
-
-			canonicalResp, err := ctx.GET("/Products?$filter=Price%20gt%2010&$top=1", headers...)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(canonicalResp, http.StatusOK); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 canonical query should still work: %v", err))
-			}
-
-			mixedCaseOptionResp, err := ctx.GET("/Products?$FILTER=Price%20gt%2010&$top=1", headers...)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertODataError(mixedCaseOptionResp, http.StatusBadRequest, "unknown query option"); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 should reject mixed-case system option names with strict error payload: %v", err))
-			}
-
-			noDollarOptionResp, err := ctx.GET("/Products?filter=Price%20gt%2010&$top=1", headers...)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(noDollarOptionResp, http.StatusOK); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 should treat non-$ query options as custom options: %v", err))
-			}
-
-			upperCaseOperatorResp, err := ctx.GET("/Products?$filter=Price%20GT%2010&$top=1", headers...)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertODataError(upperCaseOperatorResp, http.StatusBadRequest, "unexpected token"); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 should reject upper-case logical/comparison operators with strict error payload: %v", err))
-			}
-
-			upperCaseFunctionResp, err := ctx.GET("/Products?$filter=CONTAINS(Name,'Laptop')&$top=1", headers...)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertODataError(upperCaseFunctionResp, http.StatusBadRequest, "unsupported function"); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 should reject upper-case canonical function names with strict error payload: %v", err))
-			}
-
-			mixedCaseApplyResp, err := ctx.GET("/Products?$APPLY=filter(Price%20gt%2010)&$top=1", headers...)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertODataError(mixedCaseApplyResp, http.StatusBadRequest, "unknown query option"); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 should reject mixed-case $apply option name with strict error payload: %v", err))
-			}
-
-			noDollarApplyResp, err := ctx.GET("/Products?apply=filter(Price%20gt%2010)&$top=1", headers...)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(noDollarApplyResp, http.StatusOK); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 should treat no-$ apply as custom option and ignore it: %v", err))
-			}
-
-			mixedCaseApplyTransformationResp, err := ctx.GET("/Products?$apply=FILTER(Price%20gt%2010)&$top=1", headers...)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertODataError(mixedCaseApplyTransformationResp, http.StatusBadRequest, "unknown transformation"); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 should reject mixed-case apply transformation names with strict error payload: %v", err))
+			for _, path := range []string{
+				"/Products?$FILTER=Price%20gt%2010&$top=1",
+				"/Products?filter=Price%20gt%2010&$top=1",
+				"/Products?$filter=Price%20GT%2010&$top=1",
+				"/Products?$filter=CONTAINS(Name,'Laptop')&$top=1",
+				"/Products?$APPLY=filter(Price%20gt%2010)&$top=1",
+				"/Products?apply=filter(Price%20gt%2010)&$top=1",
+				"/Products?$apply=FILTER(Price%20gt%2010)&$top=1",
+			} {
+				resp, err := ctx.GET(path, headers...)
+				if err != nil {
+					return err
+				}
+				if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+					return framework.NewError(fmt.Sprintf("4.01 URL syntax must be accepted regardless of OData-MaxVersion for %s: %v", path, err))
+				}
 			}
 
 			return nil

@@ -237,9 +237,10 @@ v1 hard-codes this reference model. Planned work to broaden applicability:
 3. ~~**Capability negotiation**~~ ✓ **Done** — suites for features the target's
    `$metadata` / capability annotations declare unsupported are skipped (not
    failed). Supported terms: `FilterRestrictions`, `SortRestrictions`,
-   `ExpandRestrictions`, `CountRestrictions`, `SearchRestrictions`,
+   `ExpandRestrictions`, `CountRestrictions`, `SearchRestrictions`, `SelectSupport`,
    `InsertRestrictions`, `UpdateRestrictions`, `DeleteRestrictions`,
-   `TopSupported`, `SkipSupported`, `BatchSupported`. Use `-strict` to override.
+   `TopSupported`, `SkipSupported`, `ComputeSupported`, `KeyAsSegmentSupported`,
+   `BatchSupported`, `BatchSupport`, and `DefaultCapabilities`. Use `-strict` to override.
 
 Until then, the simplest path for a non-`go-odata` service is to expose an
 endpoint that reproduces the model above.

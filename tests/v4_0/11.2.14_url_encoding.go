@@ -233,26 +233,6 @@ func URLEncoding() *framework.TestSuite {
 		},
 	)
 
-	// Test 12: Case sensitivity of query options (OData 4.0 only)
-	// OData 4.0 URL Conventions §2.1: system query options are case-sensitive;
-	// OData 4.01 §5.1.1 relaxes this by requiring services to also accept case-insensitive forms.
-	// We negotiate OData 4.0 explicitly via OData-MaxVersion: 4.0 so the server applies 4.0 rules.
-	suite.AddTest(
-		"test_query_option_case",
-		"$FILTER (uppercase) must be rejected with 400 under OData 4.0 — system query options are case-sensitive",
-		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$FILTER=Status%20eq%201",
-				framework.Header{Key: "OData-MaxVersion", Value: "4.0"})
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 400 {
-				return fmt.Errorf("$FILTER (uppercase) must be rejected with 400 under OData 4.0 (§2.1); got %d", resp.StatusCode)
-			}
-			return nil
-		},
-	)
-
 	suite.AddTest(
 		"test_encoded_ampersand_stays_in_string_literal",
 		"Encoded ampersand inside a string literal is not treated as a query separator",

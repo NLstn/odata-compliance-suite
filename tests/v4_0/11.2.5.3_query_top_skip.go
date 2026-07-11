@@ -15,11 +15,18 @@ func QueryTopSkip() *framework.TestSuite {
 		"Tests $top and $skip query options for paging according to OData v4 specification.",
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part1-protocol/odata-v4.0-errata03-os-part1-protocol-complete.html#sec_SystemQueryOptionstopandskip",
 	)
+	topCap := []framework.RequiredCapability{framework.Require(framework.CapTop, "Products")}
+	skipCap := []framework.RequiredCapability{framework.Require(framework.CapSkip, "Products")}
+	topSkipCaps := []framework.RequiredCapability{
+		framework.Require(framework.CapTop, "Products"),
+		framework.Require(framework.CapSkip, "Products"),
+	}
 
 	// Test 1: $top returns exactly min($top, total) items
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_top_limit",
 		"$top returns exactly min($top, total) items",
+		topCap,
 		func(ctx *framework.TestContext) error {
 			total, err := collectionSize(ctx, "/Products")
 			if err != nil {
@@ -69,9 +76,10 @@ func QueryTopSkip() *framework.TestSuite {
 	)
 
 	// Test 2: $skip skips the specified number of items
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_skip_items",
 		"$skip skips items",
+		skipCap,
 		func(ctx *framework.TestContext) error {
 			// First get all products to know what to expect
 			allResp, err := ctx.GET("/Products")
@@ -140,9 +148,10 @@ func QueryTopSkip() *framework.TestSuite {
 	)
 
 	// Test 3: $top=0 returns empty collection
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_top_zero",
 		"$top=0 returns empty collection",
+		topCap,
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$top=0")
 			if err != nil {
@@ -171,9 +180,10 @@ func QueryTopSkip() *framework.TestSuite {
 	)
 
 	// Test 4: Combine $skip and $top for paging, verifying the exact page slice
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_skip_top_paging",
 		"$skip and $top return the exact ordered page",
+		topSkipCaps,
 		func(ctx *framework.TestContext) error {
 			// Use $orderby=ID so the ordering is deterministic and the page can be
 			// compared against the corresponding slice of the full ordered list.

@@ -12,7 +12,7 @@ import (
 func HeaderContentType() *framework.TestSuite {
 	suite := framework.NewTestSuite(
 		"8.1.1 Header Content-Type",
-		"Tests that Content-Type header is properly set according to OData v4 specification, including media type and odata.metadata parameter.",
+		"Tests that Content-Type is properly set according to OData v4.0. The optional odata.metadata parameter is validated when present.",
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part1-protocol/odata-v4.0-errata03-os-part1-protocol-complete.html#sec_HeaderContentType",
 	)
 
@@ -22,44 +22,35 @@ func HeaderContentType() *framework.TestSuite {
 		return firstEntityPath(ctx, "Products")
 	}
 
-	// Test 1: Service Document should return application/json with odata.metadata=minimal
+	assertJSONContentType := func(resp *framework.HTTPResponse) error {
+		contentType := resp.Headers.Get("Content-Type")
+		if contentType == "" {
+			return framework.NewError("Content-Type header is missing")
+		}
+		mediaType, params, err := mime.ParseMediaType(contentType)
+		if err != nil {
+			return fmt.Errorf("failed to parse Content-Type %q: %w", contentType, err)
+		}
+		if !strings.EqualFold(mediaType, "application/json") {
+			return fmt.Errorf("Content-Type media type = %q, want application/json", mediaType)
+		}
+		if metadataValue, present := params["odata.metadata"]; present &&
+			metadataValue != "minimal" && metadataValue != "full" && metadataValue != "none" {
+			return fmt.Errorf("invalid odata.metadata value %q", metadataValue)
+		}
+		return nil
+	}
+
+	// The odata.metadata parameter is optional and defaults to minimal.
 	suite.AddTest(
 		"test_service_doc_content_type",
-		"Service Document returns application/json with odata.metadata=minimal",
+		"Service Document returns application/json and a valid optional odata.metadata parameter",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/")
 			if err != nil {
 				return err
 			}
-
-			contentType := resp.Headers.Get("Content-Type")
-
-			if contentType == "" {
-				return framework.NewError("Content-Type header is missing")
-			}
-
-			// Strictly validate Content-Type format per OData spec
-			// Must be application/json with odata.metadata parameter
-			mediaType, params, err := mime.ParseMediaType(contentType)
-			if err != nil {
-				return framework.NewError(fmt.Sprintf("Failed to parse Content-Type: %s", contentType))
-			}
-
-			if !strings.EqualFold(mediaType, "application/json") {
-				return framework.NewError(fmt.Sprintf("Expected application/json, got: %s", mediaType))
-			}
-
-			metadataValue, ok := params["odata.metadata"]
-			if !ok {
-				return framework.NewError(fmt.Sprintf("Missing odata.metadata parameter. Got: %s", contentType))
-			}
-
-			// Validate that odata.metadata has a valid value (minimal, full, or none)
-			if metadataValue != "minimal" && metadataValue != "full" && metadataValue != "none" {
-				return framework.NewError(fmt.Sprintf("Invalid odata.metadata value '%s'. Must be minimal, full, or none", metadataValue))
-			}
-
-			return nil
+			return assertJSONContentType(resp)
 		},
 	)
 
@@ -83,54 +74,23 @@ func HeaderContentType() *framework.TestSuite {
 		},
 	)
 
-	// Test 3: Metadata Document with $format=json should return application/json
-	suite.AddTest(
-		"test_metadata_json_content_type",
-		"Metadata Document with $format=json returns application/json",
-		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/$metadata?$format=json")
-			if err != nil {
-				return err
-			}
-
-			contentType := resp.Headers.Get("Content-Type")
-
-			if !strings.Contains(contentType, "application/json") {
-				return framework.NewError(fmt.Sprintf("Expected application/json, got: %s", contentType))
-			}
-
-			return nil
-		},
-	)
-
-	// Test 4: Entity Collection should return application/json with odata.metadata
+	// JSON CSDL is an OData 4.01 conformance feature and is tested in v4_01.
 	suite.AddTest(
 		"test_entity_collection_content_type",
-		"Entity Collection returns application/json with odata.metadata",
+		"Entity Collection returns application/json and a valid optional odata.metadata parameter",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products")
 			if err != nil {
 				return err
 			}
 
-			contentType := resp.Headers.Get("Content-Type")
-
-			if !strings.Contains(contentType, "application/json") {
-				return framework.NewError(fmt.Sprintf("Expected application/json, got: %s", contentType))
-			}
-
-			if !strings.Contains(contentType, "odata.metadata") {
-				return framework.NewError(fmt.Sprintf("Missing odata.metadata parameter. Got: %s", contentType))
-			}
-
-			return nil
+			return assertJSONContentType(resp)
 		},
 	)
 
-	// Test 5: Single Entity should return application/json with odata.metadata
 	suite.AddTest(
 		"test_single_entity_content_type",
-		"Single Entity returns application/json with odata.metadata",
+		"Single Entity returns application/json and a valid optional odata.metadata parameter",
 		func(ctx *framework.TestContext) error {
 			path, err := getProductPath(ctx)
 			if err != nil {
@@ -141,17 +101,7 @@ func HeaderContentType() *framework.TestSuite {
 				return err
 			}
 
-			contentType := resp.Headers.Get("Content-Type")
-
-			if !strings.Contains(contentType, "application/json") {
-				return framework.NewError(fmt.Sprintf("Expected application/json, got: %s", contentType))
-			}
-
-			if !strings.Contains(contentType, "odata.metadata") {
-				return framework.NewError(fmt.Sprintf("Missing odata.metadata parameter. Got: %s", contentType))
-			}
-
-			return nil
+			return assertJSONContentType(resp)
 		},
 	)
 

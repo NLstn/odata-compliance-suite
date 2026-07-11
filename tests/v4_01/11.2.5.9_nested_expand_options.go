@@ -288,7 +288,7 @@ func NestedExpandOptions() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_nested_expand_version_negotiation_4_01_vs_4_0",
-		"nested expand options using no-$ forms are accepted with OData-MaxVersion 4.01 and rejected when negotiated to 4.0",
+		"nested expand options using no-$ forms are accepted with OData-MaxVersion 4.01 and 4.0",
 		func(ctx *framework.TestContext) error {
 			expand := url.QueryEscape("Descriptions(filter=LanguageKey eq 'EN';top=1;select=LanguageKey)")
 			query := "/Products?$top=1&$expand=" + expand
@@ -307,11 +307,8 @@ func NestedExpandOptions() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(v40Resp, http.StatusBadRequest); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 negotiated request must reject 4.01 no-$ nested option names: %v", err))
-			}
-			if err := ctx.AssertODataError(v40Resp, http.StatusBadRequest, "unsupported nested $expand option"); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 negotiated nested expand rejection must include strict OData error payload: %v", err))
+			if err := ctx.AssertStatusCode(v40Resp, http.StatusOK); err != nil {
+				return framework.NewError(fmt.Sprintf("supported 4.01 URL syntax must work regardless of OData-MaxVersion: %v", err))
 			}
 
 			return nil

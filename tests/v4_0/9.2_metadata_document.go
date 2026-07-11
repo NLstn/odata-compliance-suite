@@ -27,13 +27,22 @@ type csdlMetadataDataServices struct {
 type csdlMetadataSchema struct {
 	XMLName         xml.Name                     `xml:"Schema"`
 	Namespace       string                       `xml:"Namespace,attr"`
+	Alias           string                       `xml:"Alias,attr"`
 	EntityTypes     []csdlMetadataEntityType     `xml:"EntityType"`
 	EntityContainer *csdlMetadataEntityContainer `xml:"EntityContainer"`
 }
 
 type csdlMetadataEntityType struct {
-	Name string           `xml:"Name,attr"`
-	Key  *csdlMetadataKey `xml:"Key"`
+	Name       string                 `xml:"Name,attr"`
+	BaseType   string                 `xml:"BaseType,attr"`
+	Abstract   string                 `xml:"Abstract,attr"`
+	Key        *csdlMetadataKey       `xml:"Key"`
+	Properties []csdlMetadataProperty `xml:"Property"`
+}
+
+type csdlMetadataProperty struct {
+	Name     string `xml:"Name,attr"`
+	Nullable string `xml:"Nullable,attr"`
 }
 
 type csdlMetadataKey struct {
@@ -177,7 +186,7 @@ func MetadataDocument() *framework.TestSuite {
 	// Test 6: Metadata contains EntityType definitions
 	suite.AddTest(
 		"test_metadata_entitytype",
-		"Metadata contains EntityType definitions with key properties",
+		"Metadata entity types obey key inheritance and key-property rules",
 		func(ctx *framework.TestContext) error {
 			metadata, _, err := loadMetadataDocument(ctx)
 			if err != nil {
@@ -185,21 +194,51 @@ func MetadataDocument() *framework.TestSuite {
 			}
 
 			foundEntityType := false
+			types := make(map[string]csdlMetadataEntityType)
+			aliases := make(map[string]string)
 			for _, schema := range metadata.DataServices.Schemas {
+				if schema.Alias != "" {
+					aliases[schema.Alias] = schema.Namespace
+				}
 				for _, entityType := range schema.EntityTypes {
 					foundEntityType = true
 					if strings.TrimSpace(entityType.Name) == "" {
 						return framework.NewError("EntityType definition missing Name attribute")
 					}
-					if entityType.Key == nil || len(entityType.Key.PropertyRefs) == 0 {
-						return framework.NewError(fmt.Sprintf("EntityType %s missing Key/PropertyRef definition", entityType.Name))
-					}
+					types[schema.Namespace+"."+entityType.Name] = entityType
 				}
 			}
 			if !foundEntityType {
 				return framework.NewError("metadata must contain at least one EntityType definition")
 			}
-
+			for qualifiedName, entityType := range types {
+				isAbstract := entityType.Abstract == "true" || entityType.Abstract == "1"
+				if entityType.BaseType == "" && !isAbstract && entityType.Key == nil {
+					return fmt.Errorf("non-abstract EntityType %s has neither a key nor a base type", qualifiedName)
+				}
+				if entityType.Key == nil {
+					continue
+				}
+				if len(entityType.Key.PropertyRefs) == 0 {
+					return fmt.Errorf("EntityType %s has an empty Key element", qualifiedName)
+				}
+				if entityType.BaseType != "" && inheritedKey(entityType.BaseType, types, aliases, map[string]bool{}) {
+					return fmt.Errorf("EntityType %s defines a key even though its base type already defines one", qualifiedName)
+				}
+				properties := make(map[string]csdlMetadataProperty, len(entityType.Properties))
+				for _, property := range entityType.Properties {
+					properties[property.Name] = property
+				}
+				for _, ref := range entityType.Key.PropertyRefs {
+					property, ok := properties[ref.Name]
+					if !ok {
+						return fmt.Errorf("EntityType %s key references missing structural property %q", qualifiedName, ref.Name)
+					}
+					if property.Nullable != "false" && property.Nullable != "0" {
+						return fmt.Errorf("EntityType %s key property %q must declare Nullable=false", qualifiedName, ref.Name)
+					}
+				}
+			}
 			return nil
 		},
 	)
@@ -214,12 +253,12 @@ func MetadataDocument() *framework.TestSuite {
 				return err
 			}
 
-			foundContainer := false
+			containerCount := 0
 			for _, schema := range metadata.DataServices.Schemas {
 				if schema.EntityContainer == nil {
 					continue
 				}
-				foundContainer = true
+				containerCount++
 				if strings.TrimSpace(schema.EntityContainer.Name) == "" {
 					return framework.NewError("EntityContainer missing Name attribute")
 				}
@@ -227,8 +266,8 @@ func MetadataDocument() *framework.TestSuite {
 					return framework.NewError("EntityContainer must advertise at least one EntitySet or Singleton")
 				}
 			}
-			if !foundContainer {
-				return framework.NewError("metadata must contain EntityContainer")
+			if containerCount != 1 {
+				return fmt.Errorf("metadata document defines %d entity containers, want exactly one", containerCount)
 			}
 
 			return nil
@@ -250,6 +289,29 @@ func MetadataDocument() *framework.TestSuite {
 	)
 
 	return suite
+}
+
+func inheritedKey(baseType string, types map[string]csdlMetadataEntityType, aliases map[string]string, seen map[string]bool) bool {
+	if dot := strings.Index(baseType, "."); dot > 0 {
+		if namespace, ok := aliases[baseType[:dot]]; ok {
+			baseType = namespace + baseType[dot:]
+		}
+	}
+	if seen[baseType] {
+		return false
+	}
+	seen[baseType] = true
+	base, ok := types[baseType]
+	if !ok {
+		return false
+	}
+	if base.Key != nil {
+		return true
+	}
+	if base.BaseType == "" {
+		return false
+	}
+	return inheritedKey(base.BaseType, types, aliases, seen)
 }
 
 func loadMetadataDocument(ctx *framework.TestContext) (*csdlMetadataDocument, *framework.HTTPResponse, error) {

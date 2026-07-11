@@ -8,17 +8,18 @@ import (
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
 
-// KeyAsSegments creates the OData 4.01 key-as-segments URL convention test suite.
+// KeyAsSegments creates the optional key-as-segments URL convention test suite.
 // It validates that /EntitySet/{key} resolves equivalently to /EntitySet({key})
-// when the client negotiates OData 4.01, and that this convention is NOT active
-// under OData 4.0 negotiation.
+// and remains available when a 4.01 service constrains its response to 4.0.
 func KeyAsSegments() *framework.TestSuite {
 	suite := framework.NewTestSuite(
-		"OData 4.01 Key-As-Segments URL Convention",
-		"Validates OData 4.01 key-as-segment URL addressing for entity access, property access, "+
-			"and reference access. Verifies the convention is not active under OData 4.0 negotiation.",
+		"Key-As-Segments URL Convention",
+		"Validates optional key-as-segment URL addressing for entity and property access under both response-version constraints.",
 		"https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part2-url-conventions.html#sec_KeyasSegmentConvention",
 	)
+	suite.RequiredCapabilities = []framework.RequiredCapability{
+		framework.Require(framework.CapKeyAsSegment, ""),
+	}
 
 	// Helper: fetch the ID of the first product.
 	getFirstProductID := func(ctx *framework.TestContext) (string, error) {
@@ -72,10 +73,11 @@ func KeyAsSegments() *framework.TestSuite {
 		},
 	)
 
-	// Test 2: /Products/{id} with OData-MaxVersion: 4.0 must NOT apply key-as-segments.
+	// OData 4.01 Protocol §13.2.1(9) requires supported URL conventions
+	// regardless of the requested OData-MaxVersion.
 	suite.AddTest(
-		"test_key_as_segment_not_active_40",
-		"GET /Products/{id} with OData-MaxVersion: 4.0 does not apply key-as-segments (4.0-only behavior)",
+		"test_key_as_segment_active_40",
+		"GET /Products/{id} with OData-MaxVersion: 4.0 still applies supported key-as-segments",
 		func(ctx *framework.TestContext) error {
 			id, err := getFirstProductID(ctx)
 			if err != nil {
@@ -88,12 +90,8 @@ func KeyAsSegments() *framework.TestSuite {
 				return err
 			}
 
-			// Under OData 4.0, the numeric segment is not a property name, so this should be 404.
-			if resp.StatusCode == http.StatusOK {
-				return fmt.Errorf("OData 4.0 must NOT resolve /Products/{id} as key-as-segment, got 200")
-			}
-			if resp.StatusCode != http.StatusNotFound {
-				return fmt.Errorf("OData 4.0: expected 404 for key-as-segment path, got %d", resp.StatusCode)
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return fmt.Errorf("supported key-as-segment syntax must work regardless of OData-MaxVersion: %w", err)
 			}
 			return nil
 		},

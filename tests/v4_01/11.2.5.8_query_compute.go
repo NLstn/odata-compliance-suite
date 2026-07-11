@@ -332,7 +332,7 @@ func QueryCompute() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_compute_version_negotiation_4_01_vs_4_0",
-		"$compute is accepted with OData-MaxVersion 4.01 and rejected when negotiated to 4.0",
+		"$compute is accepted with OData-MaxVersion 4.01 and 4.0",
 		func(ctx *framework.TestContext) error {
 			query := "/Products?$compute=Price mul 1.1 as PriceWithTax&$select=ID,PriceWithTax&$top=1"
 
@@ -350,11 +350,8 @@ func QueryCompute() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(v40Resp, http.StatusBadRequest); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 negotiated request must reject 4.01 $compute feature: %v", err))
-			}
-			if err := ctx.AssertODataError(v40Resp, http.StatusBadRequest, "$compute is not supported in OData 4.0"); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 negotiated $compute rejection must include strict OData error payload: %v", err))
+			if err := ctx.AssertStatusCode(v40Resp, http.StatusOK); err != nil {
+				return framework.NewError(fmt.Sprintf("supported 4.01 URL syntax must work regardless of OData-MaxVersion: %v", err))
 			}
 
 			return nil
