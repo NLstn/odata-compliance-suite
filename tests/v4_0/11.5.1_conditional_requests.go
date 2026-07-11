@@ -369,10 +369,22 @@ func ConditionalRequests() *framework.TestSuite {
 		"test_if_match_delete_matching",
 		"If-Match with matching ETag allows DELETE",
 		func(ctx *framework.TestContext) error {
-			path, etag, err := getProductAndETag(ctx)
+			// Use a disposable entity without navigation dependents. Deleting an
+			// arbitrary seeded entity may legitimately fail an integrity constraint,
+			// which would test referential behavior rather than If-Match semantics.
+			productID, err := createTestProduct(ctx, "Conditional Delete Product", 12.34)
 			if err != nil {
 				return err
 			}
+			path := fmt.Sprintf("/Products(%s)", productID)
+			getResp, err := ctx.GET(path)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(getResp, 200); err != nil {
+				return err
+			}
+			etag := getResp.Headers.Get("ETag")
 
 			if etag == "" {
 				return framework.NewError("No ETag support")
