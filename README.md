@@ -165,7 +165,9 @@ Start your service in the background, then run the Action against it:
 
 The Action downloads a prebuilt binary and runs it **on the runner host**, so a
 service listening on `localhost` is reachable with no extra networking. Pin the
-binary with `suite-version: v1.2.3` (defaults to the latest release).
+binary with `suite-version: v1.2.3` (defaults to the latest release). To test an
+unreleased action ref, set `suite-version: source`; the Action then builds and
+runs the suite from that exact ref using the runner's Go toolchain.
 
 ### 2. Docker image
 

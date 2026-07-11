@@ -42,8 +42,10 @@ inputs:
     default: 'false'
   suite-version:
     description: >-
-      Release tag of the suite to run (e.g. v1.2.3), or "latest". This pins the
-      compliance binary independently of the action ref.
+      Release tag of the suite to run (e.g. v1.2.3), "latest", or "source" to
+      build and run the suite from the checked-out action ref. This pins the
+      compliance implementation independently of the action ref unless "source"
+      is selected.
     required: false
     default: latest
   format:
@@ -102,16 +104,20 @@ runs:
         ext=""
         [ "$goos" = "windows" ] && ext=".exe"
 
-        asset="odata-compliance-suite_${goos}_${goarch}${ext}"
-        if [ "$SUITE_VERSION" = "latest" ]; then
-          url="https://github.com/${REPO}/releases/latest/download/${asset}"
-        else
-          url="https://github.com/${REPO}/releases/download/${SUITE_VERSION}/${asset}"
-        fi
-
         bin="${RUNNER_TEMP}/compliance-test${ext}"
-        echo "Downloading $url"
-        curl -fsSL -o "$bin" "$url"
+        if [ "$SUITE_VERSION" = "source" ]; then
+          echo "Building compliance suite from action source at $GITHUB_ACTION_PATH"
+          (cd "$GITHUB_ACTION_PATH" && go build -o "$bin" .)
+        else
+          asset="odata-compliance-suite_${goos}_${goarch}${ext}"
+          if [ "$SUITE_VERSION" = "latest" ]; then
+            url="https://github.com/${REPO}/releases/latest/download/${asset}"
+          else
+            url="https://github.com/${REPO}/releases/download/${SUITE_VERSION}/${asset}"
+          fi
+          echo "Downloading $url"
+          curl -fsSL -o "$bin" "$url"
+        fi
         chmod +x "$bin"
 
         args=( -server "$SERVER" -version "$ODATA_VERSION" -timeout "$WAIT_TIMEOUT" )
