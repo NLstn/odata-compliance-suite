@@ -1,6 +1,7 @@
 package framework
 
-// ConformanceLevel represents an OData OASIS conformance tier.
+// ConformanceLevel is the historical API name for a suite coverage band.
+// It must not be interpreted as a formal OASIS certification by itself.
 type ConformanceLevel int
 
 const (

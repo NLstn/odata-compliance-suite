@@ -203,5 +203,17 @@ func InvalidQueryParameters() *framework.TestSuite {
 		},
 	)
 
+	suite.AddTest(
+		"test_duplicate_system_query_option_rejected",
+		"A system query option appearing more than once returns 400 Bad Request",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products?$filter=Price%20gt%2010&$filter=Price%20lt%201000")
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
 	return suite
 }

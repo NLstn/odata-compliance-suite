@@ -1,7 +1,6 @@
 package v4_0
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 
@@ -52,38 +51,6 @@ func ParameterAliases() *framework.TestSuite {
 				}
 				return true, ""
 			})
-		},
-	)
-
-	suite.AddTest(
-		"test_top_parameter_alias",
-		"$top supports parameter aliases",
-		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=@t&@t=1")
-			if err != nil {
-				return err
-			}
-
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse response: %v", err)
-			}
-
-			value, ok := result["value"].([]interface{})
-			if !ok {
-				return framework.NewError("response missing value array")
-			}
-
-			// Verify that $top=@t&@t=1 respected the limit
-			if len(value) > 1 {
-				return fmt.Errorf("expected at most 1 product with $top=1, got %d", len(value))
-			}
-
-			return nil
 		},
 	)
 

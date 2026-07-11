@@ -282,5 +282,41 @@ func QueryCount() *framework.TestSuite {
 		},
 	)
 
+	suite.AddTest(
+		"test_count_with_skip",
+		"$count with $skip returns the total count before paging",
+		func(ctx *framework.TestContext) error {
+			baseResp, err := ctx.GET("/Products?$count=true")
+			if err != nil {
+				return err
+			}
+			var base map[string]interface{}
+			if err := json.Unmarshal(baseResp.Body, &base); err != nil {
+				return fmt.Errorf("failed to parse baseline count: %w", err)
+			}
+			total, ok := base["@odata.count"].(float64)
+			if !ok {
+				return fmt.Errorf("baseline response missing numeric @odata.count")
+			}
+
+			resp, err := ctx.GET("/Products?$count=true&$skip=2&$top=1")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			var result map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &result); err != nil {
+				return fmt.Errorf("failed to parse paged count: %w", err)
+			}
+			count, ok := result["@odata.count"].(float64)
+			if !ok || count != total {
+				return fmt.Errorf("@odata.count with $skip = %v, want total %v", result["@odata.count"], total)
+			}
+			return nil
+		},
+	)
+
 	return suite
 }

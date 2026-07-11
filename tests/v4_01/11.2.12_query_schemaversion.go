@@ -121,7 +121,7 @@ func QuerySchemaVersion() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_schemaversion_version_negotiation_4_01_vs_4_0",
-		"$schemaversion is accepted with OData-MaxVersion 4.01 and rejected when negotiated to 4.0",
+		"$schemaversion is accepted with OData-MaxVersion 4.01 and 4.0",
 		func(ctx *framework.TestContext) error {
 			version, err := getSchemaVersion(ctx)
 			if err != nil {
@@ -144,11 +144,8 @@ func QuerySchemaVersion() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(v40Resp, http.StatusBadRequest); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 negotiated request must reject 4.01 $schemaversion behavior: %v", err))
-			}
-			if err := ctx.AssertODataError(v40Resp, http.StatusBadRequest, "not supported in OData 4.0"); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 negotiated $schemaversion rejection must include strict OData error payload: %v", err))
+			if err := ctx.AssertStatusCode(v40Resp, http.StatusOK); err != nil {
+				return framework.NewError(fmt.Sprintf("supported 4.01 URL syntax must work regardless of OData-MaxVersion: %v", err))
 			}
 
 			return nil

@@ -11,7 +11,7 @@ import (
 func WildcardSelectExpand() *framework.TestSuite {
 	suite := framework.NewTestSuite(
 		"11.2.5.14 Wildcard $select and $expand",
-		"Validates that $select=* and $expand=* work correctly per OData v4.01 sections 5.1.3 and 5.1.4, and that wildcard behavior is version-gated to OData v4.01.",
+		"Validates $select=* and $expand=* from the OData 4.0 URL conventions and their continued support by a 4.01 service under either response-version constraint.",
 		"https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part2-url-conventions.html#sec_SystemQueryOptionselect",
 	)
 
@@ -55,8 +55,8 @@ func WildcardSelectExpand() *framework.TestSuite {
 	)
 
 	suite.AddTest(
-		"test_select_wildcard_rejected_with_maxversion_40",
-		"$select=* with OData-MaxVersion: 4.0 returns HTTP 400 (wildcard is OData v4.01-only)",
+		"test_select_wildcard_accepted_with_maxversion_40",
+		"$select=* with OData-MaxVersion: 4.0 returns HTTP 200",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GETWithHeaders("/Products?$top=1&$select=*", map[string]string{
 				"OData-MaxVersion": "4.0",
@@ -64,8 +64,8 @@ func WildcardSelectExpand() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(resp, http.StatusBadRequest); err != nil {
-				return fmt.Errorf("with OData-MaxVersion:4.0, $select=* should be rejected (400): %w", err)
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return fmt.Errorf("$select=* is valid OData 4.0 syntax and should succeed: %w", err)
 			}
 			return nil
 		},
@@ -117,8 +117,8 @@ func WildcardSelectExpand() *framework.TestSuite {
 	)
 
 	suite.AddTest(
-		"test_expand_wildcard_rejected_with_maxversion_40",
-		"$expand=* with OData-MaxVersion: 4.0 returns HTTP 400 (wildcard is OData v4.01-only)",
+		"test_expand_wildcard_accepted_with_maxversion_40",
+		"$expand=* with OData-MaxVersion: 4.0 returns HTTP 200",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GETWithHeaders("/Products?$top=1&$expand=*", map[string]string{
 				"OData-MaxVersion": "4.0",
@@ -126,8 +126,8 @@ func WildcardSelectExpand() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(resp, http.StatusBadRequest); err != nil {
-				return fmt.Errorf("with OData-MaxVersion:4.0, $expand=* should be rejected (400): %w", err)
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return fmt.Errorf("$expand=* is valid OData 4.0 syntax and should succeed: %w", err)
 			}
 			return nil
 		},

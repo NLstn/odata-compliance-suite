@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"mime"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -13,7 +14,7 @@ func DescriptionAnnotation() *framework.TestSuite {
 	suite := framework.NewTestSuite(
 		"Core.Description Annotation",
 		"Validates that properties and types annotated with Org.OData.Core.V1.Description expose human-readable descriptions in metadata.",
-		"https://github.com/oasis-tcs/odata-vocabularies/blob/master/vocabularies/Org.OData.Core.V1.md#Description",
+		"https://oasis-tcs.github.io/odata-vocabularies/vocabularies/Org.OData.Core.V1.html#Description",
 	)
 
 	suite.AddTest(
@@ -28,7 +29,6 @@ func DescriptionAnnotation() *framework.TestSuite {
 			if err := ctx.AssertStatusCode(resp, 200); err != nil {
 				return err
 			}
-
 			namespace, err := metadataNamespace(resp.Body)
 			if err != nil {
 				return err
@@ -73,6 +73,10 @@ func DescriptionAnnotation() *framework.TestSuite {
 			if err := ctx.AssertStatusCode(resp, 200); err != nil {
 				return err
 			}
+			mediaType, _, err := mime.ParseMediaType(resp.Headers.Get("Content-Type"))
+			if err != nil || mediaType != "application/json" {
+				return fmt.Errorf("JSON CSDL response Content-Type = %q, want application/json", resp.Headers.Get("Content-Type"))
+			}
 
 			var metadata map[string]interface{}
 			if err := ctx.GetJSON(resp, &metadata); err != nil {
@@ -80,16 +84,19 @@ func DescriptionAnnotation() *framework.TestSuite {
 			}
 
 			// Per CSDL JSON §3.1, the top-level document MUST contain "$Version".
-			if _, ok := metadata["$Version"]; !ok {
+			if version, ok := metadata["$Version"].(string); !ok || version == "" {
 				return framework.NewError(`JSON metadata response is missing the required "$Version" key (CSDL JSON §3.1)`)
+			}
+			if container, ok := metadata["$EntityContainer"].(string); !ok || container == "" {
+				return framework.NewError(`JSON metadata response is missing the required "$EntityContainer" key (CSDL JSON §4)`)
 			}
 
 			// If the XML metadata declares Core.Description annotations, the JSON
 			// format should also expose them as "@Org.OData.Core.V1.Description" keys.
 			body := string(resp.Body)
-			if strings.Contains(body, `"@Org.OData.Core.V1.Description"`) ||
-				strings.Contains(body, `"Org.OData.Core.V1.Description"`) {
-				ctx.Log("JSON metadata includes Core.Description annotations")
+			if !strings.Contains(body, `"@Org.OData.Core.V1.Description"`) &&
+				!strings.Contains(body, `"@Core.Description"`) {
+				return framework.NewError("JSON CSDL omits the Core.Description annotations present in XML metadata")
 			}
 			return nil
 		},

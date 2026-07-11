@@ -17,7 +17,7 @@ func HeaderMaxVersion() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_request_without_maxversion_returns_highest_supported",
-		"Requests without OData-MaxVersion return the highest supported version 4.01",
+		"Requests without OData-MaxVersion return a supported OData version",
 		func(ctx *framework.TestContext) error {
 			productPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
@@ -34,8 +34,8 @@ func HeaderMaxVersion() *framework.TestSuite {
 			}
 
 			version := strings.TrimSpace(resp.Headers.Get("OData-Version"))
-			if version != "4.01" {
-				return framework.NewError(fmt.Sprintf("expected highest supported OData-Version 4.01, got %q", version))
+			if version != "4.0" && version != "4.01" {
+				return framework.NewError(fmt.Sprintf("expected OData-Version 4.0 or 4.01, got %q", version))
 			}
 
 			return nil

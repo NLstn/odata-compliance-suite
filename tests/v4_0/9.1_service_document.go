@@ -69,7 +69,7 @@ func ServiceDocument() *framework.TestSuite {
 	// Test 4: Service document entity sets should have required properties
 	suite.AddTest(
 		"test_entity_set_properties",
-		"Entity sets have required properties (name, kind, url)",
+		"Service-document entries have required name/url properties and valid optional kind",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/")
 			if err != nil {
@@ -95,22 +95,22 @@ func ServiceDocument() *framework.TestSuite {
 				return framework.NewError("Service document must contain at least one item in value array")
 			}
 
-			// Check first item has required properties
-			firstItem, ok := valueArray[0].(map[string]interface{})
-			if !ok {
-				return framework.NewError("Items in value array must be objects")
-			}
-
-			if _, ok := firstItem["name"]; !ok {
-				return framework.NewError("Entity set items must have 'name' property")
-			}
-
-			if _, ok := firstItem["kind"]; !ok {
-				return framework.NewError("Entity set items must have 'kind' property")
-			}
-
-			if _, ok := firstItem["url"]; !ok {
-				return framework.NewError("Entity set items must have 'url' property")
+			for _, raw := range valueArray {
+				item, ok := raw.(map[string]interface{})
+				if !ok {
+					return framework.NewError("Items in value array must be objects")
+				}
+				if name, ok := item["name"].(string); !ok || name == "" {
+					return framework.NewError("service-document item must have a non-empty 'name' property")
+				}
+				if itemURL, ok := item["url"].(string); !ok || itemURL == "" {
+					return framework.NewError("service-document item must have a non-empty 'url' property")
+				}
+				if kind, present := item["kind"]; present {
+					if _, ok := kind.(string); !ok {
+						return framework.NewError("service-document item kind must be a string")
+					}
+				}
 			}
 
 			return nil
@@ -120,7 +120,7 @@ func ServiceDocument() *framework.TestSuite {
 	// Test 5: Entity set kind should be "EntitySet"
 	suite.AddTest(
 		"test_entity_set_kind",
-		"Entity sets have kind=\"EntitySet\"",
+		"Entity-set kind is EntitySet when present and defaults to EntitySet when omitted",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/")
 			if err != nil {
@@ -150,8 +150,8 @@ func ServiceDocument() *framework.TestSuite {
 					continue
 				}
 
-				kind, ok := itemMap["kind"]
-				if ok && kind == "EntitySet" {
+				kind, present := itemMap["kind"]
+				if !present || kind == "EntitySet" {
 					foundEntitySet = true
 					break
 				}

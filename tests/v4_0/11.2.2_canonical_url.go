@@ -16,6 +16,7 @@ func CanonicalURL() *framework.TestSuite {
 		"Tests canonical URL representation according to OData v4 specification.",
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part1-protocol/odata-v4.0-errata03-os-part1-protocol-complete.html#sec_CanonicalURL",
 	)
+	fullMetadata := framework.Header{Key: "Accept", Value: "application/json;odata.metadata=full"}
 
 	// Test 1: Entity should have @odata.id with canonical URL
 	suite.AddTest(
@@ -49,7 +50,7 @@ func CanonicalURL() *framework.TestSuite {
 			productID := firstItem["ID"]
 
 			// Get single entity
-			resp, err := ctx.GET(fmt.Sprintf("/Products(%v)", productID))
+			resp, err := ctx.GET(fmt.Sprintf("/Products(%v)", productID), fullMetadata)
 			if err != nil {
 				return err
 			}
@@ -107,7 +108,7 @@ func CanonicalURL() *framework.TestSuite {
 			productID := firstItem["ID"]
 
 			// Get single entity
-			resp, err := ctx.GET(fmt.Sprintf("/Products(%v)", productID))
+			resp, err := ctx.GET(fmt.Sprintf("/Products(%v)", productID), fullMetadata)
 			if err != nil {
 				return err
 			}
@@ -153,7 +154,7 @@ func CanonicalURL() *framework.TestSuite {
 		"test_collection_odata_ids",
 		"Each entity in collection has @odata.id",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=3")
+			resp, err := ctx.GET("/Products?$top=3", fullMetadata)
 			if err != nil {
 				return err
 			}
@@ -227,7 +228,7 @@ func CanonicalURL() *framework.TestSuite {
 			productID := firstItem["ID"]
 
 			// Get single entity
-			resp, err := ctx.GET(fmt.Sprintf("/Products(%v)", productID))
+			resp, err := ctx.GET(fmt.Sprintf("/Products(%v)", productID), fullMetadata)
 			if err != nil {
 				return err
 			}
@@ -254,13 +255,13 @@ func CanonicalURL() *framework.TestSuite {
 		},
 	)
 
-	// Test 5: /$entity?@odata.id=<url> — entity dereference via canonical URL
+	// Test 5: /$entity?$id=<url> — entity dereference via canonical URL
 	suite.AddTest(
 		"test_entity_dereference_via_odata_id",
-		"/$entity?@odata.id=<url> returns the referenced entity (OData §11.5.4.1)",
+		"/$entity?$id=<url> returns the referenced entity (URL Conventions §4.3.4)",
 		func(ctx *framework.TestContext) error {
 			// Step 1: fetch a product and extract its @odata.id.
-			resp, err := ctx.GET("/Products?$top=1&$select=ID")
+			resp, err := ctx.GET("/Products?$top=1&$select=ID", fullMetadata)
 			if err != nil {
 				return err
 			}
@@ -284,31 +285,31 @@ func CanonicalURL() *framework.TestSuite {
 			if !ok || odataID == "" {
 				return fmt.Errorf("product missing @odata.id (needed for entity-dereference test)")
 			}
+			expectedID := fmt.Sprintf("%v", product["ID"])
 
-			// Step 2: dereference via /$entity?@odata.id=<url>.
+			// Step 2: dereference via /$entity?$id=<url>.
 			// The @odata.id may be absolute or relative; percent-encode it so colons and
 			// slashes in an absolute URL don't corrupt the query string.
-			derefResp, err := ctx.GET("/$entity?@odata.id=" + url.QueryEscape(odataID))
+			derefResp, err := ctx.GET("/$entity?$id=" + url.QueryEscape(odataID))
 			if err != nil {
 				return err
 			}
-			switch derefResp.StatusCode {
-			case 200:
-				// Verify the returned entity has an ID field.
-				var entity map[string]interface{}
-				if err := json.Unmarshal(derefResp.Body, &entity); err != nil {
-					return fmt.Errorf("/$entity response is not valid JSON: %w", err)
-				}
-				if _, ok := entity["ID"]; !ok {
-					return framework.NewError("/$entity response missing 'ID' field")
-				}
-				return nil
-			case 404, 501:
-				// Optional feature — server may not support /$entity endpoint.
-				return ctx.Skip("/$entity endpoint not implemented (404/501)")
-			default:
-				return fmt.Errorf("/$entity?@odata.id=... returned unexpected status %d", derefResp.StatusCode)
+			if err := ctx.AssertStatusCode(derefResp, 200); err != nil {
+				return fmt.Errorf("/$entity?$id=... must dereference the entity: %w", err)
 			}
+
+			var entity map[string]interface{}
+			if err := json.Unmarshal(derefResp.Body, &entity); err != nil {
+				return fmt.Errorf("/$entity response is not valid JSON: %w", err)
+			}
+			actualID, ok := entity["ID"]
+			if !ok {
+				return framework.NewError("/$entity response missing 'ID' field")
+			}
+			if fmt.Sprintf("%v", actualID) != expectedID {
+				return fmt.Errorf("/$entity returned ID %v, expected %s", actualID, expectedID)
+			}
+			return nil
 		},
 	)
 

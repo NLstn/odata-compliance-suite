@@ -130,7 +130,7 @@ func PreferenceOmitValues() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_omit_values_version_negotiation_4_01_vs_4_0",
-		"unprefixed omit-values preference applies in 4.01 negotiation and is not reported as applied in 4.0 negotiation",
+		"unprefixed omit-values preference remains supported with OData-MaxVersion 4.0",
 		func(ctx *framework.TestContext) error {
 			v401Headers := []framework.Header{
 				{Key: "OData-MaxVersion", Value: "4.01"},
@@ -148,17 +148,29 @@ func PreferenceOmitValues() *framework.TestSuite {
 				{Key: "OData-MaxVersion", Value: "4.0"},
 				{Key: "Prefer", Value: "omit-values=nulls"},
 			}
-			v40Resp, err := ctx.GET("/Products?$top=3", v40Headers...)
+			v40Resp, err := ctx.GET("/Products?$top=3&$select=ID,Description", v40Headers...)
 			if err != nil {
 				return err
 			}
 			if v40Resp.StatusCode < http.StatusOK || v40Resp.StatusCode >= 300 {
-				return framework.NewError(fmt.Sprintf("expected 2xx for 4.0 negotiated request with unknown preference token, got %d", v40Resp.StatusCode))
+				return framework.NewError(fmt.Sprintf("expected 2xx for 4.0 negotiated omit-values request, got %d", v40Resp.StatusCode))
 			}
 
 			applied := v40Resp.Headers.Get("Preference-Applied")
-			if strings.Contains(applied, "omit-values=nulls") {
-				return framework.NewError(fmt.Sprintf("4.0 negotiated response must not report unprefixed omit-values as applied, got %q", applied))
+			if applied != "" && !strings.Contains(applied, "omit-values=nulls") {
+				return framework.NewError(fmt.Sprintf("unexpected Preference-Applied value %q", applied))
+			}
+
+			var payload struct {
+				Value []map[string]interface{} `json:"value"`
+			}
+			if err := json.Unmarshal(v40Resp.Body, &payload); err != nil {
+				return framework.NewError(fmt.Sprintf("failed to parse 4.0-constrained omit-values response: %v", err))
+			}
+			for i, entity := range payload.Value {
+				if description, present := entity["Description"]; present && description == nil {
+					return framework.NewError(fmt.Sprintf("entity %d retains a null Description; unprefixed omit-values was not applied", i))
+				}
 			}
 
 			return nil

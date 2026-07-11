@@ -166,10 +166,11 @@ func FilterDivByOperator() *framework.TestSuite {
 		},
 	)
 
-	// Test 4: divby is rejected (400) when OData 4.0 is negotiated
+	// A 4.01 service keeps accepting supported URL syntax when the response is
+	// constrained to OData 4.0 (Protocol §13.2.1 item 9).
 	suite.AddTest(
-		"test_divby_version_negotiation_4_0_rejects",
-		"divby operator is rejected with 400 when OData-MaxVersion 4.0 is negotiated",
+		"test_divby_version_negotiation_4_0_accepts",
+		"divby operator remains accepted when OData-MaxVersion 4.0 is negotiated",
 		func(ctx *framework.TestContext) error {
 			filter := url.QueryEscape("Price divby 1.5 gt 0")
 			headers := []framework.Header{{Key: "OData-MaxVersion", Value: "4.0"}}
@@ -177,13 +178,7 @@ func FilterDivByOperator() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(resp, http.StatusBadRequest); err != nil {
-				return fmt.Errorf("4.0 negotiated request must reject 'divby' operator with 400: %v", err)
-			}
-			if err := ctx.AssertODataError(resp, http.StatusBadRequest, "not supported in OData 4.0"); err != nil {
-				return fmt.Errorf("4.0 negotiated 'divby' rejection must include strict OData error payload: %v", err)
-			}
-			return nil
+			return ctx.AssertStatusCode(resp, http.StatusOK)
 		},
 	)
 

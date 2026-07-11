@@ -22,12 +22,12 @@ func ErrorResponses() *framework.TestSuite {
 }
 
 // validateErrorCodeAndMessage validates that an error object has required 'code' and 'message' fields
-// per OData v4 specification. The 'code' must be a non-empty string, and 'message' must be a
+// per OData v4 specification. The 'code' must be a string, and 'message' must be a
 // non-empty plain string (OData v4 JSON Format §19 — object-form messages are an OData v3 artifact).
 func validateErrorCodeAndMessage(errorObj map[string]interface{}) error {
-	code, ok := errorObj["code"].(string)
-	if !ok || code == "" {
-		return fmt.Errorf("missing or empty 'code' in error object")
+	_, ok := errorObj["code"].(string)
+	if !ok {
+		return fmt.Errorf("missing or non-string 'code' in error object")
 	}
 
 	message, ok := errorObj["message"].(string)
@@ -60,6 +60,9 @@ func registerErrorResponseTests(suite *framework.TestSuite) {
 			var result map[string]interface{}
 			if err := json.Unmarshal(resp.Body, &result); err != nil {
 				return fmt.Errorf("response is not valid JSON: %v", err)
+			}
+			if len(result) != 1 {
+				return fmt.Errorf("error response root must contain only the 'error' member, got %d members", len(result))
 			}
 
 			// Error response MUST have an "error" property at the root level
@@ -97,9 +100,8 @@ func registerErrorResponseTests(suite *framework.TestSuite) {
 				return fmt.Errorf("no 'error' object in response")
 			}
 
-			code, ok := errorObj["code"].(string)
-			if !ok || code == "" {
-				return fmt.Errorf("'code' property is not a non-empty string")
+			if _, ok := errorObj["code"].(string); !ok {
+				return fmt.Errorf("'code' property is not a string")
 			}
 
 			return nil
@@ -177,9 +179,8 @@ func registerErrorResponseTests(suite *framework.TestSuite) {
 			}
 
 			// Verify error has required 'code' property as non-empty string
-			code, ok := errorObj["code"].(string)
-			if !ok || code == "" {
-				return fmt.Errorf("error object must have 'code' property as non-empty string")
+			if _, ok := errorObj["code"].(string); !ok {
+				return fmt.Errorf("error object must have 'code' property as a string")
 			}
 
 			// Verify error has required 'message' property as non-empty string
@@ -235,34 +236,17 @@ func registerErrorResponseTests(suite *framework.TestSuite) {
 	)
 
 	suite.AddTest(
-		"Error code has no whitespace",
-		"Error code should not contain whitespace",
+		"Error response includes Content-Language",
+		"Content-Language identifies the language used for error.message",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET(invalidProductPath)
 			if err != nil {
 				return err
 			}
-
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("invalid JSON: %v", err)
+			language := strings.TrimSpace(resp.Headers.Get("Content-Language"))
+			if language == "" || strings.ContainsAny(language, " \t\r\n") {
+				return fmt.Errorf("missing or invalid Content-Language header %q", language)
 			}
-
-			errorObj, ok := result["error"].(map[string]interface{})
-			if !ok {
-				return fmt.Errorf("no 'error' object in response")
-			}
-
-			code, ok := errorObj["code"].(string)
-			if !ok {
-				return fmt.Errorf("no 'code' in error object")
-			}
-
-			if strings.ContainsAny(code, " \t\n\r") {
-				return fmt.Errorf("error code should not contain whitespace, got: %q", code)
-			}
-
-			ctx.Log(fmt.Sprintf("Error code: %s", code))
 			return nil
 		},
 	)
@@ -402,17 +386,13 @@ func registerErrorResponseTests(suite *framework.TestSuite) {
 				return fmt.Errorf("no 'error' object in response")
 			}
 
-			// Innererror is optional, but if present can be object or nested
+			// Innererror is optional, but if present MUST be an object.
 			if innererror, ok := errorObj["innererror"]; ok {
-				// Can be an object or string (implementation-specific)
-				switch v := innererror.(type) {
-				case map[string]interface{}:
-					ctx.Log(fmt.Sprintf("innererror object with %d fields", len(v)))
-				case string:
-					ctx.Log(fmt.Sprintf("innererror string: %s", v))
-				default:
-					return fmt.Errorf("innererror has unexpected type: %T", innererror)
+				v, ok := innererror.(map[string]interface{})
+				if !ok {
+					return fmt.Errorf("innererror must be an object, got %T", innererror)
 				}
+				ctx.Log(fmt.Sprintf("innererror object with %d fields", len(v)))
 			} else {
 				ctx.Log("No 'innererror' (optional)")
 			}

@@ -356,6 +356,11 @@ func main() {
 			Suite:   v4_0.HeaderODataVersion,
 		})
 		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "8.2.6_header_isolation",
+			Version: "4.0",
+			Suite:   v4_0.HeaderIsolation,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
 			Name:    "8.2.7_header_accept",
 			Version: "4.0",
 			Suite:   v4_0.HeaderAccept,
@@ -847,9 +852,19 @@ func main() {
 			Suite:   v4_01.HeaderODataVersion,
 		})
 		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "8.2.6_header_isolation",
+			Version: "4.01",
+			Suite:   v4_01.HeaderIsolation,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
 			Name:    "8.2.9_header_maxversion",
 			Version: "4.01",
 			Suite:   v4_01.HeaderMaxVersion,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "9.2_metadata_documents_4_01",
+			Version: "4.01",
+			Suite:   v4_01.MetadataDocuments,
 		})
 		testSuites = append(testSuites, TestSuiteInfo{
 			Name:    "11.2.1_key_as_segments",
@@ -958,7 +973,6 @@ func main() {
 		"11.5.1.1_filter_divby_operator":  {framework.Require(framework.CapFilter, "Products")},
 		"11.5.3.3_filter_matches_pattern": {framework.Require(framework.CapFilter, "Products")},
 		// --- sort ---
-		"11.2.5.2_query_select_orderby":         {framework.Require(framework.CapSort, "Products")},
 		"5.2.2_complex_orderby":                 {framework.Require(framework.CapSort, "Products")},
 		"11.3.11_orderby_navigation_property":   {framework.Require(framework.CapSort, "Products")},
 		"11.2.5.11_orderby_computed_properties": {framework.Require(framework.CapSort, "Products")},
@@ -972,7 +986,6 @@ func main() {
 		// --- search ---
 		"11.2.4.1_query_search": {framework.Require(framework.CapSearch, "Products")},
 		// --- top / skip ---
-		"11.2.5.3_query_top_skip":         {framework.Require(framework.CapTop, "Products"), framework.Require(framework.CapSkip, "Products")},
 		"11.2.5.7_query_skiptoken":        {framework.Require(framework.CapSkip, "Products")},
 		"11.2.5.12_pagination_edge_cases": {framework.Require(framework.CapTop, "Products"), framework.Require(framework.CapSkip, "Products")},
 		// --- insert ---
@@ -1006,7 +1019,7 @@ func main() {
 		"13.1_asynchronous_processing": {framework.Require(framework.CapInsert, "Products")},
 	}
 
-	// conformanceTags maps a suite name to its OData conformance level and feature area.
+	// conformanceTags maps a suite name to its coverage band and feature area.
 	type conformanceTag struct {
 		Level   framework.ConformanceLevel
 		Feature string
@@ -1025,6 +1038,7 @@ func main() {
 		"9.2_metadata_document":          {framework.LevelMinimal, "Metadata"},
 		"9.3_annotations_metadata":       {framework.LevelMinimal, "Metadata"},
 		"11.2.12_query_schemaversion":    {framework.LevelAdvanced, "Metadata"},
+		"9.2_metadata_documents_4_01":    {framework.LevelAdvanced, "Metadata"},
 		// --- Data Types ---
 		"4.1_nominal_types":              {framework.LevelMinimal, "Data Types"},
 		"4.2_structured_types":           {framework.LevelMinimal, "Data Types"},
@@ -1064,6 +1078,7 @@ func main() {
 		"8.2.4_header_content_id":                       {framework.LevelMinimal, "HTTP Protocol"},
 		"8.2.5_header_location":                         {framework.LevelMinimal, "HTTP Protocol"},
 		"8.2.6_header_odata_version":                    {framework.LevelMinimal, "HTTP Protocol"},
+		"8.2.6_header_isolation":                        {framework.LevelMinimal, "HTTP Protocol"},
 		"8.2.7_header_accept":                           {framework.LevelMinimal, "HTTP Protocol"},
 		"8.2.8_header_prefer":                           {framework.LevelMinimal, "HTTP Protocol"},
 		"8.2.8.1_preference_allow_entityreferences":     {framework.LevelIntermediate, "HTTP Protocol"},
@@ -1335,10 +1350,10 @@ func main() {
 		fmt.Fprintln(progressOut)
 	}
 
-	// Conformance level reporting
+	// Coverage-band reporting
 	//
 	// Group suites by (version, feature) and (version, level) to compute the
-	// per-feature matrix and the highest conformance level met per OData version.
+	// per-feature matrix and the highest fully completed coverage band per version.
 	type featureKey struct {
 		version string
 		feature string
@@ -1352,8 +1367,9 @@ func main() {
 	featureMap := map[featureKey]*featureStats{}
 
 	type levelStats struct {
-		failed int
-		total  int
+		failed  int
+		skipped int
+		total   int
 	}
 	// levelMap[version][level] → stats
 	levelMap := map[string]map[framework.ConformanceLevel]*levelStats{}
@@ -1390,10 +1406,12 @@ func main() {
 		ls.total++
 		if res.Failed > 0 {
 			ls.failed++
+		} else if res.Skipped > 0 {
+			ls.skipped++
 		}
 	}
 
-	// Determine highest conformance level met per OData version (cumulative).
+	// Determine the highest fully completed coverage band per version (cumulative).
 	conformanceByVersion := map[string]framework.ConformanceLevel{}
 	for ver, lvls := range levelMap {
 		highest := framework.LevelUnspecified
@@ -1404,62 +1422,71 @@ func main() {
 		} {
 			ls, ok := lvls[lvl]
 			if !ok || ls.total == 0 {
-				// No suites at this level; skip (don't block higher levels).
-				continue
-			}
-			if ls.failed > 0 {
+				// A cumulative conformance claim cannot jump over a level that
+				// was not exercised (for example in a pattern-filtered run).
 				break
+			}
+			if ls.failed > 0 || ls.skipped > 0 {
+				break
+			}
+			// Every OData 4.01 level also requires the corresponding 4.0
+			// level. A 4.01-only run therefore cannot make a complete claim.
+			if ver == "4.01" {
+				base := levelMap["4.0"][lvl]
+				if base == nil || base.total == 0 || base.failed > 0 || base.skipped > 0 {
+					break
+				}
 			}
 			highest = lvl
 		}
 		conformanceByVersion[ver] = highest
 	}
 
-	fmt.Fprintln(progressOut, "╔════════════════════════════════════════════════════════╗")
-	fmt.Fprintln(progressOut, "║              CONFORMANCE LEVEL REPORT                  ║")
-	fmt.Fprintln(progressOut, "╚════════════════════════════════════════════════════════╝")
-	fmt.Fprintln(progressOut)
+	if levelMap["4.0"] != nil || levelMap["4.01"] != nil {
+		fmt.Fprintln(progressOut, "╔════════════════════════════════════════════════════════╗")
+		fmt.Fprintln(progressOut, "║              SUITE COVERAGE BAND REPORT                ║")
+		fmt.Fprintln(progressOut, "╚════════════════════════════════════════════════════════╝")
+		fmt.Fprintln(progressOut)
 
-	for _, ver := range []string{"4.0", "4.01", "vocabularies"} {
-		if _, ok := levelMap[ver]; !ok {
-			continue
-		}
-		highest := conformanceByVersion[ver]
-		versionLabel := "OData " + ver
-		if ver == "vocabularies" {
-			versionLabel = "Vocabularies"
-		}
-		for _, lvl := range []framework.ConformanceLevel{
-			framework.LevelMinimal,
-			framework.LevelIntermediate,
-			framework.LevelAdvanced,
-		} {
-			ls := levelMap[ver][lvl]
-			if ls == nil || ls.total == 0 {
+		for _, ver := range []string{"4.0", "4.01"} {
+			if _, ok := levelMap[ver]; !ok {
 				continue
 			}
-			var icon string
-			if ls.failed > 0 {
-				icon = ansi("0;31", "✗", useColor)
-			} else {
-				icon = ansi("0;32", "✓", useColor)
+			highest := conformanceByVersion[ver]
+			versionLabel := "OData " + ver
+			for _, lvl := range []framework.ConformanceLevel{
+				framework.LevelMinimal,
+				framework.LevelIntermediate,
+				framework.LevelAdvanced,
+			} {
+				ls := levelMap[ver][lvl]
+				if ls == nil || ls.total == 0 {
+					continue
+				}
+				var icon, status string
+				successfulSuites := ls.total - ls.failed - ls.skipped
+				switch {
+				case ls.failed > 0:
+					icon = ansi("0;31", "✗", useColor)
+					status = "Failures"
+				case ls.skipped > 0:
+					icon = ansi("0;33", "⊘", useColor)
+					status = "Incomplete"
+				default:
+					icon = ansi("0;32", "✓", useColor)
+					status = "Complete"
+				}
+				fmt.Fprintf(progressOut, "  %s [%s] %s: %s (%d/%d suites)\n",
+					icon, versionLabel, lvl.String(),
+					status, successfulSuites, ls.total)
 			}
-			fmt.Fprintf(progressOut, "  %s [%s] %s: %s (%d/%d suites)\n",
-				icon, versionLabel, lvl.String(),
-				func() string {
-					if ls.failed > 0 {
-						return "Not Met"
-					}
-					return "Met"
-				}(),
-				ls.total-ls.failed, ls.total)
+			if highest != framework.LevelUnspecified {
+				fmt.Fprintf(progressOut, "  → Highest fully completed coverage band: %s\n", ansi("0;32", versionLabel+" "+highest.String(), useColor))
+			} else {
+				fmt.Fprintf(progressOut, "  → Highest fully completed coverage band: %s\n", ansi("0;31", "None", useColor))
+			}
+			fmt.Fprintln(progressOut)
 		}
-		if highest != framework.LevelUnspecified {
-			fmt.Fprintf(progressOut, "  → Highest level fully met: %s\n", ansi("0;32", versionLabel+" "+highest.String(), useColor))
-		} else {
-			fmt.Fprintf(progressOut, "  → Highest level fully met: %s\n", ansi("0;31", "None", useColor))
-		}
-		fmt.Fprintln(progressOut)
 	}
 
 	if *verbose && len(featureMap) > 0 {

@@ -299,7 +299,7 @@ func OrderByComputedProperties() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_orderby_computed_version_negotiation_4_01_vs_4_0",
-		"$orderby on computed properties is accepted with OData-MaxVersion 4.01 and rejected when negotiated to 4.0",
+		"$orderby on computed properties is accepted with OData-MaxVersion 4.01 and 4.0",
 		func(ctx *framework.TestContext) error {
 			query := "/Products?$compute=Price mul 2 as DoublePrice&$orderby=DoublePrice&$top=1"
 
@@ -317,11 +317,8 @@ func OrderByComputedProperties() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(v40Resp, http.StatusBadRequest); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 negotiated request must reject 4.01 computed-orderby behavior: %v", err))
-			}
-			if err := ctx.AssertODataError(v40Resp, http.StatusBadRequest, "$compute is not supported in OData 4.0"); err != nil {
-				return framework.NewError(fmt.Sprintf("4.0 negotiated computed-orderby rejection must include strict OData error payload: %v", err))
+			if err := ctx.AssertStatusCode(v40Resp, http.StatusOK); err != nil {
+				return framework.NewError(fmt.Sprintf("supported 4.01 URL syntax must work regardless of OData-MaxVersion: %v", err))
 			}
 
 			return nil

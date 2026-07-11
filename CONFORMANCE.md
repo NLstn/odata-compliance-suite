@@ -1,18 +1,29 @@
-# OData Conformance Level Mapping
+# Suite Coverage Band Mapping
 
-This document describes how test suites are mapped to OData OASIS conformance levels.
+This document describes how suites are grouped into Minimal, Intermediate, and
+Advanced coverage bands.
+
+These bands are **not a formal OASIS conformance certification**. OASIS defines
+normative requirements at individual-behavior level, while several files here
+exercise a mixture of required, recommended, optional, and negative behavior.
+The bands are therefore a navigation and progress aid. The individual test
+result and its linked specification section remain authoritative.
+
+A skipped test makes its band **Incomplete**. A filtered or 4.01-only run cannot
+claim a cumulative band whose prerequisites were not exercised, and every 4.01
+band depends on the corresponding 4.0 band.
 
 ## Levels
 
 | Level        | Description |
 |--------------|-------------|
-| **Minimal**  | Core requirements every OData service must satisfy: service document, metadata, basic entity read, JSON format, HTTP headers and error responses. |
-| **Intermediate** | Filtering, sorting, paging, counting, and basic CRUD (create, update, delete). |
-| **Advanced** | Expand, search, batch, async processing, concurrency (ETags), functions/actions, and advanced querying (apply, compute, lambda, delta). |
+| **Minimal**  | Core protocol, service-document, metadata, type, HTTP, and basic read checks. |
+| **Intermediate** | Selection, filtering, sorting, paging, counting, and update-related checks. |
+| **Advanced** | Expand, search, batch, operations, async/concurrency, and advanced-query checks. |
 
-Conformance levels are **cumulative**: a service must meet all lower levels to claim a higher one.
+Coverage bands are **cumulative** in the report.
 
-## Suite → Level → Feature mapping
+## Suite → Band → Feature mapping
 
 ### Minimal
 
@@ -127,17 +138,17 @@ Conformance levels are **cumulative**: a service must meet all lower levels to c
 
 ```
 ╔════════════════════════════════════════════════════════╗
-║              CONFORMANCE LEVEL REPORT                  ║
+║              SUITE COVERAGE BAND REPORT                ║
 ╚════════════════════════════════════════════════════════╝
 
-  ✓ [OData 4.0] Minimal: Met (42/42 suites)
-  ✓ [OData 4.0] Intermediate: Met (21/21 suites)
-  ✗ [OData 4.0] Advanced: Not Met (18/20 suites)
-  → Highest level fully met: OData 4.0 Intermediate
+  ✓ [OData 4.0] Minimal: Complete (42/42 suites)
+  ✓ [OData 4.0] Intermediate: Complete (21/21 suites)
+  ✗ [OData 4.0] Advanced: Failures (18/20 suites)
+  → Highest fully completed coverage band: OData 4.0 Intermediate
 
-  ✓ [OData 4.01] Minimal: Met (4/4 suites)
-  ✗ [OData 4.01] Intermediate: Not Met (3/4 suites)
-  → Highest level fully met: OData 4.01 Minimal
+  ✓ [OData 4.01] Minimal: Complete (4/4 suites)
+  ✗ [OData 4.01] Intermediate: Failures (3/4 suites)
+  → Highest fully completed coverage band: OData 4.01 Minimal
 ```
 
 The per-feature matrix is printed in `--verbose` mode and shows passed/failed/skipped test counts per feature group.

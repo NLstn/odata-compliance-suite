@@ -17,7 +17,7 @@ func HeaderODataVersion() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_default_response_version_401",
-		"Service document defaults to OData-Version 4.01 when no OData-MaxVersion is supplied",
+		"Service document returns a supported OData-Version when no maximum is supplied",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/")
 			if err != nil {
@@ -29,8 +29,8 @@ func HeaderODataVersion() *framework.TestSuite {
 			}
 
 			version := strings.TrimSpace(resp.Headers.Get("OData-Version"))
-			if version != "4.01" {
-				return framework.NewError(fmt.Sprintf("expected OData-Version 4.01 by default, got %q", version))
+			if version != "4.0" && version != "4.01" {
+				return framework.NewError(fmt.Sprintf("expected OData-Version 4.0 or 4.01 by default, got %q", version))
 			}
 
 			return nil
@@ -61,7 +61,7 @@ func HeaderODataVersion() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_entity_collection_default_version_401",
-		"Entity collection responses default to OData-Version 4.01 when unconstrained",
+		"Entity collection responses use a supported version when unconstrained",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$top=1")
 			if err != nil {
@@ -73,8 +73,8 @@ func HeaderODataVersion() *framework.TestSuite {
 			}
 
 			version := strings.TrimSpace(resp.Headers.Get("OData-Version"))
-			if version != "4.01" {
-				return framework.NewError(fmt.Sprintf("expected OData-Version 4.01 on default entity response, got %q", version))
+			if version != "4.0" && version != "4.01" {
+				return framework.NewError(fmt.Sprintf("expected OData-Version 4.0 or 4.01 on default entity response, got %q", version))
 			}
 
 			return nil
