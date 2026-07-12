@@ -123,15 +123,19 @@ func PreferenceIncludeAnnotations() *framework.TestSuite {
 		"test_include_annotations_on_entity_read",
 		"Prefer: odata.include-annotations is accepted on individual entity reads",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products(1)",
+			productPath, err := firstEntityPath(ctx, "Products")
+			if err != nil {
+				return err
+			}
+
+			resp, err := ctx.GET(productPath,
 				framework.Header{Key: "Prefer", Value: `odata.include-annotations="*"`})
 			if err != nil {
 				return err
 			}
 
-			// 404 is acceptable when no product with ID 1 exists; we just want the server to handle the preference.
-			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
-				return framework.NewError(fmt.Sprintf("expected 200 or 404, got %d", resp.StatusCode))
+			if resp.StatusCode != http.StatusOK {
+				return framework.NewError(fmt.Sprintf("expected 200, got %d", resp.StatusCode))
 			}
 
 			if resp.StatusCode == http.StatusOK {
