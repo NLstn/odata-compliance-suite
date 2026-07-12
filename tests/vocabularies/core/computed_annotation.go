@@ -66,13 +66,10 @@ func ComputedAnnotation() *framework.TestSuite {
 				return err
 			}
 
-			// Service should either succeed (ignoring computed field) or return 400
-			if resp.StatusCode != 201 && resp.StatusCode != 400 {
-				return fmt.Errorf("expected status 201 or 400, got %d: %s", resp.StatusCode, string(resp.Body))
-			}
-
-			if resp.StatusCode != 201 {
-				return nil
+			// Computed values supplied by the client MUST be ignored. Rejecting the
+			// request is not compliant because the remaining create payload is valid.
+			if err := ctx.AssertStatusCode(resp, 201); err != nil {
+				return fmt.Errorf("service must ignore a supplied computed value on create: %w", err)
 			}
 
 			var created map[string]interface{}
@@ -110,7 +107,7 @@ func ComputedAnnotation() *framework.TestSuite {
 
 	suite.AddTest(
 		"computed_property_not_updatable",
-		"PATCH request ignores or rejects updates to computed properties",
+		"PATCH request ignores updates to computed properties",
 		func(ctx *framework.TestContext) error {
 			// First create an entity
 			createPayload := `{"Name": "Test Product for Update", "Price": 49.99}`
@@ -142,13 +139,10 @@ func ComputedAnnotation() *framework.TestSuite {
 				return err
 			}
 
-			// Service should either ignore the update (200/204) or reject it (400)
-			if resp.StatusCode != 200 && resp.StatusCode != 204 && resp.StatusCode != 400 {
-				return fmt.Errorf("expected status 200, 204, or 400, got %d: %s", resp.StatusCode, string(resp.Body))
-			}
-
+			// Computed values supplied by the client MUST be ignored. The update is
+			// otherwise valid, so rejecting it is not a compliant alternative.
 			if resp.StatusCode != 200 && resp.StatusCode != 204 {
-				return nil
+				return fmt.Errorf("service must ignore a supplied computed value on update; expected status 200 or 204, got %d: %s", resp.StatusCode, string(resp.Body))
 			}
 
 			fetchResp, err := ctx.GET(fmt.Sprintf("/Products(%v)", id))
