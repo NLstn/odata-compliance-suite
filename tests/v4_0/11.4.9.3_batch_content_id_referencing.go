@@ -491,5 +491,76 @@ Content-Type: application/json
 		},
 	)
 
+	// -----------------------------------------------------------------------
+	// Test 8: duplicate Content-ID within the same changeset must be rejected
+	// -----------------------------------------------------------------------
+	suite.AddTest(
+		"test_content_id_duplicate_rejected",
+		"Duplicate Content-ID within the same changeset is rejected, not silently accepted",
+		func(ctx *framework.TestContext) error {
+			batchBoundary := "batch_cid_dup"
+			changesetBoundary := "changeset_cid_dup"
+			body := fmt.Sprintf(`--%s
+Content-Type: multipart/mixed; boundary=%s
+
+--%s
+Content-Type: application/http
+Content-Transfer-Encoding: binary
+Content-ID: 1
+
+POST /Products HTTP/1.1
+Content-Type: application/json
+X-User-Role: admin
+
+%s
+
+--%s
+Content-Type: application/http
+Content-Transfer-Encoding: binary
+Content-ID: 1
+
+POST /Products HTTP/1.1
+Content-Type: application/json
+X-User-Role: admin
+
+%s
+
+--%s--
+
+--%s--`,
+				batchBoundary, changesetBoundary,
+				changesetBoundary, postProduct("CID Duplicate A"),
+				changesetBoundary, postProduct("CID Duplicate B"),
+				changesetBoundary,
+				batchBoundary)
+
+			resp, err := ctx.POSTRaw("/$batch", []byte(body),
+				fmt.Sprintf("multipart/mixed; boundary=%s", batchBoundary))
+			if err != nil {
+				return err
+			}
+
+			respBody := string(resp.Body)
+			createdCount := strings.Count(respBody, "HTTP/1.1 201")
+			if resp.StatusCode == 200 && createdCount == 2 {
+				// Known upstream gap: duplicate Content-ID within a multipart
+				// changeset is currently accepted rather than rejected, unlike
+				// the equivalent JSON-batch "id" uniqueness check. Skip rather
+				// than hard-fail until fixed, rather than silently passing.
+				return ctx.Skip("service accepts a duplicate Content-ID within a changeset instead of rejecting it; see NLstn/go-odata#815")
+			}
+
+			// If not silently accepted, the batch (or the second conflicting
+			// sub-request) must be rejected with a client error.
+			if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+				return nil
+			}
+			if strings.Contains(respBody, "HTTP/1.1 4") {
+				return nil
+			}
+			return fmt.Errorf("expected duplicate Content-ID to be rejected with a 4xx (batch-level status %d, sub-responses: %d x 201)", resp.StatusCode, createdCount)
+		},
+	)
+
 	return suite
 }

@@ -295,6 +295,14 @@ func JSONBatch() *framework.TestSuite {
 			if r2["status"] == float64(200) || r2["status"] == float64(201) {
 				return framework.NewError(fmt.Sprintf("expected r2 to fail, got status %v", r2["status"]))
 			}
+			// r1 itself succeeded when submitted, but the group failed and was
+			// rolled back — its own response status must reflect that too, not
+			// just the downstream side effect (checked below). A server that
+			// returns 201 for r1 while silently discarding the row underneath
+			// would otherwise only be caught indirectly.
+			if r1["status"] == float64(200) || r1["status"] == float64(201) {
+				return fmt.Errorf("expected r1's response status to reflect the atomicityGroup rollback (not 2xx), got %v", r1["status"])
+			}
 
 			// Verify the entity was NOT persisted.
 			listResp, err := ctx.GET("/Products?$filter=Name eq 'AtomicRollbackTest'")
