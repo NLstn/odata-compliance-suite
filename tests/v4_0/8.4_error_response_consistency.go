@@ -70,10 +70,9 @@ func ErrorResponseConsistency() *framework.TestSuite {
 				return err
 			}
 
-			if resp.StatusCode != 400 {
-				return nil // Not a validation error, skip
-			}
-
+			// A server that stops rejecting malformed $filter syntax entirely
+			// must fail this test, not silently pass — this is a regression in
+			// basic input validation, not an optional feature to skip past.
 			return ctx.AssertODataError(resp, 400, "")
 		},
 	)
