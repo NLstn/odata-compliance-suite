@@ -225,5 +225,88 @@ func CreateEntity() *framework.TestSuite {
 		},
 	)
 
+	// Test 6: POST with a required field missing returns 400
+	suite.AddTest(
+		"test_post_missing_required_field",
+		"POST with a missing required property returns 400",
+		func(ctx *framework.TestContext) error {
+			payload, err := buildProductPayload(ctx, "ComplianceTestMissingName", 10.00)
+			if err != nil {
+				return err
+			}
+			delete(payload, "Name")
+
+			resp, err := ctx.POST("/Products", payload)
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
+	// Test 7: POST with a wrong-typed property returns 400
+	suite.AddTest(
+		"test_post_wrong_type_rejected",
+		"POST with a wrong-typed property (Price as a string) returns 400",
+		func(ctx *framework.TestContext) error {
+			payload, err := buildProductPayload(ctx, "ComplianceTestWrongType", 10.00)
+			if err != nil {
+				return err
+			}
+			payload["Price"] = "not-a-number"
+
+			resp, err := ctx.POST("/Products", payload)
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
+	// Test 8: a client-supplied value for the server-generated key is ignored
+	suite.AddTest(
+		"test_post_client_supplied_key_ignored",
+		"POST with a client-supplied key value is ignored in favor of a server-generated key",
+		func(ctx *framework.TestContext) error {
+			const clientSuppliedID = "11111111-1111-1111-1111-111111111111"
+			payload, err := buildProductPayload(ctx, "ComplianceTestClientKey", 10.00)
+			if err != nil {
+				return err
+			}
+			payload["ID"] = clientSuppliedID
+
+			resp, err := ctx.POST("/Products", payload)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 201); err != nil {
+				return err
+			}
+
+			var created map[string]interface{}
+			if err := ctx.GetJSON(resp, &created); err != nil {
+				return fmt.Errorf("failed to parse created entity: %w", err)
+			}
+			createdID, err := parseEntityID(created["ID"])
+			if err != nil {
+				return err
+			}
+			if createdID == clientSuppliedID {
+				return fmt.Errorf("server accepted the client-supplied key %q instead of generating its own", clientSuppliedID)
+			}
+			createdIDs = append(createdIDs, createdID)
+
+			// The client-supplied ID must not exist as a distinct entity.
+			verifyResp, err := ctx.GET(fmt.Sprintf("/Products(%s)", clientSuppliedID))
+			if err != nil {
+				return err
+			}
+			if verifyResp.StatusCode != 404 {
+				return fmt.Errorf("expected the client-supplied key %q to not exist as an entity, got status %d", clientSuppliedID, verifyResp.StatusCode)
+			}
+			return nil
+		},
+	)
+
 	return suite
 }
