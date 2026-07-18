@@ -839,6 +839,12 @@ func (c *TestContext) AssertEntityHasFields(entity map[string]interface{}, requi
 }
 
 // AssertEntityOnlyAllowedFields ensures entity fields are in the provided allow-list.
+// OData control annotations (e.g. "@odata.id", "@odata.etag") and property
+// annotations (e.g. "Photo@odata.mediaReadLink") are not structural or
+// navigation properties, are not subject to $select, and are always permitted
+// regardless of the allow-list; callers only need to list the structural and
+// navigation property names they expect (including key properties, which
+// services return even when not explicitly selected).
 func (c *TestContext) AssertEntityOnlyAllowedFields(entity map[string]interface{}, allowedFields ...string) error {
 	allowed := make(map[string]struct{}, len(allowedFields))
 	for _, field := range allowedFields {
@@ -846,6 +852,9 @@ func (c *TestContext) AssertEntityOnlyAllowedFields(entity map[string]interface{
 	}
 
 	for key := range entity {
+		if strings.Contains(key, "@") {
+			continue
+		}
 		if _, ok := allowed[key]; !ok {
 			return fmt.Errorf("field %q is not allowed in this response", key)
 		}

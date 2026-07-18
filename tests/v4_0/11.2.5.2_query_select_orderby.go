@@ -46,8 +46,14 @@ func QuerySelectOrderby() *framework.TestSuite {
 
 			item := items[0]
 
-			// Verify Name field is present
+			// Verify Name field is present...
 			if err := ctx.AssertEntityHasFields(item, "Name"); err != nil {
+				return err
+			}
+			// ...and that no other structural property leaked through
+			// unselected (services always return key properties, so ID is
+			// allowed alongside the selected Name).
+			if err := ctx.AssertEntityOnlyAllowedFields(item, "ID", "Name"); err != nil {
 				return err
 			}
 
@@ -80,8 +86,12 @@ func QuerySelectOrderby() *framework.TestSuite {
 
 			item := items[0]
 
-			// Verify both Name and Price are present
+			// Verify both Name and Price are present, and that no
+			// unselected structural property leaked through.
 			if err := ctx.AssertEntityHasFields(item, "Name", "Price"); err != nil {
+				return err
+			}
+			if err := ctx.AssertEntityOnlyAllowedFields(item, "ID", "Name", "Price"); err != nil {
 				return err
 			}
 
@@ -231,8 +241,12 @@ func QuerySelectOrderby() *framework.TestSuite {
 			// Check first item
 			item := items[0]
 
-			// Verify selected fields are present
+			// Verify selected fields are present, and no other structural
+			// property leaked through unselected.
 			if err := ctx.AssertEntityHasFields(item, "Name", "Price"); err != nil {
+				return err
+			}
+			if err := ctx.AssertEntityOnlyAllowedFields(item, "ID", "Name", "Price"); err != nil {
 				return err
 			}
 			return ctx.AssertEntitiesSortedByFloat(items, "Price", true)

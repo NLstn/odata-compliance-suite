@@ -192,6 +192,12 @@ func registerRequestingEntitiesTests(suite *framework.TestSuite) {
 			if _, ok := result["Price"]; !ok {
 				return fmt.Errorf("response missing Price property")
 			}
+			// A server that ignores $select entirely would still pass the
+			// checks above; also confirm no unselected structural property
+			// leaked through (services always return key properties).
+			if err := ctx.AssertEntityOnlyAllowedFields(result, "ID", "Name", "Price"); err != nil {
+				return err
+			}
 
 			return nil
 		},
