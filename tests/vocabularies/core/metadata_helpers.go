@@ -164,6 +164,114 @@ func findAnnotationsByTerm(metadataXML []byte, term string) ([]coreAnnotationHit
 	return hits, nil
 }
 
+// csdlEntityType and csdlEntitySet describe just enough of the CSDL EntityType/
+// EntityContainer shape to build a minimally valid create payload below.
+type csdlEntityTypeProperty struct {
+	Name     string `xml:"Name,attr"`
+	Type     string `xml:"Type,attr"`
+	Nullable string `xml:"Nullable,attr"`
+}
+
+type csdlEntityType struct {
+	Name string `xml:"Name,attr"`
+	Key  struct {
+		PropertyRefs []struct {
+			Name string `xml:"Name,attr"`
+		} `xml:"PropertyRef"`
+	} `xml:"Key"`
+	Properties []csdlEntityTypeProperty `xml:"Property"`
+}
+
+type csdlEntitySet struct {
+	Name       string `xml:"Name,attr"`
+	EntityType string `xml:"EntityType,attr"`
+}
+
+type csdlDoc struct {
+	DataServices struct {
+		Schemas []struct {
+			Namespace       string           `xml:"Namespace,attr"`
+			EntityTypes     []csdlEntityType `xml:"EntityType"`
+			EntityContainer struct {
+				EntitySets []csdlEntitySet `xml:"EntitySet"`
+			} `xml:"EntityContainer"`
+		} `xml:"Schema"`
+	} `xml:"DataServices"`
+}
+
+// buildValidCreatePayload constructs a minimally valid POST body for
+// entitySetName: one placeholder value per non-key property declared
+// Nullable="false". This lets a restriction-rejection test send a request
+// that would otherwise succeed, so a rejection can only be attributed to the
+// restriction under test, not to an incomplete body the server would reject
+// regardless (e.g. a missing required field).
+func buildValidCreatePayload(metadataXML []byte, entitySetName string) (map[string]interface{}, error) {
+	var doc csdlDoc
+	if err := xml.Unmarshal(metadataXML, &doc); err != nil {
+		return nil, fmt.Errorf("failed to parse metadata XML: %w", err)
+	}
+
+	var entityTypeName string
+	for _, schema := range doc.DataServices.Schemas {
+		for _, set := range schema.EntityContainer.EntitySets {
+			if set.Name == entitySetName {
+				entityTypeName = set.EntityType
+			}
+		}
+	}
+	if entityTypeName == "" {
+		return nil, fmt.Errorf("entity set %q not found in metadata", entitySetName)
+	}
+
+	payload := map[string]interface{}{}
+	for _, schema := range doc.DataServices.Schemas {
+		for _, et := range schema.EntityTypes {
+			qualifiedName := schema.Namespace + "." + et.Name
+			if qualifiedName != entityTypeName && et.Name != entityTypeName {
+				continue
+			}
+			keySet := make(map[string]bool, len(et.Key.PropertyRefs))
+			for _, ref := range et.Key.PropertyRefs {
+				keySet[ref.Name] = true
+			}
+			for _, prop := range et.Properties {
+				if prop.Nullable == "false" && !keySet[prop.Name] {
+					payload[prop.Name] = placeholderValueForType(prop.Type)
+				}
+			}
+		}
+	}
+	return payload, nil
+}
+
+// placeholderValueForType returns an arbitrary but validly-typed value for
+// edmType, for use in a synthetic create payload where the actual value is
+// irrelevant to the behavior under test.
+func placeholderValueForType(edmType string) interface{} {
+	switch edmType {
+	case "Edm.String":
+		return "Core Permissions Test Value"
+	case "Edm.Boolean":
+		return true
+	case "Edm.Guid":
+		return "00000000-0000-0000-0000-000000000001"
+	case "Edm.Date":
+		return "2024-01-01"
+	case "Edm.DateTimeOffset":
+		return "2024-01-01T00:00:00Z"
+	case "Edm.TimeOfDay":
+		return "00:00:00"
+	case "Edm.Duration":
+		return "PT0S"
+	case "Edm.Int16", "Edm.Int32", "Edm.Int64", "Edm.Byte", "Edm.SByte":
+		return 1
+	case "Edm.Double", "Edm.Single", "Edm.Decimal":
+		return 1.0
+	default:
+		return "Core Permissions Test Value"
+	}
+}
+
 func assertODataError(resp *framework.HTTPResponse) error {
 	var payload map[string]interface{}
 	if err := json.Unmarshal(resp.Body, &payload); err != nil {

@@ -69,8 +69,8 @@ func DeleteRestrictions() *framework.TestSuite {
 				if err != nil {
 					return err
 				}
-				if resp.StatusCode < 400 || resp.StatusCode >= 500 {
-					return fmt.Errorf("expected 4xx for non-deletable entity set %s, got %d: %s", setInfo.name, resp.StatusCode, string(resp.Body))
+				if err := ctx.AssertODataError(resp, 405, ""); err != nil {
+					return fmt.Errorf("non-deletable entity set %s: %w", setInfo.name, err)
 				}
 			}
 

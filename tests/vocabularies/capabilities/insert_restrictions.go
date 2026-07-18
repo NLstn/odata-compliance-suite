@@ -56,12 +56,15 @@ func InsertRestrictions() *framework.TestSuite {
 			}
 
 			for _, setInfo := range metadataInfo.insertRestricted {
-				resp, err := ctx.POST(fmt.Sprintf("/%s", setInfo.name), map[string]interface{}{})
+				// Send an otherwise-valid payload so a rejection can only be
+				// attributed to Insertable=false, not to a missing required field.
+				payload := buildValidPayload(setInfo)
+				resp, err := ctx.POST(fmt.Sprintf("/%s", setInfo.name), payload)
 				if err != nil {
 					return err
 				}
-				if resp.StatusCode < 400 || resp.StatusCode >= 500 {
-					return fmt.Errorf("expected 4xx for non-insertable entity set %s, got %d: %s", setInfo.name, resp.StatusCode, string(resp.Body))
+				if err := ctx.AssertODataError(resp, 405, ""); err != nil {
+					return fmt.Errorf("non-insertable entity set %s: %w", setInfo.name, err)
 				}
 			}
 

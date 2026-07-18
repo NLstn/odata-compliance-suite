@@ -65,12 +65,16 @@ func UpdateRestrictions() *framework.TestSuite {
 					return err
 				}
 
-				resp, err := ctx.PATCH(fmt.Sprintf("/%s%s", setInfo.name, key), map[string]interface{}{"Name": "Blocked update"})
+				// Send an otherwise-valid payload (derived from the entity type's
+				// own required properties, not an assumed "Name" field) so a
+				// rejection can only be attributed to Updatable=false.
+				payload := buildValidPayload(setInfo)
+				resp, err := ctx.PATCH(fmt.Sprintf("/%s%s", setInfo.name, key), payload)
 				if err != nil {
 					return err
 				}
-				if resp.StatusCode < 400 || resp.StatusCode >= 500 {
-					return fmt.Errorf("expected 4xx for non-updatable entity set %s, got %d: %s", setInfo.name, resp.StatusCode, string(resp.Body))
+				if err := ctx.AssertODataError(resp, 405, ""); err != nil {
+					return fmt.Errorf("non-updatable entity set %s: %w", setInfo.name, err)
 				}
 			}
 

@@ -39,8 +39,8 @@ func SortRestrictions() *framework.TestSuite {
 				if err != nil {
 					return err
 				}
-				if resp.StatusCode != 400 {
-					return fmt.Errorf("expected 400 for $orderby on non-sortable entity set %s, got %d: %s", setInfo.name, resp.StatusCode, string(resp.Body))
+				if err := ctx.AssertODataError(resp, 400, ""); err != nil {
+					return fmt.Errorf("non-sortable entity set %s: %w", setInfo.name, err)
 				}
 			}
 
