@@ -55,6 +55,16 @@ type TestResults struct {
 	Details []TestDetail
 }
 
+// AllSkipped reports whether every test in the suite was skipped (typically
+// because the service declared a required capability unsupported). Run()
+// returns nil in this case exactly as it does for a fully-passing suite, so
+// callers that need to distinguish "verified compliant" from "nothing was
+// actually checked" must consult this explicitly rather than trusting a nil
+// error or a "PASSING" status alone.
+func (r *TestResults) AllSkipped() bool {
+	return r.Total > 0 && r.Skipped == r.Total
+}
+
 // TestDetail contains information about a single test result
 type TestDetail struct {
 	Name   string
@@ -328,7 +338,11 @@ func (s *TestSuite) PrintSummary() {
 	fmt.Fprintln(s.Out, "======================================")
 
 	if s.Results.Failed == 0 {
-		fmt.Fprintln(s.Out, "Status: PASSING")
+		if s.Results.AllSkipped() {
+			fmt.Fprintln(s.Out, "Status: SKIPPED (no tests executed)")
+		} else {
+			fmt.Fprintln(s.Out, "Status: PASSING")
+		}
 	} else {
 		fmt.Fprintln(s.Out, "Status: FAILING")
 
