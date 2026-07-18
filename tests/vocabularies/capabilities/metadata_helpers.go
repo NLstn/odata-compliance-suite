@@ -24,6 +24,11 @@ type capabilitiesMetadata struct {
 type entitySetInfo struct {
 	name     string
 	keyProps []keyProperty
+	// requiredProps lists non-key structural properties declared Nullable="false",
+	// used to build a minimally valid create payload for negative-path tests (a
+	// restriction-rejection test must send a request that would otherwise
+	// succeed, so the rejection can only be attributed to the restriction).
+	requiredProps []keyProperty
 }
 
 type keyProperty struct {
@@ -61,8 +66,9 @@ type propertyRef struct {
 }
 
 type property struct {
-	Name string `xml:"Name,attr"`
-	Type string `xml:"Type,attr"`
+	Name     string `xml:"Name,attr"`
+	Type     string `xml:"Type,attr"`
+	Nullable string `xml:"Nullable,attr"`
 }
 
 type entityContainer struct {
@@ -96,6 +102,8 @@ type propertyValue struct {
 type entityTypeInfo struct {
 	keys         []string
 	propertyType map[string]string
+	// requiredNonKey lists non-key property names declared Nullable="false".
+	requiredNonKey []string
 }
 
 func parseCapabilitiesMetadata(metadataXML []byte) (capabilitiesMetadata, error) {
@@ -115,11 +123,18 @@ func parseCapabilitiesMetadata(metadataXML []byte) (capabilitiesMetadata, error)
 				keys:         make([]string, 0, len(entityType.Key.PropertyRefs)),
 				propertyType: make(map[string]string),
 			}
-			for _, prop := range entityType.Properties {
-				info.propertyType[prop.Name] = prop.Type
-			}
 			for _, ref := range entityType.Key.PropertyRefs {
 				info.keys = append(info.keys, ref.Name)
+			}
+			keySet := make(map[string]bool, len(info.keys))
+			for _, k := range info.keys {
+				keySet[k] = true
+			}
+			for _, prop := range entityType.Properties {
+				info.propertyType[prop.Name] = prop.Type
+				if prop.Nullable == "false" && !keySet[prop.Name] {
+					info.requiredNonKey = append(info.requiredNonKey, prop.Name)
+				}
 			}
 			entityTypeMap[fullName] = info
 		}
@@ -224,7 +239,52 @@ func buildEntitySetInfo(setName string, entitySetTypes map[string]string, entity
 		keyProps = append(keyProps, keyProperty{name: key, typ: info.propertyType[key]})
 	}
 
-	return entitySetInfo{name: setName, keyProps: keyProps}, nil
+	requiredProps := make([]keyProperty, 0, len(info.requiredNonKey))
+	for _, name := range info.requiredNonKey {
+		requiredProps = append(requiredProps, keyProperty{name: name, typ: info.propertyType[name]})
+	}
+
+	return entitySetInfo{name: setName, keyProps: keyProps, requiredProps: requiredProps}, nil
+}
+
+// buildValidPayload constructs a minimally valid create payload for setInfo:
+// one value per non-key property declared Nullable="false", so a rejection in
+// a restriction-enforcement test can only be attributed to the restriction
+// itself, not to an incomplete/invalid body the server would have rejected
+// regardless (e.g. a missing required field).
+func buildValidPayload(setInfo entitySetInfo) map[string]interface{} {
+	payload := make(map[string]interface{}, len(setInfo.requiredProps))
+	for _, prop := range setInfo.requiredProps {
+		payload[prop.name] = placeholderValue(prop.typ)
+	}
+	return payload
+}
+
+// placeholderValue returns an arbitrary but validly-typed value for edmType,
+// for use in a synthetic create payload where the actual value is irrelevant.
+func placeholderValue(edmType string) interface{} {
+	switch edmType {
+	case "Edm.String":
+		return "Capabilities Test Value"
+	case "Edm.Boolean":
+		return true
+	case "Edm.Guid":
+		return "00000000-0000-0000-0000-000000000001"
+	case "Edm.Date":
+		return "2024-01-01"
+	case "Edm.DateTimeOffset":
+		return "2024-01-01T00:00:00Z"
+	case "Edm.TimeOfDay":
+		return "00:00:00"
+	case "Edm.Duration":
+		return "PT0S"
+	case "Edm.Int16", "Edm.Int32", "Edm.Int64", "Edm.Byte", "Edm.SByte":
+		return 1
+	case "Edm.Double", "Edm.Single", "Edm.Decimal":
+		return 1.0
+	default:
+		return "Capabilities Test Value"
+	}
 }
 
 func fetchMetadata(ctx *framework.TestContext) ([]byte, error) {

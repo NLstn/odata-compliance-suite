@@ -44,15 +44,15 @@ func PermissionsAnnotation() *framework.TestSuite {
 		"read_only_entity_set_rejects_post",
 		"POST to an entity set annotated Core.Permissions=Read (or Core.Permissions=None) returns 4xx",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/$metadata", framework.Header{Key: "Accept", Value: "application/xml"})
+			metadataResp, err := ctx.GET("/$metadata", framework.Header{Key: "Accept", Value: "application/xml"})
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+			if err := ctx.AssertStatusCode(metadataResp, 200); err != nil {
 				return err
 			}
 
-			hits, err := findAnnotationsByTerm(resp.Body, "Core.Permissions")
+			hits, err := findAnnotationsByTerm(metadataResp.Body, "Core.Permissions")
 			if err != nil {
 				return err
 			}
@@ -80,12 +80,22 @@ func PermissionsAnnotation() *framework.TestSuite {
 			}
 
 			for _, setName := range readOnlySets {
-				resp, err := ctx.POST(fmt.Sprintf("/%s", setName), map[string]interface{}{})
+				// Send an otherwise-valid payload so a rejection can only be
+				// attributed to the read-only Permissions annotation, not to a
+				// missing required field.
+				payload, err := buildValidCreatePayload(metadataResp.Body, setName)
+				if err != nil {
+					return err
+				}
+				resp, err := ctx.POST(fmt.Sprintf("/%s", setName), payload)
 				if err != nil {
 					return err
 				}
 				if resp.StatusCode < 400 || resp.StatusCode >= 500 {
 					return fmt.Errorf("expected 4xx for POST to read-only entity set %s, got %d: %s", setName, resp.StatusCode, string(resp.Body))
+				}
+				if err := assertODataError(resp); err != nil {
+					return fmt.Errorf("read-only entity set %s: response is not a well-formed OData error: %w", setName, err)
 				}
 			}
 			return nil

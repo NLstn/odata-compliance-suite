@@ -39,8 +39,8 @@ func SelectSupport() *framework.TestSuite {
 				if err != nil {
 					return err
 				}
-				if resp.StatusCode != 400 {
-					return fmt.Errorf("expected 400 for $select on entity set %s with SelectSupport.Supported=false, got %d: %s", setInfo.name, resp.StatusCode, string(resp.Body))
+				if err := ctx.AssertODataError(resp, 400, ""); err != nil {
+					return fmt.Errorf("entity set %s with SelectSupport.Supported=false: %w", setInfo.name, err)
 				}
 			}
 
