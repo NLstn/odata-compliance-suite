@@ -3,6 +3,7 @@ package v4_0
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -20,18 +21,9 @@ func URLEncoding() *framework.TestSuite {
 		"test_filter_with_spaces",
 		"Filter with URL-encoded spaces",
 		func(ctx *framework.TestContext) error {
-			// URL-encode the query parameter properly
-			path := "/Products?$filter=" + url.QueryEscape("Name eq 'Gaming Laptop'")
-			resp, err := ctx.GET(path)
-			if err != nil {
-				return err
-			}
-
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-
-			return nil
+			return assertProductFilter(ctx, "Name eq 'Gaming Laptop'", func(p map[string]interface{}) bool {
+				return productString(p, "Name") == "Gaming Laptop"
+			})
 		},
 	)
 
@@ -40,37 +32,43 @@ func URLEncoding() *framework.TestSuite {
 		"test_filter_special_chars",
 		"Filter with encoded special characters (&)",
 		func(ctx *framework.TestContext) error {
-			path := "/Products?$filter=" + url.QueryEscape("contains(Name,'&')")
-			resp, err := ctx.GET(path)
-			if err != nil {
-				return err
-			}
-
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-
-			return nil
+			return assertProductFilter(ctx, "contains(Name,'&')", func(p map[string]interface{}) bool {
+				return strings.Contains(productString(p, "Name"), "&")
+			})
 		},
 	)
 
 	// Test 3: Query option with encoded $ symbol
 	suite.AddTest(
 		"test_encoded_dollar_sign",
-		"Percent-encoded dollar sign in query key is handled (200)",
+		"Percent-encoded dollar sign in query key is handled and $top is actually applied",
 		func(ctx *framework.TestContext) error {
-			// HTTP percent-decoding happens before OData processing: %24top is decoded
-			// to $top by the HTTP layer, so the OData layer sees a valid $top=5 option.
-			// The server must accept this and return 200.
-			resp, err := ctx.GET("/Products?%24top=5")
+			all, err := fetchAllProducts(ctx)
 			if err != nil {
 				return err
 			}
 
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200 (%%24top decodes to $top after HTTP percent-decoding), got %d", resp.StatusCode)
+			// HTTP percent-decoding happens before OData processing: %24top is decoded
+			// to $top by the HTTP layer, so the OData layer sees a valid $top=5 option.
+			resp, err := ctx.GET("/Products?%24top=5")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
 			}
 
+			wantCount := len(all)
+			if wantCount > 5 {
+				wantCount = 5
+			}
+			if len(items) != wantCount {
+				return fmt.Errorf("%%24top=5 should decode to $top=5: expected %d item(s), got %d", wantCount, len(items))
+			}
 			return nil
 		},
 	)
@@ -80,17 +78,10 @@ func URLEncoding() *framework.TestSuite {
 		"test_encoded_operators",
 		"Filter with URL-encoded operators",
 		func(ctx *framework.TestContext) error {
-			path := "/Products?$filter=" + url.QueryEscape("Price gt 50 and Price lt 200")
-			resp, err := ctx.GET(path)
-			if err != nil {
-				return err
-			}
-
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-
-			return nil
+			return assertProductFilter(ctx, "Price gt 50 and Price lt 200", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price > 50 && price < 200
+			})
 		},
 	)
 
@@ -99,18 +90,10 @@ func URLEncoding() *framework.TestSuite {
 		"test_filter_single_quote",
 		"Filter with single quote in string literal",
 		func(ctx *framework.TestContext) error {
-			// Single quotes in OData string literals are escaped by doubling them
-			path := "/Products?$filter=" + url.QueryEscape("contains(Name,'''')")
-			resp, err := ctx.GET(path)
-			if err != nil {
-				return err
-			}
-
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-
-			return nil
+			// Single quotes in OData string literals are escaped by doubling them.
+			return assertProductFilter(ctx, "contains(Name,'''')", func(p map[string]interface{}) bool {
+				return strings.Contains(productString(p, "Name"), "'")
+			})
 		},
 	)
 
@@ -119,18 +102,14 @@ func URLEncoding() *framework.TestSuite {
 		"test_parentheses_encoding",
 		"Filter with URL-encoded parentheses",
 		func(ctx *framework.TestContext) error {
-			// Use Status (integer) instead of ID (UUID) for type-safe comparison across databases
-			path := "/Products?$filter=" + url.QueryEscape("(Price gt 100) and (Status lt 10)")
-			resp, err := ctx.GET(path)
-			if err != nil {
-				return err
-			}
-
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-
-			return nil
+			return assertProductFilter(ctx, "(Price gt 100) and (Status lt 10)", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				if !ok {
+					return false
+				}
+				status, err := enumStatusValue(p)
+				return err == nil && price > 100 && status < 10
+			})
 		},
 	)
 
@@ -139,17 +118,44 @@ func URLEncoding() *framework.TestSuite {
 		"test_mixed_encoding",
 		"Mixed encoded and unencoded parameters",
 		func(ctx *framework.TestContext) error {
+			all, err := fetchAllProducts(ctx)
+			if err != nil {
+				return err
+			}
+			expected := 0
+			for _, p := range all {
+				if price, ok := productFloat(p, "Price"); ok && price > 50 {
+					expected++
+				}
+			}
+
 			path := "/Products?$filter=" + url.QueryEscape("Price gt 50") + "&$top=10"
 			resp, err := ctx.GET(path)
 			if err != nil {
 				return err
 			}
-
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
 			}
 
-			return nil
+			wantCount := expected
+			if wantCount > 10 {
+				wantCount = 10
+			}
+			if len(items) != wantCount {
+				return fmt.Errorf("expected %d item(s) for $filter=Price gt 50&$top=10, got %d", wantCount, len(items))
+			}
+			return ctx.AssertAllEntitiesSatisfy(items, "Price gt 50", func(entity map[string]interface{}) (bool, string) {
+				price, ok := productFloat(entity, "Price")
+				if !ok || price <= 50 {
+					return false, fmt.Sprintf("entity does not satisfy Price gt 50, got Price=%v", entity["Price"])
+				}
+				return true, ""
+			})
 		},
 	)
 
@@ -158,17 +164,10 @@ func URLEncoding() *framework.TestSuite {
 		"test_plus_sign",
 		"Plus sign handling in URL",
 		func(ctx *framework.TestContext) error {
-			path := "/Products?$filter=" + url.QueryEscape("Price gt 0")
-			resp, err := ctx.GET(path)
-			if err != nil {
-				return err
-			}
-
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-
-			return nil
+			return assertProductFilter(ctx, "Price gt 0", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price > 0
+			})
 		},
 	)
 
@@ -177,39 +176,25 @@ func URLEncoding() *framework.TestSuite {
 		"test_percent_in_string",
 		"Percent sign in filter string",
 		func(ctx *framework.TestContext) error {
-			path := "/Products?$filter=" + url.QueryEscape("contains(Name,'%')")
-			resp, err := ctx.GET(path)
-			if err != nil {
-				return err
-			}
-
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-
-			return nil
+			return assertProductFilter(ctx, "contains(Name,'%')", func(p map[string]interface{}) bool {
+				return strings.Contains(productString(p, "Name"), "%")
+			})
 		},
 	)
 
 	// Test 10: Reserved characters in query string
 	suite.AddTest(
 		"test_reserved_chars",
-		"Reserved characters handled gracefully",
+		"A reserved character used where an operator is expected is rejected as invalid filter syntax",
 		func(ctx *framework.TestContext) error {
-			// Semicolon is a reserved character
+			// A semicolon is not a valid $filter connective (spec requires 'and'/'or');
+			// this must be rejected as a syntax error, not silently accepted.
 			path := "/Products?$filter=" + url.QueryEscape("Price gt 10;id lt 100")
 			resp, err := ctx.GET(path)
 			if err != nil {
 				return err
 			}
-
-			// This may fail as semicolon is a query parameter separator in some contexts
-			// We're testing that the server handles it gracefully
-			if resp.StatusCode != 200 && resp.StatusCode != 400 {
-				return fmt.Errorf("expected status 200 or 400, got %d", resp.StatusCode)
-			}
-
-			return nil
+			return ctx.AssertODataError(resp, 400, "")
 		},
 	)
 
@@ -218,18 +203,9 @@ func URLEncoding() *framework.TestSuite {
 		"test_unicode_characters",
 		"Unicode characters in filter",
 		func(ctx *framework.TestContext) error {
-			// Test with UTF-8 characters (é)
-			path := "/Products?$filter=" + url.QueryEscape("contains(Name,'é')")
-			resp, err := ctx.GET(path)
-			if err != nil {
-				return err
-			}
-
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-
-			return nil
+			return assertProductFilter(ctx, "contains(Name,'é')", func(p map[string]interface{}) bool {
+				return strings.Contains(productString(p, "Name"), "é")
+			})
 		},
 	)
 
@@ -237,23 +213,9 @@ func URLEncoding() *framework.TestSuite {
 		"test_encoded_ampersand_stays_in_string_literal",
 		"Encoded ampersand inside a string literal is not treated as a query separator",
 		func(ctx *framework.TestContext) error {
-			path := "/Products?$filter=" + url.QueryEscape("Name eq 'Laptop & Mouse'")
-			resp, err := ctx.GET(path)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			items, err := ctx.ParseEntityCollection(resp)
-			if err != nil {
-				return err
-			}
-			if len(items) != 0 {
-				return fmt.Errorf("expected no exact matches for encoded ampersand literal, got %d", len(items))
-			}
-			return nil
+			return assertProductFilter(ctx, "Name eq 'Laptop & Mouse'", func(p map[string]interface{}) bool {
+				return productString(p, "Name") == "Laptop & Mouse"
+			})
 		},
 	)
 
@@ -261,23 +223,9 @@ func URLEncoding() *framework.TestSuite {
 		"test_encoded_slash_stays_in_string_literal",
 		"Encoded slash inside a string literal is not treated as a path separator",
 		func(ctx *framework.TestContext) error {
-			path := "/Products?$filter=" + url.QueryEscape("Name eq 'Laptop/Tablet'")
-			resp, err := ctx.GET(path)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			items, err := ctx.ParseEntityCollection(resp)
-			if err != nil {
-				return err
-			}
-			if len(items) != 0 {
-				return fmt.Errorf("expected no exact matches for encoded slash literal, got %d", len(items))
-			}
-			return nil
+			return assertProductFilter(ctx, "Name eq 'Laptop/Tablet'", func(p map[string]interface{}) bool {
+				return productString(p, "Name") == "Laptop/Tablet"
+			})
 		},
 	)
 
@@ -300,7 +248,10 @@ func URLEncoding() *framework.TestSuite {
 			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
 				return err
 			}
-			return ctx.AssertEntityHasFields(items[0], "ID", "Name")
+			if err := ctx.AssertEntityHasFields(items[0], "ID", "Name"); err != nil {
+				return err
+			}
+			return ctx.AssertEntityOnlyAllowedFields(items[0], "ID", "Name")
 		},
 	)
 
