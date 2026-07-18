@@ -132,6 +132,134 @@ func Int16Type() *framework.TestSuite {
 	)
 
 	suite.AddTest(
+		"test_int16_max_boundary_roundtrips",
+		"Edm.Int16 max value (32767) round-trips unchanged through POST and GET",
+		func(ctx *framework.TestContext) error {
+			payload, err := buildProductPayload(ctx, "Int16 Max Roundtrip", 1.0)
+			if err != nil {
+				return err
+			}
+			payload["Quantity"] = 32767
+
+			createResp, err := ctx.POST("/Products", payload)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(createResp, 201); err != nil {
+				return err
+			}
+			var created map[string]interface{}
+			if err := ctx.GetJSON(createResp, &created); err != nil {
+				return err
+			}
+			q, ok := productFloat(created, "Quantity")
+			if !ok || q != 32767 {
+				return fmt.Errorf("expected Quantity=32767 in create response, got %v", created["Quantity"])
+			}
+
+			id, err := parseEntityID(created["ID"])
+			if err != nil {
+				return err
+			}
+			getResp, err := ctx.GET(fmt.Sprintf("/Products(%s)", id))
+			if err != nil {
+				return err
+			}
+			var fetched map[string]interface{}
+			if err := ctx.GetJSON(getResp, &fetched); err != nil {
+				return err
+			}
+			q, ok = productFloat(fetched, "Quantity")
+			if !ok || q != 32767 {
+				return fmt.Errorf("expected Quantity=32767 on re-fetch, got %v", fetched["Quantity"])
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_int16_overflow_rejected",
+		"Edm.Int16 value above the max (32768) is rejected, not silently truncated",
+		func(ctx *framework.TestContext) error {
+			payload, err := buildProductPayload(ctx, "Int16 Overflow", 1.0)
+			if err != nil {
+				return err
+			}
+			payload["Quantity"] = 32768
+
+			resp, err := ctx.POST("/Products", payload)
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
+	suite.AddTest(
+		"test_int16_min_boundary_roundtrips",
+		"Edm.Int16 min value (-32768) round-trips unchanged through POST and GET",
+		func(ctx *framework.TestContext) error {
+			payload, err := buildProductPayload(ctx, "Int16 Min Roundtrip", 1.0)
+			if err != nil {
+				return err
+			}
+			payload["Quantity"] = -32768
+
+			createResp, err := ctx.POST("/Products", payload)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(createResp, 201); err != nil {
+				return err
+			}
+			var created map[string]interface{}
+			if err := ctx.GetJSON(createResp, &created); err != nil {
+				return err
+			}
+			q, ok := productFloat(created, "Quantity")
+			if !ok || q != -32768 {
+				return fmt.Errorf("expected Quantity=-32768 in create response, got %v", created["Quantity"])
+			}
+
+			id, err := parseEntityID(created["ID"])
+			if err != nil {
+				return err
+			}
+			getResp, err := ctx.GET(fmt.Sprintf("/Products(%s)", id))
+			if err != nil {
+				return err
+			}
+			var fetched map[string]interface{}
+			if err := ctx.GetJSON(getResp, &fetched); err != nil {
+				return err
+			}
+			q, ok = productFloat(fetched, "Quantity")
+			if !ok || q != -32768 {
+				return fmt.Errorf("expected Quantity=-32768 on re-fetch, got %v", fetched["Quantity"])
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_int16_underflow_rejected",
+		"Edm.Int16 value below the min (-32769) is rejected, not silently clamped",
+		func(ctx *framework.TestContext) error {
+			payload, err := buildProductPayload(ctx, "Int16 Underflow", 1.0)
+			if err != nil {
+				return err
+			}
+			payload["Quantity"] = -32769
+
+			resp, err := ctx.POST("/Products", payload)
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
+	suite.AddTest(
 		"test_int16_in_response",
 		"Int16 values are serialized as numbers within the valid range [-32768, 32767]",
 		func(ctx *framework.TestContext) error {
