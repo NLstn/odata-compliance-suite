@@ -1,6 +1,8 @@
 package v4_0
 
 import (
+	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -38,7 +40,7 @@ func TypeDefinitions() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_typedef_underlying_type",
-		"Type definitions have UnderlyingType",
+		"Each TypeDefinition declares a valid UnderlyingType, and at least one structural property actually uses one",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/$metadata")
 			if err != nil {
@@ -46,14 +48,40 @@ func TypeDefinitions() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			if !strings.Contains(body, "TypeDefinition") {
-				return nil // No type definitions, optional
+			typeDefPattern := regexp.MustCompile(`<TypeDefinition\s[^>]*/?>`)
+			typeDefs := typeDefPattern.FindAllString(body, -1)
+			if len(typeDefs) == 0 {
+				return ctx.Skip("no TypeDefinition declared in metadata")
 			}
 
-			if !strings.Contains(body, "UnderlyingType") {
-				return framework.NewError("TypeDefinition found but missing UnderlyingType")
+			nameAndUnderlyingPattern := regexp.MustCompile(`Name="([^"]+)"[^>]*UnderlyingType="([^"]+)"`)
+			typeDefNames := map[string]bool{}
+			for _, td := range typeDefs {
+				m := nameAndUnderlyingPattern.FindStringSubmatch(td)
+				if m == nil {
+					return fmt.Errorf("TypeDefinition is missing a valid Name/UnderlyingType attribute pair: %s", td)
+				}
+				typeDefNames[m[1]] = true
 			}
 
+			ns, err := schemaNamespace(ctx)
+			if err != nil {
+				return err
+			}
+			if ns == "" {
+				return ctx.Skip("could not determine the schema namespace")
+			}
+
+			used := false
+			for name := range typeDefNames {
+				if strings.Contains(body, `Type="`+ns+"."+name+`"`) {
+					used = true
+					break
+				}
+			}
+			if !used {
+				return fmt.Errorf("metadata declares TypeDefinition(s) but no structural property references one by its qualified type name")
+			}
 			return nil
 		},
 	)

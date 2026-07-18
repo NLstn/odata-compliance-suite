@@ -133,7 +133,7 @@ func StructuredTypes() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_complex_type_properties",
-		"Structural properties can be of complex types",
+		"A property declared with a ComplexType actually serializes as a nested JSON object matching that shape",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/$metadata")
 			if err != nil {
@@ -142,9 +142,57 @@ func StructuredTypes() *framework.TestSuite {
 
 			body := string(resp.Body)
 			if !strings.Contains(body, "ComplexType") {
-				return nil // No complex types, skip
+				return ctx.Skip("no ComplexType declared in metadata")
 			}
 
+			// Find a structural property whose Type references a declared
+			// ComplexType by its qualified name, as opposed to an Edm
+			// primitive, enum, or type definition.
+			ns, err := schemaNamespace(ctx)
+			if err != nil {
+				return err
+			}
+			if ns == "" {
+				return ctx.Skip("could not determine the schema namespace")
+			}
+			complexTypeNames := regexp.MustCompile(`<ComplexType Name="([^"]+)"`).FindAllStringSubmatch(body, -1)
+
+			var complexPropName string
+			for _, ct := range complexTypeNames {
+				qualified := ns + "." + ct[1]
+				pattern := regexp.MustCompile(`<Property\s[^>]*Name="([^"]+)"[^>]*Type="` + regexp.QuoteMeta(qualified) + `"`)
+				if m := pattern.FindStringSubmatch(body); m != nil {
+					complexPropName = m[1]
+					break
+				}
+			}
+			if complexPropName == "" {
+				return ctx.Skip("metadata declares ComplexType(s) but no structural property references one by its qualified type name; see NLstn/go-odata#822 for a known instance where a complex-shaped property is instead mistakenly declared as Edm.String")
+			}
+
+			entityResp, err := ctx.GET("/Products?$top=1")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(entityResp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(entityResp)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
+			}
+			raw, ok := items[0][complexPropName]
+			if !ok {
+				return fmt.Errorf("complex-typed property %q missing from entity response", complexPropName)
+			}
+			if raw != nil {
+				if _, isObject := raw.(map[string]interface{}); !isObject {
+					return fmt.Errorf("complex-typed property %q should serialize as a JSON object, got %T", complexPropName, raw)
+				}
+			}
 			return nil
 		},
 	)
@@ -159,10 +207,45 @@ func StructuredTypes() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			if !strings.Contains(body, `Type="Collection(`) {
-				return nil // No collection properties, skip
+			structuralCollectionPattern := regexp.MustCompile(`<Property\s[^>]*Type="Collection\([^)]+\)"[^>]*>`)
+			matches := structuralCollectionPattern.FindAllString(body, -1)
+			if len(matches) == 0 {
+				return ctx.Skip("no structural (primitive/complex) collection properties declared in metadata")
 			}
 
+			// A structural collection property is declared; verify it actually
+			// round-trips as a JSON array in a real entity response, not just
+			// that the CSDL text mentions it.
+			propNamePattern := regexp.MustCompile(`Name="([^"]+)"`)
+			propName := ""
+			if m := propNamePattern.FindStringSubmatch(matches[0]); m != nil {
+				propName = m[1]
+			}
+			if propName == "" {
+				return framework.NewError("could not extract the collection property's Name attribute")
+			}
+
+			entityResp, err := ctx.GET("/Products?$top=1")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(entityResp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(entityResp)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
+			}
+			raw, ok := items[0][propName]
+			if !ok || raw == nil {
+				return ctx.Skip(fmt.Sprintf("collection property %q not present on the fixture entity used here (may belong to a different entity type)", propName))
+			}
+			if _, isArray := raw.([]interface{}); !isArray {
+				return fmt.Errorf("structural collection property %q should serialize as a JSON array, got %T", propName, raw)
+			}
 			return nil
 		},
 	)
@@ -199,16 +282,48 @@ func StructuredTypes() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			if !strings.Contains(body, "NavigationProperty") {
-				return nil // No navigation properties, skip
+			// Scope the search to the Product EntityType block specifically,
+			// since a collection-valued nav property declared on a different
+			// entity type (e.g. Category.Products) wouldn't be expandable
+			// from the /Products entity set used for the behavioral check.
+			productTypePattern := regexp.MustCompile(`(?s)<EntityType Name="Product"[^>]*>(.*?)</EntityType>`)
+			productBlock := productTypePattern.FindStringSubmatch(body)
+			if productBlock == nil {
+				return ctx.Skip("could not locate the Product EntityType block in metadata")
 			}
-
-			// Check if any navigation property has Collection type
-			if strings.Contains(body, `Type="Collection(`) {
-				return nil
+			collectionNavPattern := regexp.MustCompile(`<NavigationProperty\s[^>]*Name="([^"]+)"[^>]*Type="Collection\(([^)]+)\)"[^>]*/?>`)
+			matches := collectionNavPattern.FindStringSubmatch(productBlock[1])
+			if matches == nil {
+				return ctx.Skip("Product declares no collection-valued navigation properties in metadata")
 			}
+			navName := matches[1]
 
-			return nil // Optional feature
+			// Verify the declared collection-valued navigation property
+			// actually expands as a JSON array, not just that CSDL declares it.
+			entityResp, err := ctx.GET("/Products?$expand=" + navName + "&$top=1")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(entityResp, 200); err != nil {
+				return fmt.Errorf("$expand=%s failed: %w", navName, err)
+			}
+			items, err := ctx.ParseEntityCollection(entityResp)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
+				return err
+			}
+			raw, ok := items[0][navName]
+			if !ok {
+				return fmt.Errorf("expanded navigation property %q missing from response", navName)
+			}
+			if raw != nil {
+				if _, isArray := raw.([]interface{}); !isArray {
+					return fmt.Errorf("collection-valued navigation property %q should serialize as a JSON array, got %T", navName, raw)
+				}
+			}
+			return nil
 		},
 	)
 
@@ -256,7 +371,7 @@ func StructuredTypes() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_non_nullable_properties",
-		"Structural properties can be non-nullable",
+		"A property declared Nullable=\"false\" actually rejects an explicit null value",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/$metadata")
 			if err != nil {
@@ -264,15 +379,34 @@ func StructuredTypes() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			if !strings.Contains(body, "Property") {
-				return framework.NewError("Metadata should have properties")
+			productTypePattern := regexp.MustCompile(`(?s)<EntityType Name="Product"[^>]*>(.*?)</EntityType>`)
+			productBlock := productTypePattern.FindStringSubmatch(body)
+			if productBlock == nil {
+				return ctx.Skip("could not locate the Product EntityType block in metadata")
+			}
+			nonNullablePattern := regexp.MustCompile(`<Property\s[^>]*Name="([^"]+)"[^>]*Nullable="false"[^>]*/?>`)
+			var nonNullableName string
+			for _, m := range nonNullablePattern.FindAllStringSubmatch(productBlock[1], -1) {
+				if m[1] != "ID" { // the key property is a separate, always-required concern
+					nonNullableName = m[1]
+					break
+				}
+			}
+			if nonNullableName == "" {
+				return ctx.Skip("Product declares no non-key Nullable=\"false\" properties")
 			}
 
-			if strings.Contains(body, `Nullable="false"`) {
-				return nil
+			payload, err := buildProductPayload(ctx, "NonNullableTest", 10.00)
+			if err != nil {
+				return err
 			}
+			payload[nonNullableName] = nil
 
-			return nil // Non-nullable properties are optional
+			postResp, err := ctx.POST("/Products", payload)
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(postResp, 400, "")
 		},
 	)
 
@@ -366,14 +500,24 @@ func StructuredTypes() *framework.TestSuite {
 			}
 			abstractTypeName := matches[1]
 
-			// Attempt to POST to an entity set whose type matches the abstract type name
+			// Attempt to POST to an entity set whose type matches the abstract
+			// type name. Confirm the entity set actually exists first (via
+			// GET) — otherwise a 404 from the POST below is ambiguous between
+			// "correctly rejected because the type is abstract" and "wrong
+			// entity-set name guessed," and treating the latter as a pass
+			// would prove nothing.
 			entitySetName := abstractTypeName + "s" // naive pluralisation
+			getResp, err := ctx.GET("/" + entitySetName + "?$top=1")
+			if err != nil || getResp.StatusCode != 200 {
+				return ctx.Skip(fmt.Sprintf("could not confirm entity set /%s exists (naive pluralization of abstract type %q may be wrong); skipping behavioral check", entitySetName, abstractTypeName))
+			}
+
 			postResp, err := ctx.POST("/"+entitySetName, map[string]interface{}{}, framework.Header{Key: "Content-Type", Value: "application/json"})
 			if err != nil {
-				return nil // entity set does not exist or network error; skip
+				return err
 			}
-			if postResp.StatusCode != 400 && postResp.StatusCode != 404 && postResp.StatusCode != 405 {
-				return fmt.Errorf("POST to abstract type entity set /%s expected 400/404/405, got %d", entitySetName, postResp.StatusCode)
+			if postResp.StatusCode != 400 && postResp.StatusCode != 405 {
+				return fmt.Errorf("POST to abstract type entity set /%s expected 400/405 (instantiating an abstract type must be rejected), got %d", entitySetName, postResp.StatusCode)
 			}
 			return nil
 		},
