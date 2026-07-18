@@ -14,11 +14,17 @@ type RunReport struct {
 	ServerURL    string
 	TotalSuites  int
 	PassedSuites int
-	TotalTests   int
-	PassedTests  int
-	FailedTests  int
-	SkippedTests int
-	Suites       []SuiteRunResult
+	// FullySkippedSuites counts suites where every test was skipped (see
+	// TestResults.AllSkipped). These are included in PassedSuites for
+	// backward-compatible pass-rate accounting, but represent zero executed
+	// assertions and are called out separately so a run can't look "100%
+	// passing" while having actually verified nothing.
+	FullySkippedSuites int
+	TotalTests         int
+	PassedTests        int
+	FailedTests        int
+	SkippedTests       int
+	Suites             []SuiteRunResult
 }
 
 // SuiteRunResult holds results for a single test suite.
@@ -46,15 +52,17 @@ func (r *RunReport) WriteJSON(w io.Writer) error {
 		Passed           int        `json:"passed"`
 		Failed           int        `json:"failed"`
 		Skipped          int        `json:"skipped"`
+		AllSkipped       bool       `json:"allSkipped"`
 		Tests            []testJSON `json:"tests"`
 	}
 	type summaryJSON struct {
-		TotalSuites  int `json:"totalSuites"`
-		PassedSuites int `json:"passedSuites"`
-		TotalTests   int `json:"totalTests"`
-		PassedTests  int `json:"passedTests"`
-		FailedTests  int `json:"failedTests"`
-		SkippedTests int `json:"skippedTests"`
+		TotalSuites        int `json:"totalSuites"`
+		PassedSuites       int `json:"passedSuites"`
+		FullySkippedSuites int `json:"fullySkippedSuites"`
+		TotalTests         int `json:"totalTests"`
+		PassedTests        int `json:"passedTests"`
+		FailedTests        int `json:"failedTests"`
+		SkippedTests       int `json:"skippedTests"`
 	}
 	type reportJSON struct {
 		ToolVersion string      `json:"toolVersion"`
@@ -82,6 +90,7 @@ func (r *RunReport) WriteJSON(w io.Writer) error {
 			Passed:           s.Results.Passed,
 			Failed:           s.Results.Failed,
 			Skipped:          s.Results.Skipped,
+			AllSkipped:       s.Results.AllSkipped(),
 			Tests:            tests,
 		})
 	}
@@ -90,12 +99,13 @@ func (r *RunReport) WriteJSON(w io.Writer) error {
 		ToolVersion: r.ToolVersion,
 		ServerURL:   r.ServerURL,
 		Summary: summaryJSON{
-			TotalSuites:  r.TotalSuites,
-			PassedSuites: r.PassedSuites,
-			TotalTests:   r.TotalTests,
-			PassedTests:  r.PassedTests,
-			FailedTests:  r.FailedTests,
-			SkippedTests: r.SkippedTests,
+			TotalSuites:        r.TotalSuites,
+			PassedSuites:       r.PassedSuites,
+			FullySkippedSuites: r.FullySkippedSuites,
+			TotalTests:         r.TotalTests,
+			PassedTests:        r.PassedTests,
+			FailedTests:        r.FailedTests,
+			SkippedTests:       r.SkippedTests,
 		},
 		Suites: suites,
 	}
@@ -230,6 +240,36 @@ func (r *RunReport) WriteSARIF(w io.Writer) error {
 	var results []sarifResult
 
 	for _, s := range r.Suites {
+		// A fully-skipped suite executed zero assertions. Left unreported, a
+		// run where every suite skips (e.g. because the target under-declares
+		// capabilities) produces an empty-but-clean SARIF file — the worst
+		// possible false-confidence signal for a CI gate. Surface it as a
+		// dedicated informational result instead of staying silent.
+		if s.Results.AllSkipped() {
+			ruleID := sanitizeSARIFID(s.Name) + "/AllSkipped"
+			if !rulesMap[ruleID] {
+				rulesMap[ruleID] = true
+				rules = append(rules, sarifRule{
+					ID:               ruleID,
+					ShortDescription: sarifMessage{Text: "Suite fully skipped — no assertions executed"},
+				})
+			}
+			reason := ""
+			if len(s.Results.Details) > 0 {
+				reason = s.Results.Details[0].Error
+			}
+			msg := fmt.Sprintf("All %d test(s) in suite %q were skipped; no compliance assertions were executed.", s.Results.Total, s.Name)
+			if reason != "" {
+				msg += " Reason: " + reason
+			}
+			results = append(results, sarifResult{
+				RuleID:  ruleID,
+				Level:   "note",
+				Message: sarifMessage{Text: msg},
+			})
+			continue
+		}
+
 		for _, d := range s.Results.Details {
 			if d.Status != StatusFail {
 				continue

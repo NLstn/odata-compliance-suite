@@ -1255,6 +1255,7 @@ func main() {
 
 	totalSuites := len(suitesToRun)
 	passedSuites := 0
+	fullySkippedSuites := 0
 	totalTests := 0
 	passedTests := 0
 	failedTests := 0
@@ -1302,6 +1303,9 @@ func main() {
 		if err == nil {
 			passedSuites++
 		}
+		if suite.Results.AllSkipped() {
+			fullySkippedSuites++
+		}
 
 		if *verbose {
 			fmt.Fprintln(progressOut)
@@ -1328,6 +1332,9 @@ func main() {
 	fmt.Fprintln(progressOut)
 	fmt.Fprintf(progressOut, "Test Scripts: %d/%d passed (%.0f%%)\n", passedSuites, totalSuites,
 		float64(passedSuites)/float64(totalSuites)*100)
+	if fullySkippedSuites > 0 {
+		fmt.Fprintf(progressOut, "  (%d of the passed suites executed zero tests — fully skipped, see below)\n", fullySkippedSuites)
+	}
 	fmt.Fprintln(progressOut, "Individual Tests:")
 	fmt.Fprintf(progressOut, "  - Total: %d\n", totalTests)
 	fmt.Fprintf(progressOut, "  - Passing: %d\n", passedTests)
@@ -1537,7 +1544,11 @@ func main() {
 	// Clean exit with proper status code
 	var exitCode int
 	if passedSuites == totalSuites {
-		fmt.Fprintln(progressOut, ansi("0;32", "✓ ALL TESTS PASSED", useColor))
+		if fullySkippedSuites > 0 {
+			fmt.Fprintln(progressOut, ansi("0;33", fmt.Sprintf("✓ ALL TESTS PASSED (%d suite(s) fully skipped — no assertions executed for those, see above)", fullySkippedSuites), useColor))
+		} else {
+			fmt.Fprintln(progressOut, ansi("0;32", "✓ ALL TESTS PASSED", useColor))
+		}
 		fmt.Fprintln(progressOut)
 		exitCode = 0
 	} else {
@@ -1548,7 +1559,7 @@ func main() {
 
 	// Build structured report and write it when a non-text format is requested.
 	if *format != "text" {
-		report := buildRunReport(buildVersion, *serverURL, passedSuites, totalSuites,
+		report := buildRunReport(buildVersion, *serverURL, passedSuites, fullySkippedSuites, totalSuites,
 			passedTests, failedTests, skippedTests, totalTests, suitesToRun)
 
 		reportDest, closeFile, err := openReportDest(*outputFile)
@@ -1579,7 +1590,7 @@ func main() {
 // buildRunReport assembles a RunReport from the completed suite run.
 func buildRunReport(
 	toolVersion, serverURL string,
-	passedSuites, totalSuites, passedTests, failedTests, skippedTests, totalTests int,
+	passedSuites, fullySkippedSuites, totalSuites, passedTests, failedTests, skippedTests, totalTests int,
 	suitesToRun []preparedSuite,
 ) *framework.RunReport {
 	suites := make([]framework.SuiteRunResult, 0, len(suitesToRun))
@@ -1597,15 +1608,16 @@ func buildRunReport(
 		})
 	}
 	return &framework.RunReport{
-		ToolVersion:  toolVersion,
-		ServerURL:    serverURL,
-		TotalSuites:  totalSuites,
-		PassedSuites: passedSuites,
-		TotalTests:   totalTests,
-		PassedTests:  passedTests,
-		FailedTests:  failedTests,
-		SkippedTests: skippedTests,
-		Suites:       suites,
+		ToolVersion:        toolVersion,
+		ServerURL:          serverURL,
+		TotalSuites:        totalSuites,
+		PassedSuites:       passedSuites,
+		FullySkippedSuites: fullySkippedSuites,
+		TotalTests:         totalTests,
+		PassedTests:        passedTests,
+		FailedTests:        failedTests,
+		SkippedTests:       skippedTests,
+		Suites:             suites,
 	}
 }
 
