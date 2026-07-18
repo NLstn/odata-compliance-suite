@@ -1,7 +1,9 @@
 package v4_0
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -35,12 +37,21 @@ func Relationships() *framework.TestSuite {
 		return productPath, productSegment, secondProductSegment, nil
 	}
 
-	ensureCategorySegment := func(ctx *framework.TestContext) (string, error) {
-		id, err := firstEntityID(ctx, "Categories")
+	// categoryIDDifferentFromRef returns a Categories key that does not appear
+	// in currentRefURL (the current Category/$ref's @odata.id, or "" if there
+	// is none), so a PUT $ref test can tell a real update apart from a no-op
+	// that happens to already match the current value.
+	categoryIDDifferentFromRef := func(ctx *framework.TestContext, currentRefURL string) (string, error) {
+		ids, err := fetchEntityIDs(ctx, "Categories", 10)
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("Categories(%s)", id), nil
+		for _, id := range ids {
+			if currentRefURL == "" || !strings.Contains(currentRefURL, id) {
+				return id, nil
+			}
+		}
+		return "", ctx.Skip("only one category exists; cannot pick one that differs from the current value")
 	}
 
 	// Test 1: Read entity reference with $ref
@@ -102,14 +113,30 @@ func Relationships() *framework.TestSuite {
 		"test_create_entity_reference",
 		"Create/update entity reference with PUT",
 		func(ctx *framework.TestContext) error {
-			productPath, _, _, err := ensureProductSegments(ctx)
+			productPath, productSegment, _, err := ensureProductSegments(ctx)
 			if err != nil {
 				return err
 			}
-			categorySegment, err := ensureCategorySegment(ctx)
+
+			currentRefResp, err := ctx.GET(productPath + "/Category/$ref")
 			if err != nil {
 				return err
 			}
+			var currentRef map[string]interface{}
+			currentCategoryID := ""
+			if currentRefResp.StatusCode == 200 {
+				if err := json.Unmarshal(currentRefResp.Body, &currentRef); err == nil {
+					if id, ok := currentRef["@odata.id"].(string); ok {
+						currentCategoryID = id
+					}
+				}
+			}
+
+			categoryID, err := categoryIDDifferentFromRef(ctx, currentCategoryID)
+			if err != nil {
+				return err
+			}
+			categorySegment := fmt.Sprintf("Categories(%s)", categoryID)
 			payload := map[string]interface{}{
 				"@odata.id": fmt.Sprintf("%s/%s", ctx.ServerURL(), categorySegment),
 			}
@@ -126,7 +153,27 @@ func Relationships() *framework.TestSuite {
 
 			// Should return 204 or 200
 			if err := ctx.AssertStatusCode(resp, 204); err != nil {
-				return ctx.AssertStatusCode(resp, 200)
+				if err := ctx.AssertStatusCode(resp, 200); err != nil {
+					return err
+				}
+			}
+
+			// Verify the relationship was actually updated, not just the
+			// mutating request's own status code.
+			verifyResp, err := ctx.GET(productPath + "/Category/$ref")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(verifyResp, 200); err != nil {
+				return fmt.Errorf("failed to verify updated relationship: %w", err)
+			}
+			var verified map[string]interface{}
+			if err := json.Unmarshal(verifyResp.Body, &verified); err != nil {
+				return fmt.Errorf("failed to parse verification response: %w", err)
+			}
+			odataID, _ := verified["@odata.id"].(string)
+			if !strings.Contains(odataID, categoryID) {
+				return fmt.Errorf("PUT $ref on %s: expected @odata.id to reference category %q, got %q", productSegment, categoryID, odataID)
 			}
 
 			return nil
@@ -158,9 +205,39 @@ func Relationships() *framework.TestSuite {
 
 			// Should return 204 or 201
 			if err := ctx.AssertStatusCode(resp, 204); err != nil {
-				return ctx.AssertStatusCode(resp, 201)
+				if err := ctx.AssertStatusCode(resp, 201); err != nil {
+					return err
+				}
 			}
 
+			// Verify the reference was actually added, not just that the
+			// mutating request returned a success status.
+			verifyResp, err := ctx.GET(productPath + "/RelatedProducts/$ref")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(verifyResp, 200); err != nil {
+				return fmt.Errorf("failed to verify added relationship: %w", err)
+			}
+			var result map[string]interface{}
+			if err := json.Unmarshal(verifyResp.Body, &result); err != nil {
+				return fmt.Errorf("failed to parse verification response: %w", err)
+			}
+			refs, ok := result["value"].([]interface{})
+			if !ok {
+				return fmt.Errorf("verification response missing or non-array value field")
+			}
+			found := false
+			for _, r := range refs {
+				ref, _ := r.(map[string]interface{})
+				if id, _ := ref["@odata.id"].(string); strings.Contains(id, secondProductSegment) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return fmt.Errorf("after POST $ref, %q was not found in RelatedProducts/$ref collection", secondProductSegment)
+			}
 			return nil
 		},
 	)
@@ -184,7 +261,33 @@ func Relationships() *framework.TestSuite {
 				return fmt.Errorf(errRefMandatory)
 			}
 
-			return ctx.AssertStatusCode(resp, 204)
+			if err := ctx.AssertStatusCode(resp, 204); err != nil {
+				return err
+			}
+
+			// Verify the relationship was actually removed, not just that
+			// the DELETE returned 204.
+			verifyResp, err := ctx.GET(productPath + "/Category/$ref")
+			if err != nil {
+				return err
+			}
+			switch verifyResp.StatusCode {
+			case 204, 404:
+				// 204 (no content, matching this server's "null single-valued
+				// navigation" convention) or 404 both represent "no reference".
+				return nil
+			case 200:
+				var result map[string]interface{}
+				if err := json.Unmarshal(verifyResp.Body, &result); err != nil {
+					return fmt.Errorf("failed to parse verification response: %w", err)
+				}
+				if id, hasID := result["@odata.id"]; hasID && id != nil {
+					return fmt.Errorf("expected Category/$ref to be null or absent after DELETE, got: %v", id)
+				}
+				return nil
+			default:
+				return fmt.Errorf("expected 200 (null), 204, or 404 for a deleted single-valued reference, got %d", verifyResp.StatusCode)
+			}
 		},
 	)
 

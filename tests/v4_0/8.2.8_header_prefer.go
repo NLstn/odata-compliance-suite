@@ -34,15 +34,33 @@ func HeaderPrefer() *framework.TestSuite {
 				return fmt.Errorf("expected successful creation (200/201/204), got %d", resp.StatusCode)
 			}
 
-			if resp.StatusCode == 204 {
-				// Honored: body must be empty and Preference-Applied must confirm it.
+			// A service may signal "honored" either via 204 No Content or via
+			// 201 Created with an empty body plus Preference-Applied — both
+			// are used by real implementations, so the header (or 204) is the
+			// actual signal, not the status code alone.
+			prefApplied := resp.Headers.Get("Preference-Applied")
+			honored := resp.StatusCode == 204 || prefApplied == "return=minimal"
+
+			if honored {
 				if len(resp.Body) > 0 {
-					return framework.NewError("return=minimal honored (204) but response body is not empty")
+					return framework.NewError("return=minimal honored but response body is not empty")
 				}
-				prefApplied := resp.Headers.Get("Preference-Applied")
 				if prefApplied != "" && prefApplied != "return=minimal" {
 					return fmt.Errorf("Preference-Applied=%q; expected 'return=minimal' when preference was honored", prefApplied)
 				}
+				return nil
+			}
+
+			// Not honored: the server chose to return the full representation
+			// instead, matching return=representation behavior. A server that
+			// simply ignores the preference must not be indistinguishable from
+			// one that correctly implements it — verify a real representation
+			// actually came back, not just "some" 2xx status.
+			if len(resp.Body) == 0 {
+				return fmt.Errorf("return=minimal not honored (status %d, Preference-Applied=%q) but response body is empty; expected the full entity representation", resp.StatusCode, prefApplied)
+			}
+			if err := ctx.AssertJSONField(resp, "Name"); err != nil {
+				return fmt.Errorf("return=minimal not honored: response body should contain the full entity representation: %w", err)
 			}
 			return nil
 		},
