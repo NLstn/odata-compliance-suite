@@ -230,7 +230,7 @@ func NominalTypes() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_collection_types_use_qualified_names",
-		"Collection types use qualified element type names",
+		"Collection types use qualified (namespace.TypeName) element type names",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/$metadata")
 			if err != nil {
@@ -238,11 +238,18 @@ func NominalTypes() *framework.TestSuite {
 			}
 
 			body := string(resp.Body)
-			if !strings.Contains(body, `Type="Collection(`) {
-				return nil // Skip if no collection types
+			collectionTypePattern := regexp.MustCompile(`Type="Collection\(([^)]+)\)"`)
+			matches := collectionTypePattern.FindAllStringSubmatch(body, -1)
+			if len(matches) == 0 {
+				return ctx.Skip("no Collection(...) types declared in metadata")
 			}
 
-			// Collection types should contain qualified type names (with '.')
+			for _, m := range matches {
+				elementType := m[1]
+				if !strings.Contains(elementType, ".") {
+					return fmt.Errorf("Collection element type %q is not namespace-qualified (CSDL requires a qualified name)", elementType)
+				}
+			}
 			return nil
 		},
 	)

@@ -1,6 +1,8 @@
 package v4_0
 
 import (
+	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -16,27 +18,58 @@ func EnumMetadataMembers() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_enum_metadata_xml",
-		"Enum members in XML metadata",
+		"ProductStatus enum metadata declares the exact expected members, values, and IsFlags facet",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/$metadata")
 			if err != nil {
 				return err
 			}
-
 			if err := ctx.AssertStatusCode(resp, 200); err != nil {
 				return err
 			}
 
 			body := string(resp.Body)
 			if !strings.Contains(body, "EnumType") {
-				return nil // No enums, optional
+				return ctx.Skip("no EnumType declared in metadata")
 			}
 
-			// If enums exist, they should have members
-			if strings.Contains(body, "EnumType") && !strings.Contains(body, "Member") {
-				return framework.NewError("EnumType should have Member elements")
+			// productStatusNames (defined in 11.3.5_filter_logical_operators.go)
+			// is the same map the filter/comparison tests already rely on to
+			// interpret Status values — reusing it here ties this metadata
+			// check to a single source of truth instead of a second hardcoded
+			// copy that could silently drift from it.
+			enumPattern := regexp.MustCompile(`(?s)<EnumType Name="ProductStatus"([^>]*)>(.*?)</EnumType>`)
+			m := enumPattern.FindStringSubmatch(body)
+			if m == nil {
+				return ctx.Skip("ProductStatus enum not declared in metadata")
+			}
+			attrs, membersBlock := m[1], m[2]
+
+			if !strings.Contains(attrs, `IsFlags="true"`) {
+				return fmt.Errorf("ProductStatus is used as a flags enum (comma-separated member values observed elsewhere in this suite) but metadata does not declare IsFlags=\"true\"")
 			}
 
+			memberPattern := regexp.MustCompile(`<Member Name="([^"]+)" Value="([^"]+)"`)
+			declared := map[string]string{}
+			for _, mm := range memberPattern.FindAllStringSubmatch(membersBlock, -1) {
+				declared[mm[1]] = mm[2]
+			}
+			if len(declared) == 0 {
+				return framework.NewError("ProductStatus EnumType declares no Member elements")
+			}
+
+			for name, value := range productStatusNames {
+				declaredValue, ok := declared[name]
+				if !ok {
+					return fmt.Errorf("ProductStatus metadata is missing member %q (expected value %d)", name, value)
+				}
+				if declaredValue != fmt.Sprintf("%d", value) {
+					return fmt.Errorf("ProductStatus member %q declared value %q, want %d", name, declaredValue, value)
+				}
+			}
+			if len(declared) != len(productStatusNames) {
+				return fmt.Errorf("ProductStatus metadata declares %d member(s), expected exactly %d (matching productStatusNames)", len(declared), len(productStatusNames))
+			}
 			return nil
 		},
 	)
