@@ -1,7 +1,6 @@
 package v4_0
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/url"
 
@@ -47,141 +46,177 @@ func RegisterQuerySelectWithNavigationFilterTests(suite *framework.TestSuite) {
 	)
 }
 
-func testSelectWithNavigationFilter(ctx *framework.TestContext) error {
-	// Test: /Products?$select=Name&$filter=Category/Name eq 'Electronics'
-	// This ensures that when a JOIN is added for the filter, the SELECT clause
-	// uses qualified column names to avoid ambiguous references
+// fetchAllProductsWithCategory returns every Product with its Category expanded,
+// used to build a client-side oracle for $filter expressions over Category/Name.
+func fetchAllProductsWithCategory(ctx *framework.TestContext) ([]map[string]interface{}, error) {
+	resp, err := ctx.GET("/Products?$expand=Category&$top=1000")
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.AssertStatusCode(resp, 200); err != nil {
+		return nil, err
+	}
+	return ctx.ParseEntityCollection(resp)
+}
 
+// productCategoryName reads the Name of an expanded Category navigation property.
+// ok is false when Category is absent, null, or malformed.
+func productCategoryName(p map[string]interface{}) (string, bool) {
+	cat, ok := p["Category"].(map[string]interface{})
+	if !ok {
+		return "", false
+	}
+	name, ok := cat["Name"].(string)
+	return name, ok
+}
+
+// assertNavigationFilter runs /Products?$select=<select>&$filter=<expr> and asserts
+// the returned entity-ID set exactly matches want(), evaluated against a full fetch
+// with Category expanded — verifying both that the navigation-property filter is
+// applied correctly (soundness + completeness) and that $select still works when a
+// JOIN is introduced for the filter.
+func assertNavigationFilter(ctx *framework.TestContext, selectClause, expr string, want func(p map[string]interface{}) bool) error {
+	all, err := fetchAllProductsWithCategory(ctx)
+	if err != nil {
+		return err
+	}
+	expected := map[string]bool{}
+	for _, p := range all {
+		if want(p) {
+			expected[productID(p)] = true
+		}
+	}
+
+	path := "/Products?$select=" + url.QueryEscape(selectClause) + "&$filter=" + url.QueryEscape(expr)
+	resp, err := ctx.GET(path)
+	if err != nil {
+		return err
+	}
+	if err := ctx.AssertStatusCode(resp, 200); err != nil {
+		return fmt.Errorf("filter %q with $select=%q: %w (body: %s)", expr, selectClause, err, string(resp.Body))
+	}
+
+	items, err := ctx.ParseEntityCollection(resp)
+	if err != nil {
+		return err
+	}
+	got := map[string]bool{}
+	for _, p := range items {
+		got[productID(p)] = true
+	}
+
+	for id := range expected {
+		if !got[id] {
+			return fmt.Errorf("filter %q: product %s satisfies Category/Name predicate but was not returned", expr, id)
+		}
+	}
+	for id := range got {
+		if !expected[id] {
+			return fmt.Errorf("filter %q: product %s was returned but does not satisfy the Category/Name predicate", expr, id)
+		}
+	}
+	return nil
+}
+
+func testSelectWithNavigationFilter(ctx *framework.TestContext) error {
+	// /Products?$select=Name&$filter=Category/Name eq 'Electronics'
+	// This also exercises that when a JOIN is added for the filter, the SELECT
+	// clause uses qualified column names to avoid ambiguous column references.
+	if err := assertNavigationFilter(ctx, "Name", "Category/Name eq 'Electronics'", func(p map[string]interface{}) bool {
+		name, ok := productCategoryName(p)
+		return ok && name == "Electronics"
+	}); err != nil {
+		return err
+	}
+
+	// Confirm $select still behaves correctly under the JOIN: only the
+	// selected property (plus the always-returned key) comes back.
 	filter := url.QueryEscape("Category/Name eq 'Electronics'")
 	select_ := url.QueryEscape("Name")
-
 	resp, err := ctx.GET("/Products?$select=" + select_ + "&$filter=" + filter)
 	if err != nil {
 		return err
 	}
-
-	// The key test is that this doesn't return an error about ambiguous columns
-	// which would happen if column names aren't properly qualified
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("expected status 200, got %d. Body: %s", resp.StatusCode, string(resp.Body))
+	items, err := ctx.ParseEntityCollection(resp)
+	if err != nil {
+		return err
 	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return fmt.Errorf("failed to parse JSON: %w", err)
+	if len(items) == 0 {
+		return nil
 	}
-
-	// Verify response structure
-	value, ok := result["value"].([]interface{})
-	if !ok {
-		return fmt.Errorf("response missing 'value' array")
+	if err := ctx.AssertEntityHasFields(items[0], "Name"); err != nil {
+		return err
 	}
-
-	// If there are results, verify the selected properties are present
-	if len(value) > 0 {
-		item, ok := value[0].(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("first item is not an object")
-		}
-
-		// Verify Name field is present (selected)
-		if _, ok := item["Name"]; !ok {
-			return fmt.Errorf("selected field 'Name' is missing")
-		}
-
-		// Verify ID is present (key properties are always included)
-		if _, ok := item["ID"]; !ok {
-			return fmt.Errorf("key property 'ID' is missing")
-		}
-
-		// Verify that non-selected fields are not present
-		if _, ok := item["Description"]; ok {
-			return fmt.Errorf("non-selected field 'Description' should not be present")
-		}
-	}
-
-	return nil
+	return ctx.AssertEntityOnlyAllowedFields(items[0], "ID", "Name")
 }
 
 func testSelectMultipleWithNavigationFilter(ctx *framework.TestContext) error {
-	// Test: /Products?$select=Name,Price&$filter=Category/Name eq 'Electronics'
+	// /Products?$select=Name,Price&$filter=Category/Name eq 'Electronics'
+	if err := assertNavigationFilter(ctx, "Name,Price", "Category/Name eq 'Electronics'", func(p map[string]interface{}) bool {
+		name, ok := productCategoryName(p)
+		return ok && name == "Electronics"
+	}); err != nil {
+		return err
+	}
 
 	filter := url.QueryEscape("Category/Name eq 'Electronics'")
 	select_ := url.QueryEscape("Name,Price")
-
 	resp, err := ctx.GET("/Products?$select=" + select_ + "&$filter=" + filter)
 	if err != nil {
 		return err
 	}
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("expected status 200, got %d. Body: %s", resp.StatusCode, string(resp.Body))
+	items, err := ctx.ParseEntityCollection(resp)
+	if err != nil {
+		return err
 	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return fmt.Errorf("failed to parse JSON: %w", err)
+	if len(items) == 0 {
+		return nil
 	}
-
-	value, ok := result["value"].([]interface{})
-	if !ok {
-		return fmt.Errorf("response missing 'value' array")
+	if err := ctx.AssertEntityHasFields(items[0], "Name", "Price"); err != nil {
+		return err
 	}
-
-	if len(value) > 0 {
-		item, ok := value[0].(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("first item is not an object")
-		}
-
-		// Verify selected fields are present
-		if _, ok := item["Name"]; !ok {
-			return fmt.Errorf("selected field 'Name' is missing")
-		}
-		if _, ok := item["Price"]; !ok {
-			return fmt.Errorf("selected field 'Price' is missing")
-		}
-
-		// Verify key property is present
-		if _, ok := item["ID"]; !ok {
-			return fmt.Errorf("key property 'ID' is missing")
-		}
-	}
-
-	return nil
+	return ctx.AssertEntityOnlyAllowedFields(items[0], "ID", "Name", "Price")
 }
 
 func testSelectWithVariousNavigationFilters(ctx *framework.TestContext) error {
-	// Test different filter operators with navigation properties
 	tests := []struct {
 		filter string
 		desc   string
+		want   func(p map[string]interface{}) bool
 	}{
-		{"Category/Name ne 'Books'", "not equals"},
-		{"Category/Name eq 'Electronics' or Category/Name eq 'Computers'", "logical or"},
-		{"Category/Name eq 'Electronics' and Price gt 100", "combined with regular property"},
+		{
+			filter: "Category/Name ne 'Books'",
+			desc:   "not equals",
+			want: func(p map[string]interface{}) bool {
+				name, ok := productCategoryName(p)
+				return ok && name != "Books"
+			},
+		},
+		{
+			filter: "Category/Name eq 'Electronics' or Category/Name eq 'Computers'",
+			desc:   "logical or",
+			want: func(p map[string]interface{}) bool {
+				name, ok := productCategoryName(p)
+				return ok && (name == "Electronics" || name == "Computers")
+			},
+		},
+		{
+			filter: "Category/Name eq 'Electronics' and Price gt 100",
+			desc:   "combined with regular property",
+			want: func(p map[string]interface{}) bool {
+				name, ok := productCategoryName(p)
+				if !ok || name != "Electronics" {
+					return false
+				}
+				price, ok := productFloat(p, "Price")
+				return ok && price > 100
+			},
+		},
 	}
 
-	select_ := url.QueryEscape("Name")
-
 	for _, tt := range tests {
-		filter := url.QueryEscape(tt.filter)
-		resp, err := ctx.GET("/Products?$select=" + select_ + "&$filter=" + filter)
-		if err != nil {
-			return fmt.Errorf("test '%s' failed: %v", tt.desc, err)
-		}
-
-		if resp.StatusCode != 200 {
-			return fmt.Errorf("test '%s': expected status 200, got %d. Body: %s", tt.desc, resp.StatusCode, string(resp.Body))
-		}
-
-		var result map[string]interface{}
-		if err := json.Unmarshal(resp.Body, &result); err != nil {
-			return fmt.Errorf("test '%s': failed to parse JSON: %w", tt.desc, err)
-		}
-
-		if _, ok := result["value"]; !ok {
-			return fmt.Errorf("test '%s': response missing 'value' array", tt.desc)
+		if err := assertNavigationFilter(ctx, "Name", tt.filter, tt.want); err != nil {
+			return fmt.Errorf("test %q: %w", tt.desc, err)
 		}
 	}
 
@@ -189,8 +224,20 @@ func testSelectWithVariousNavigationFilters(ctx *framework.TestContext) error {
 }
 
 func testSelectWithNavigationFilterAndExpand(ctx *framework.TestContext) error {
-	// Test: /Products?$select=Name,Category&$filter=Category/Name eq 'Electronics'&$expand=Category
-	// This tests that $select, $filter, and $expand can all work together with navigation properties
+	// /Products?$select=Name,Category&$filter=Category/Name eq 'Electronics'&$expand=Category
+	// Tests that $select, $filter, and $expand all work together with navigation
+	// properties, and that Category is genuinely expanded (not just that the
+	// request avoids an ambiguous-column error).
+	all, err := fetchAllProductsWithCategory(ctx)
+	if err != nil {
+		return err
+	}
+	expected := map[string]bool{}
+	for _, p := range all {
+		if name, ok := productCategoryName(p); ok && name == "Electronics" {
+			expected[productID(p)] = true
+		}
+	}
 
 	filter := url.QueryEscape("Category/Name eq 'Electronics'")
 	select_ := url.QueryEscape("Name,Category")
@@ -200,24 +247,39 @@ func testSelectWithNavigationFilterAndExpand(ctx *framework.TestContext) error {
 	if err != nil {
 		return err
 	}
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("expected status 200, got %d. Body: %s", resp.StatusCode, string(resp.Body))
+	if err := ctx.AssertStatusCode(resp, 200); err != nil {
+		return fmt.Errorf("%w (body: %s)", err, string(resp.Body))
 	}
 
-	var result map[string]interface{}
-	if err := json.Unmarshal(resp.Body, &result); err != nil {
-		return fmt.Errorf("failed to parse JSON: %w", err)
+	items, err := ctx.ParseEntityCollection(resp)
+	if err != nil {
+		return err
 	}
 
-	if _, ok := result["value"].([]interface{}); !ok {
-		return fmt.Errorf("response missing 'value' array")
+	got := map[string]bool{}
+	for _, p := range items {
+		got[productID(p)] = true
+	}
+	for id := range expected {
+		if !got[id] {
+			return fmt.Errorf("product %s satisfies Category/Name eq 'Electronics' but was not returned", id)
+		}
+	}
+	for id := range got {
+		if !expected[id] {
+			return fmt.Errorf("product %s was returned but does not satisfy Category/Name eq 'Electronics'", id)
+		}
 	}
 
-	// Note: The current implementation requires navigation properties to be
-	// explicitly included in $select to be returned when $expand is used.
-	// This test validates that the query doesn't fail with ambiguous column errors,
-	// which was the main issue being fixed.
-
+	if len(items) == 0 {
+		return nil
+	}
+	name, ok := productCategoryName(items[0])
+	if !ok {
+		return fmt.Errorf("Category was explicitly $select-ed and $expand-ed but is missing or not an object in the response")
+	}
+	if name != "Electronics" {
+		return fmt.Errorf("expanded Category.Name = %q, want %q", name, "Electronics")
+	}
 	return nil
 }

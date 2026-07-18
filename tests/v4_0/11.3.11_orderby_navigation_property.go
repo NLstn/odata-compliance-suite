@@ -25,7 +25,7 @@ func OrderByNavigationProperty() *framework.TestSuite {
 func RegisterOrderByNavigationPropertyTests(suite *framework.TestSuite) {
 	suite.AddTest(
 		"orderby_navigation_property_asc",
-		"$orderby on navigation property path ascending returns 200 and sorted results",
+		"$orderby on navigation property path ascending returns results sorted by Category/Name",
 		testOrderByNavigationPropertyAsc,
 	)
 
@@ -60,12 +60,93 @@ func RegisterOrderByNavigationPropertyTests(suite *framework.TestSuite) {
 	)
 }
 
+// navSortEntry captures the two fields these tests order by: the expanded
+// Category.Name (possibly absent) and the product's own Name.
+type navSortEntry struct {
+	categoryName string
+	hasCategory  bool
+	name         string
+}
+
+func extractCategorySortEntries(values []interface{}) ([]navSortEntry, error) {
+	entries := make([]navSortEntry, 0, len(values))
+	for i, raw := range values {
+		entity, ok := raw.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("item %d is not an object", i)
+		}
+		var e navSortEntry
+		if name, ok := entity["Name"].(string); ok {
+			e.name = name
+		}
+		if catRaw, has := entity["Category"]; has && catRaw != nil {
+			cat, ok := catRaw.(map[string]interface{})
+			if !ok {
+				return nil, fmt.Errorf("item %d: Category is not an object", i)
+			}
+			if name, ok := cat["Name"].(string); ok {
+				e.categoryName = name
+				e.hasCategory = true
+			}
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
+}
+
+// assertSortedByCategoryName checks entries are ordered by Category.Name.
+// Products without an expanded category are excluded from the comparison
+// (their placement relative to categorized products is not asserted here);
+// only the relative order among categorized products is verified.
+func assertSortedByCategoryName(entries []navSortEntry, ascending bool) error {
+	var prev string
+	havePrev := false
+	for i, e := range entries {
+		if !e.hasCategory {
+			continue
+		}
+		if havePrev {
+			if ascending && e.categoryName < prev {
+				return fmt.Errorf("ordering violation at index %d: %q after %q (not ascending)", i, e.categoryName, prev)
+			}
+			if !ascending && e.categoryName > prev {
+				return fmt.Errorf("ordering violation at index %d: %q after %q (not descending)", i, e.categoryName, prev)
+			}
+		}
+		prev = e.categoryName
+		havePrev = true
+	}
+	return nil
+}
+
+// assertSortedByCategoryNameThenName checks entries are ordered by
+// Category.Name ascending, then by Name ascending within a tied category.
+func assertSortedByCategoryNameThenName(entries []navSortEntry) error {
+	var prev navSortEntry
+	havePrev := false
+	for i, e := range entries {
+		if !e.hasCategory {
+			continue
+		}
+		if havePrev {
+			if e.categoryName < prev.categoryName {
+				return fmt.Errorf("ordering violation at index %d: category %q after %q (not ascending)", i, e.categoryName, prev.categoryName)
+			}
+			if e.categoryName == prev.categoryName && e.name < prev.name {
+				return fmt.Errorf("ordering violation at index %d: within category %q, name %q after %q (not ascending)", i, e.categoryName, e.name, prev.name)
+			}
+		}
+		prev = e
+		havePrev = true
+	}
+	return nil
+}
+
 func testOrderByNavigationPropertyAsc(ctx *framework.TestContext) error {
-	resp, err := ctx.GET("/Products?$orderby=Category/Name asc")
+	resp, err := ctx.GET("/Products?$expand=" + url.QueryEscape("Category($select=Name)") + "&$orderby=" + url.QueryEscape("Category/Name asc"))
 	if err != nil {
 		return err
 	}
-
 	if err := ctx.AssertStatusCode(resp, 200); err != nil {
 		return fmt.Errorf("$orderby=Category/Name asc should be accepted: %w", err)
 	}
@@ -74,70 +155,48 @@ func testOrderByNavigationPropertyAsc(ctx *framework.TestContext) error {
 	if err := json.Unmarshal(resp.Body, &result); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	_, ok := result["value"].([]interface{})
-	if !ok {
-		return fmt.Errorf("response 'value' is not an array")
-	}
-
-	return nil
-}
-
-func testOrderByNavigationPropertyDesc(ctx *framework.TestContext) error {
-	// Fetch without ordering first to gather category names.
-	respAll, err := ctx.GET("/Products?$expand=Category($select=Name)&$orderby=Category/Name desc")
-	if err != nil {
-		return err
-	}
-
-	if err := ctx.AssertStatusCode(respAll, 200); err != nil {
-		return fmt.Errorf("$orderby=Category/Name desc should be accepted: %w", err)
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(respAll.Body, &result); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-
 	values, ok := result["value"].([]interface{})
 	if !ok {
 		return fmt.Errorf("response 'value' is not an array")
 	}
 
-	// Verify descending order: each entry's Category/Name must be <= the previous.
-	var prevName string
-	for i, raw := range values {
-		entity, ok := raw.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		catRaw, hasCat := entity["Category"]
-		if !hasCat || catRaw == nil {
-			// Products without a category sort last in most DBs; allow them.
-			continue
-		}
-		cat, ok := catRaw.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		name, _ := cat["Name"].(string)
-		if i > 0 && prevName != "" && name > prevName {
-			return fmt.Errorf("ordering violation at index %d: '%s' > '%s' (not descending)", i, name, prevName)
-		}
-		if name != "" {
-			prevName = name
-		}
-	}
-
-	return nil
-}
-
-func testOrderByNavigationPropertyWithExpand(ctx *framework.TestContext) error {
-	resp, err := ctx.GET("/Products?$expand=Category&$orderby=Category/Name")
+	entries, err := extractCategorySortEntries(values)
 	if err != nil {
 		return err
 	}
+	return assertSortedByCategoryName(entries, true)
+}
 
+func testOrderByNavigationPropertyDesc(ctx *framework.TestContext) error {
+	resp, err := ctx.GET("/Products?$expand=" + url.QueryEscape("Category($select=Name)") + "&$orderby=" + url.QueryEscape("Category/Name desc"))
+	if err != nil {
+		return err
+	}
+	if err := ctx.AssertStatusCode(resp, 200); err != nil {
+		return fmt.Errorf("$orderby=Category/Name desc should be accepted: %w", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(resp.Body, &result); err != nil {
+		return fmt.Errorf("failed to parse response: %w", err)
+	}
+	values, ok := result["value"].([]interface{})
+	if !ok {
+		return fmt.Errorf("response 'value' is not an array")
+	}
+
+	entries, err := extractCategorySortEntries(values)
+	if err != nil {
+		return err
+	}
+	return assertSortedByCategoryName(entries, false)
+}
+
+func testOrderByNavigationPropertyWithExpand(ctx *framework.TestContext) error {
+	resp, err := ctx.GET("/Products?$expand=Category&$orderby=" + url.QueryEscape("Category/Name"))
+	if err != nil {
+		return err
+	}
 	if err := ctx.AssertStatusCode(resp, 200); err != nil {
 		return fmt.Errorf("$expand=Category&$orderby=Category/Name should be accepted: %w", err)
 	}
@@ -146,48 +205,38 @@ func testOrderByNavigationPropertyWithExpand(ctx *framework.TestContext) error {
 	if err := json.Unmarshal(resp.Body, &result); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
-
 	values, ok := result["value"].([]interface{})
 	if !ok {
 		return fmt.Errorf("response 'value' is not an array")
 	}
 
-	// Verify that Category is expanded and that results are in ascending order.
-	var prevName string
-	for i, raw := range values {
-		entity, ok := raw.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		catRaw, hasCat := entity["Category"]
-		if !hasCat || catRaw == nil {
-			continue
-		}
-		cat, ok := catRaw.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("entity %d: Category is not an object", i)
-		}
-		name, _ := cat["Name"].(string)
-		if i > 0 && prevName != "" && name < prevName {
-			return fmt.Errorf("ordering violation at index %d: '%s' < '%s' (not ascending)", i, name, prevName)
-		}
-		if name != "" {
-			prevName = name
-		}
+	entries, err := extractCategorySortEntries(values)
+	if err != nil {
+		return err
 	}
-
-	return nil
+	return assertSortedByCategoryName(entries, true)
 }
 
 func testOrderByNavigationPropertyWithFilter(ctx *framework.TestContext) error {
 	// Combine $filter on a navigation property path with $orderby on the same path.
-	filterExpr := url.QueryEscape("Category/Name ne 'unknown'")
-	resp, err := ctx.GET("/Products?$filter=" + filterExpr + "&$orderby=Category/Name asc")
+	all, err := fetchAllProductsWithCategory(ctx)
 	if err != nil {
 		return err
 	}
+	expected := map[string]bool{}
+	for _, p := range all {
+		if name, ok := productCategoryName(p); ok && name != "unknown" {
+			expected[productID(p)] = true
+		}
+	}
 
+	filterExpr := url.QueryEscape("Category/Name ne 'unknown'")
+	orderExpr := url.QueryEscape("Category/Name asc")
+	expandExpr := url.QueryEscape("Category($select=Name)")
+	resp, err := ctx.GET("/Products?$expand=" + expandExpr + "&$filter=" + filterExpr + "&$orderby=" + orderExpr)
+	if err != nil {
+		return err
+	}
 	if err := ctx.AssertStatusCode(resp, 200); err != nil {
 		return fmt.Errorf("combined $filter and $orderby on Category/Name should be accepted: %w", err)
 	}
@@ -196,21 +245,48 @@ func testOrderByNavigationPropertyWithFilter(ctx *framework.TestContext) error {
 	if err := json.Unmarshal(resp.Body, &result); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	if _, ok := result["value"]; !ok {
+	values, ok := result["value"].([]interface{})
+	if !ok {
 		return fmt.Errorf("response missing 'value' array")
 	}
 
+	entries, err := extractCategorySortEntries(values)
+	if err != nil {
+		return err
+	}
+	if err := assertSortedByCategoryName(entries, true); err != nil {
+		return err
+	}
+
+	got := map[string]bool{}
+	for i, raw := range values {
+		entity, ok := raw.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("item %d is not an object", i)
+		}
+		got[productID(entity)] = true
+	}
+	for id := range expected {
+		if !got[id] {
+			return fmt.Errorf("product %s satisfies Category/Name ne 'unknown' but was not returned", id)
+		}
+	}
+	for id := range got {
+		if !expected[id] {
+			return fmt.Errorf("product %s was returned but does not satisfy Category/Name ne 'unknown'", id)
+		}
+	}
 	return nil
 }
 
 func testOrderByNavigationPropertyMultipleClauses(ctx *framework.TestContext) error {
 	// Multiple $orderby clauses: navigation property path + regular property.
-	resp, err := ctx.GET("/Products?$orderby=Category/Name asc,Name asc")
+	expandExpr := url.QueryEscape("Category($select=Name)")
+	orderExpr := url.QueryEscape("Category/Name asc,Name asc")
+	resp, err := ctx.GET("/Products?$expand=" + expandExpr + "&$orderby=" + orderExpr)
 	if err != nil {
 		return err
 	}
-
 	if err := ctx.AssertStatusCode(resp, 200); err != nil {
 		return fmt.Errorf("$orderby=Category/Name asc,Name asc should be accepted: %w", err)
 	}
@@ -219,12 +295,16 @@ func testOrderByNavigationPropertyMultipleClauses(ctx *framework.TestContext) er
 	if err := json.Unmarshal(resp.Body, &result); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	if _, ok := result["value"]; !ok {
+	values, ok := result["value"].([]interface{})
+	if !ok {
 		return fmt.Errorf("response missing 'value' array")
 	}
 
-	return nil
+	entries, err := extractCategorySortEntries(values)
+	if err != nil {
+		return err
+	}
+	return assertSortedByCategoryNameThenName(entries)
 }
 
 func testOrderByCollectionNavigationRejected(ctx *framework.TestContext) error {

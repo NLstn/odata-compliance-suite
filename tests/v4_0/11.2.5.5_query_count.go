@@ -3,6 +3,7 @@ package v4_0
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -99,6 +100,17 @@ func QueryCount() *framework.TestSuite {
 		"test_count_with_filter",
 		"$count with $filter returns filtered count",
 		func(ctx *framework.TestContext) error {
+			all, err := fetchAllProducts(ctx)
+			if err != nil {
+				return err
+			}
+			expected := map[string]bool{}
+			for _, p := range all {
+				if price, ok := productFloat(p, "Price"); ok && price > 100 {
+					expected[productID(p)] = true
+				}
+			}
+
 			resp, err := ctx.GET("/Products?$count=true&$filter=Price%20gt%20100")
 			if err != nil {
 				return err
@@ -112,42 +124,49 @@ func QueryCount() *framework.TestSuite {
 				return fmt.Errorf("failed to parse JSON: %w", err)
 			}
 
-			// Verify @odata.count is present
 			countVal, ok := result["@odata.count"]
 			if !ok {
 				return fmt.Errorf("@odata.count field is missing")
 			}
-
 			count, ok := countVal.(float64)
 			if !ok {
 				return fmt.Errorf("@odata.count is not a number")
 			}
 
-			// Get the items
 			value, ok := result["value"].([]interface{})
 			if !ok {
 				return fmt.Errorf("response missing 'value' array")
 			}
 
-			items := len(value)
-
-			// The count should equal the number of items returned (when no $top is used)
-			if int(count) != items {
-				return fmt.Errorf("count=%d but response contains %d items", int(count), items)
+			// Cross-check @odata.count against the independently computed oracle
+			// total, not merely against len(value) — a server that filters wrong
+			// but reports a self-consistent count would otherwise still pass.
+			if int(count) != len(expected) {
+				return fmt.Errorf("@odata.count=%d but %d product(s) actually satisfy Price gt 100", int(count), len(expected))
+			}
+			if len(value) != len(expected) {
+				return fmt.Errorf("response contains %d item(s) but %d product(s) actually satisfy Price gt 100", len(value), len(expected))
 			}
 
-			// Verify all items actually match the filter (Price > 100)
+			// Verify the returned set is exactly the expected set (soundness + completeness).
+			got := map[string]bool{}
 			for i, v := range value {
 				item, ok := v.(map[string]interface{})
 				if !ok {
 					return fmt.Errorf("item %d is not an object", i)
 				}
+				got[productID(item)] = true
 				price, ok := item["Price"].(float64)
 				if !ok {
 					return fmt.Errorf("item %d missing Price field or not a number", i)
 				}
 				if price <= 100 {
 					return fmt.Errorf("found item with Price=%.2f which is not > 100", price)
+				}
+			}
+			for id := range expected {
+				if !got[id] {
+					return fmt.Errorf("product %s satisfies Price gt 100 but was not returned", id)
 				}
 			}
 
@@ -160,6 +179,21 @@ func QueryCount() *framework.TestSuite {
 		"test_count_with_search",
 		"$count with $search returns search-filtered count",
 		func(ctx *framework.TestContext) error {
+			all, err := fetchAllProducts(ctx)
+			if err != nil {
+				return err
+			}
+			// The spec doesn't mandate which fields $search covers, so this
+			// establishes a lower bound only: every product whose Name matches
+			// must be included, even if the service legitimately searches other
+			// fields too and returns a superset.
+			mustMatch := map[string]bool{}
+			for _, p := range all {
+				if strings.Contains(strings.ToLower(productString(p, "Name")), "laptop") {
+					mustMatch[productID(p)] = true
+				}
+			}
+
 			resp, err := ctx.GET("/Products?$count=true&$search=Laptop")
 			if err != nil {
 				return err
@@ -194,6 +228,20 @@ func QueryCount() *framework.TestSuite {
 
 			if int(countFloat) != len(value) {
 				return fmt.Errorf("count=%d but response contains %d items", int(countFloat), len(value))
+			}
+
+			got := map[string]bool{}
+			for i, v := range value {
+				item, ok := v.(map[string]interface{})
+				if !ok {
+					return fmt.Errorf("item %d is not an object", i)
+				}
+				got[productID(item)] = true
+			}
+			for id := range mustMatch {
+				if !got[id] {
+					return fmt.Errorf("product %s has 'Laptop' in its Name but was not returned by $search=Laptop", id)
+				}
 			}
 
 			return nil

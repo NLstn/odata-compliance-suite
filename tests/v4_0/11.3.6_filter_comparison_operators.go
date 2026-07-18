@@ -34,23 +34,9 @@ func FilterComparisonOperators() *framework.TestSuite {
 		"test_eq_operator",
 		"eq (equals) operator: every returned product has Status=1 (InStock)",
 		func(ctx *framework.TestContext) error {
-			items, err := fetchComparisonItems(ctx, "Status eq 1")
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
-				return err
-			}
-			return ctx.AssertAllEntitiesSatisfy(items, "Status eq 1", func(entity map[string]interface{}) (bool, string) {
-				status, err := enumStatusValue(entity)
-				if err != nil {
-					return false, err.Error()
-				}
-				if status != 1 {
-					return false, fmt.Sprintf("found Status value %d, expected exactly 1 (InStock)", status)
-				}
-				return true, ""
-			})
+			return assertProductFilter(ctx, "Status eq 1", wantStatus(func(status int) bool {
+				return status == 1
+			}))
 		},
 	)
 
@@ -59,21 +45,10 @@ func FilterComparisonOperators() *framework.TestSuite {
 		"test_ne_operator",
 		"ne (not equals) operator works and returns only matching entities",
 		func(ctx *framework.TestContext) error {
-			items, err := fetchComparisonItems(ctx, "Status ne 0")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertAllEntitiesSatisfy(items, "Status ne 0", func(entity map[string]interface{}) (bool, string) {
-				// Status must be an OData enum member-name string; value 0 is "None".
-				status, err := enumStatusValue(entity)
-				if err != nil {
-					return false, err.Error()
-				}
-				if status == 0 {
-					return false, "found Status=None (value 0)"
-				}
-				return true, ""
-			})
+			// Status must be an OData enum member-name string; value 0 is "None".
+			return assertProductFilter(ctx, "Status ne 0", wantStatus(func(status int) bool {
+				return status != 0
+			}))
 		},
 	)
 
@@ -82,19 +57,9 @@ func FilterComparisonOperators() *framework.TestSuite {
 		"test_gt_operator",
 		"gt (greater than) operator works and returns only matching entities",
 		func(ctx *framework.TestContext) error {
-			items, err := fetchComparisonItems(ctx, "Price gt 50")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertAllEntitiesSatisfy(items, "Price gt 50", func(entity map[string]interface{}) (bool, string) {
-				price, ok := entity["Price"].(float64)
-				if !ok {
-					return false, "Price field is missing or non-numeric"
-				}
-				if price <= 50 {
-					return false, fmt.Sprintf("found Price=%v", price)
-				}
-				return true, ""
+			return assertProductFilter(ctx, "Price gt 50", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price > 50
 			})
 		},
 	)
@@ -104,19 +69,9 @@ func FilterComparisonOperators() *framework.TestSuite {
 		"test_ge_operator",
 		"ge (greater than or equal) operator works and returns only matching entities",
 		func(ctx *framework.TestContext) error {
-			items, err := fetchComparisonItems(ctx, "Price ge 50")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertAllEntitiesSatisfy(items, "Price ge 50", func(entity map[string]interface{}) (bool, string) {
-				price, ok := entity["Price"].(float64)
-				if !ok {
-					return false, "Price field is missing or non-numeric"
-				}
-				if price < 50 {
-					return false, fmt.Sprintf("found Price=%v", price)
-				}
-				return true, ""
+			return assertProductFilter(ctx, "Price ge 50", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price >= 50
 			})
 		},
 	)
@@ -126,19 +81,9 @@ func FilterComparisonOperators() *framework.TestSuite {
 		"test_lt_operator",
 		"lt (less than) operator works and returns only matching entities",
 		func(ctx *framework.TestContext) error {
-			items, err := fetchComparisonItems(ctx, "Price lt 100")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertAllEntitiesSatisfy(items, "Price lt 100", func(entity map[string]interface{}) (bool, string) {
-				price, ok := entity["Price"].(float64)
-				if !ok {
-					return false, "Price field is missing or non-numeric"
-				}
-				if price >= 100 {
-					return false, fmt.Sprintf("found Price=%v", price)
-				}
-				return true, ""
+			return assertProductFilter(ctx, "Price lt 100", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price < 100
 			})
 		},
 	)
@@ -148,19 +93,9 @@ func FilterComparisonOperators() *framework.TestSuite {
 		"test_le_operator",
 		"le (less than or equal) operator works and returns only matching entities",
 		func(ctx *framework.TestContext) error {
-			items, err := fetchComparisonItems(ctx, "Price le 100")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertAllEntitiesSatisfy(items, "Price le 100", func(entity map[string]interface{}) (bool, string) {
-				price, ok := entity["Price"].(float64)
-				if !ok {
-					return false, "Price field is missing or non-numeric"
-				}
-				if price > 100 {
-					return false, fmt.Sprintf("found Price=%v", price)
-				}
-				return true, ""
+			return assertProductFilter(ctx, "Price le 100", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price <= 100
 			})
 		},
 	)
@@ -170,19 +105,8 @@ func FilterComparisonOperators() *framework.TestSuite {
 		"test_eq_string",
 		"eq operator with strings: every returned product has Name='Laptop'",
 		func(ctx *framework.TestContext) error {
-			items, err := fetchComparisonItems(ctx, "Name eq 'Laptop'")
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
-				return err
-			}
-			return ctx.AssertAllEntitiesSatisfy(items, "Name eq 'Laptop'", func(entity map[string]interface{}) (bool, string) {
-				name, _ := entity["Name"].(string)
-				if name != "Laptop" {
-					return false, fmt.Sprintf("found Name=%q, expected 'Laptop'", name)
-				}
-				return true, ""
+			return assertProductFilter(ctx, "Name eq 'Laptop'", func(p map[string]interface{}) bool {
+				return productString(p, "Name") == "Laptop"
 			})
 		},
 	)
@@ -192,19 +116,8 @@ func FilterComparisonOperators() *framework.TestSuite {
 		"test_ne_string",
 		"ne operator works with strings: no returned product has Name='Laptop'",
 		func(ctx *framework.TestContext) error {
-			items, err := fetchComparisonItems(ctx, "Name ne 'Laptop'")
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
-				return err
-			}
-			return ctx.AssertAllEntitiesSatisfy(items, "Name ne 'Laptop'", func(entity map[string]interface{}) (bool, string) {
-				name, _ := entity["Name"].(string)
-				if name == "Laptop" {
-					return false, "found Name='Laptop' but filter was Name ne 'Laptop'"
-				}
-				return true, ""
+			return assertProductFilter(ctx, "Name ne 'Laptop'", func(p map[string]interface{}) bool {
+				return productString(p, "Name") != "Laptop"
 			})
 		},
 	)
@@ -238,19 +151,9 @@ func FilterComparisonOperators() *framework.TestSuite {
 		"test_multiple_comparisons",
 		"Multiple comparison operators combined",
 		func(ctx *framework.TestContext) error {
-			items, err := fetchComparisonItems(ctx, "Price ge 10 and Price le 100")
-			if err != nil {
-				return err
-			}
-			return ctx.AssertAllEntitiesSatisfy(items, "Price ge 10 and Price le 100", func(entity map[string]interface{}) (bool, string) {
-				price, ok := entity["Price"].(float64)
-				if !ok {
-					return false, "Price field is missing or non-numeric"
-				}
-				if price < 10 || price > 100 {
-					return false, fmt.Sprintf("found Price=%v", price)
-				}
-				return true, ""
+			return assertProductFilter(ctx, "Price ge 10 and Price le 100", func(p map[string]interface{}) bool {
+				price, ok := productFloat(p, "Price")
+				return ok && price >= 10 && price <= 100
 			})
 		},
 	)
