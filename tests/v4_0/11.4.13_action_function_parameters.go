@@ -1,6 +1,9 @@
 package v4_0
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
 
@@ -15,14 +18,47 @@ func ActionFunctionParameters() *framework.TestSuite {
 	// Test 1: Unbound function with valid parameters
 	suite.AddTest(
 		"test_function_valid_params",
-		"Unbound function with valid parameters",
+		"FindProducts(name='Laptop',maxPrice=1000) returns exactly the products matching both parameters",
 		func(ctx *framework.TestContext) error {
+			all, err := fetchAllProducts(ctx)
+			if err != nil {
+				return err
+			}
+			expected := map[string]bool{}
+			for _, p := range all {
+				name := productString(p, "Name")
+				price, ok := productFloat(p, "Price")
+				if ok && strings.Contains(name, "Laptop") && price <= 1000 {
+					expected[productID(p)] = true
+				}
+			}
+
 			resp, err := ctx.GET("/FindProducts(name='Laptop',maxPrice=1000)")
 			if err != nil {
 				return err
 			}
-
-			return ctx.AssertStatusCode(resp, 200)
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			got := map[string]bool{}
+			for _, item := range items {
+				got[productID(item)] = true
+			}
+			for id := range expected {
+				if !got[id] {
+					return fmt.Errorf("product %s matches name~'Laptop' and Price<=1000 but was not returned by FindProducts", id)
+				}
+			}
+			for id := range got {
+				if !expected[id] {
+					return fmt.Errorf("product %s was returned by FindProducts but does not match name~'Laptop' and Price<=1000", id)
+				}
+			}
+			return nil
 		},
 	)
 
