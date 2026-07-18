@@ -124,6 +124,134 @@ func ByteTypes() *framework.TestSuite {
 	)
 
 	suite.AddTest(
+		"test_byte_max_value_roundtrips",
+		"Edm.Byte max value (255) round-trips unchanged through POST and GET",
+		func(ctx *framework.TestContext) error {
+			payload, err := buildProductPayload(ctx, "Byte Max Roundtrip", 1.0)
+			if err != nil {
+				return err
+			}
+			payload["Rating"] = 255
+
+			createResp, err := ctx.POST("/Products", payload)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(createResp, 201); err != nil {
+				return err
+			}
+			var created map[string]interface{}
+			if err := ctx.GetJSON(createResp, &created); err != nil {
+				return err
+			}
+			rating, ok := productFloat(created, "Rating")
+			if !ok || rating != 255 {
+				return fmt.Errorf("expected Rating=255 in create response, got %v", created["Rating"])
+			}
+
+			id, err := parseEntityID(created["ID"])
+			if err != nil {
+				return err
+			}
+			getResp, err := ctx.GET(fmt.Sprintf("/Products(%s)", id))
+			if err != nil {
+				return err
+			}
+			var fetched map[string]interface{}
+			if err := ctx.GetJSON(getResp, &fetched); err != nil {
+				return err
+			}
+			rating, ok = productFloat(fetched, "Rating")
+			if !ok || rating != 255 {
+				return fmt.Errorf("expected Rating=255 on re-fetch, got %v", fetched["Rating"])
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_byte_overflow_rejected",
+		"Edm.Byte value above the max (256) is rejected, not silently truncated",
+		func(ctx *framework.TestContext) error {
+			payload, err := buildProductPayload(ctx, "Byte Overflow", 1.0)
+			if err != nil {
+				return err
+			}
+			payload["Rating"] = 256
+
+			resp, err := ctx.POST("/Products", payload)
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
+	suite.AddTest(
+		"test_sbyte_min_value_roundtrips",
+		"Edm.SByte min value (-128) round-trips unchanged through POST and GET",
+		func(ctx *framework.TestContext) error {
+			payload, err := buildProductPayload(ctx, "SByte Min Roundtrip", 1.0)
+			if err != nil {
+				return err
+			}
+			payload["Temperature"] = -128
+
+			createResp, err := ctx.POST("/Products", payload)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(createResp, 201); err != nil {
+				return err
+			}
+			var created map[string]interface{}
+			if err := ctx.GetJSON(createResp, &created); err != nil {
+				return err
+			}
+			temp, ok := productFloat(created, "Temperature")
+			if !ok || temp != -128 {
+				return fmt.Errorf("expected Temperature=-128 in create response, got %v", created["Temperature"])
+			}
+
+			id, err := parseEntityID(created["ID"])
+			if err != nil {
+				return err
+			}
+			getResp, err := ctx.GET(fmt.Sprintf("/Products(%s)", id))
+			if err != nil {
+				return err
+			}
+			var fetched map[string]interface{}
+			if err := ctx.GetJSON(getResp, &fetched); err != nil {
+				return err
+			}
+			temp, ok = productFloat(fetched, "Temperature")
+			if !ok || temp != -128 {
+				return fmt.Errorf("expected Temperature=-128 on re-fetch, got %v", fetched["Temperature"])
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_sbyte_underflow_rejected",
+		"Edm.SByte value below the min (-129) is rejected, not silently clamped",
+		func(ctx *framework.TestContext) error {
+			payload, err := buildProductPayload(ctx, "SByte Underflow", 1.0)
+			if err != nil {
+				return err
+			}
+			payload["Temperature"] = -129
+
+			resp, err := ctx.POST("/Products", payload)
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
+	suite.AddTest(
 		"test_byte_in_response",
 		"Byte/SByte values are serialized as numbers within their valid ranges",
 		func(ctx *framework.TestContext) error {
