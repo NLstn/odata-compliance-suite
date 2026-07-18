@@ -132,3 +132,53 @@ func TestSuiteRunDoesNotReseedWhenAllPerTestCapabilitiesAreUnsupported(t *testin
 		t.Fatalf("unexpected results: %+v", suite.Results)
 	}
 }
+
+func TestAssertEntityOnlyAllowedFieldsIgnoresODataAnnotationsButCatchesLeaks(t *testing.T) {
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{}`)),
+			Request:    req,
+		}, nil
+	})}
+
+	suite := framework.NewTestSuite("select-completeness", "select-completeness", "https://example.test/spec")
+	suite.ServerURL = "http://example.test"
+	suite.Client = client
+	suite.Out = io.Discard
+	suite.Quiet = true
+
+	// Control and property annotations are metadata, not structural
+	// properties subject to $select, and must be exempt from the allow-list.
+	entityWithAnnotations := map[string]interface{}{
+		"ID":                        "1",
+		"Name":                      "Widget",
+		"@odata.id":                 "http://example.test/Products(1)",
+		"@odata.etag":               `W/"1"`,
+		"Photo@odata.mediaReadLink": "http://example.test/Products(1)/Photo",
+	}
+	// A genuinely unselected structural property must still be caught.
+	entityWithLeak := map[string]interface{}{
+		"ID":          "1",
+		"Name":        "Widget",
+		"Description": "unselected property that leaked through",
+	}
+
+	var errAnnotations, errLeak error
+	suite.AddTest("check", "check", func(ctx *framework.TestContext) error {
+		errAnnotations = ctx.AssertEntityOnlyAllowedFields(entityWithAnnotations, "ID", "Name")
+		errLeak = ctx.AssertEntityOnlyAllowedFields(entityWithLeak, "ID", "Name")
+		return nil
+	})
+
+	if err := suite.Run(); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if errAnnotations != nil {
+		t.Fatalf("control/property annotations should be exempt, got error: %v", errAnnotations)
+	}
+	if errLeak == nil {
+		t.Fatal("expected an error for the unselected structural property leak, got nil")
+	}
+}
