@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -1203,6 +1204,39 @@ func main() {
 		"vocab_capabilities_select_support": {framework.LevelIntermediate, "Vocabularies"},
 		"vocab_core_permissions":            {framework.LevelAdvanced, "Vocabularies"},
 		"vocab_core_operation_available":    {framework.LevelAdvanced, "Vocabularies"},
+	}
+
+	// capabilityRequirements and conformanceTags are keyed by suite name as a
+	// separate map, not declared alongside each suite's own constructor, so a
+	// typo'd or stale key silently no-ops (map miss) instead of failing loudly
+	// — a suite that should have been capability-gated would instead run
+	// unconditionally, or one that should carry a coverage-band tag would
+	// silently be excluded from the coverage report. Validate both maps
+	// reference only suite names that actually exist, once, at startup.
+	{
+		suiteNames := make(map[string]bool, len(testSuites))
+		for _, suiteInfo := range testSuites {
+			suiteNames[suiteInfo.Name] = true
+		}
+		var unknown []string
+		for name := range capabilityRequirements {
+			if !suiteNames[name] {
+				unknown = append(unknown, fmt.Sprintf("capabilityRequirements[%q]", name))
+			}
+		}
+		for name := range conformanceTags {
+			if !suiteNames[name] {
+				unknown = append(unknown, fmt.Sprintf("conformanceTags[%q]", name))
+			}
+		}
+		if len(unknown) > 0 {
+			sort.Strings(unknown)
+			fmt.Fprintln(os.Stderr, "internal error: the following entries reference a suite name that isn't registered in testSuites (typo, renamed, or removed suite?):")
+			for _, u := range unknown {
+				fmt.Fprintf(os.Stderr, "  - %s\n", u)
+			}
+			os.Exit(1)
+		}
 	}
 
 	// Prepare suites (apply pattern filter) so we can compute totals for concise progress output
