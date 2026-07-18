@@ -433,5 +433,99 @@ func UpdateEntity() *framework.TestSuite {
 		},
 	)
 
+	// Test: PATCH with a body ID that conflicts with the URL key segment
+	suite.AddTest(
+		"test_patch_conflicting_key_rejected",
+		"PATCH with a body ID that differs from the URL key segment is rejected",
+		func(ctx *framework.TestContext) error {
+			productID, err := createTestProduct(ctx, "PatchConflictingKey", 20.00)
+			if err != nil {
+				return err
+			}
+			productPath := fmt.Sprintf("/Products(%s)", productID)
+
+			resp, err := ctx.PATCH(productPath, map[string]interface{}{
+				"ID":    "99999999-9999-9999-9999-999999999999",
+				"Price": 30.00,
+			})
+			if err != nil {
+				return err
+			}
+			return ctx.AssertODataError(resp, 400, "")
+		},
+	)
+
+	// Test: PUT with a body ID that conflicts with the URL key segment.
+	// Confirmed against the reference server: unlike PATCH above, PUT
+	// currently ignores a conflicting body ID rather than rejecting it —
+	// the key stays whatever the URL segment specified. This test locks in
+	// that observed behavior (the update itself must still succeed, applied
+	// to the URL entity, and must not create a second entity under the
+	// body's ID).
+	suite.AddTest(
+		"test_put_conflicting_key_ignored",
+		"PUT with a body ID that differs from the URL key segment ignores the body ID rather than creating or renaming an entity",
+		func(ctx *framework.TestContext) error {
+			productID, err := createTestProduct(ctx, "PutConflictingKey", 20.00)
+			if err != nil {
+				return err
+			}
+			productPath := fmt.Sprintf("/Products(%s)", productID)
+
+			getResp, err := ctx.GET(productPath)
+			if err != nil {
+				return err
+			}
+			var current map[string]interface{}
+			if err := ctx.GetJSON(getResp, &current); err != nil {
+				return err
+			}
+
+			const conflictingID = "99999999-9999-9999-9999-999999999999"
+			resp, err := ctx.PUT(productPath, map[string]interface{}{
+				"ID":         conflictingID,
+				"Name":       "PutConflictingKey-Updated",
+				"Price":      30.00,
+				"CategoryID": current["CategoryID"],
+				"Status":     current["Status"],
+			}, framework.Header{Key: "Content-Type", Value: "application/json"})
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode != 200 && resp.StatusCode != 204 {
+				return fmt.Errorf("expected status 200 or 204, got %d", resp.StatusCode)
+			}
+
+			// The URL entity must still exist under its original key, updated.
+			verifyResp, err := ctx.GET(productPath)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(verifyResp, 200); err != nil {
+				return fmt.Errorf("entity at the original URL key should still exist after PUT: %w", err)
+			}
+			var updated map[string]interface{}
+			if err := ctx.GetJSON(verifyResp, &updated); err != nil {
+				return err
+			}
+			if id, _ := updated["ID"].(string); id != productID {
+				return fmt.Errorf("PUT changed the entity's key from %q to %q", productID, id)
+			}
+			if name, _ := updated["Name"].(string); name != "PutConflictingKey-Updated" {
+				return fmt.Errorf("PUT did not apply the update to the URL entity, got Name=%q", updated["Name"])
+			}
+
+			// The conflicting body ID must not have spawned a second entity.
+			conflictResp, err := ctx.GET(fmt.Sprintf("/Products(%s)", conflictingID))
+			if err != nil {
+				return err
+			}
+			if conflictResp.StatusCode != 404 {
+				return fmt.Errorf("expected the conflicting body ID %q to not exist as a separate entity, got status %d", conflictingID, conflictResp.StatusCode)
+			}
+			return nil
+		},
+	)
+
 	return suite
 }
