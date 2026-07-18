@@ -67,15 +67,39 @@ func ModifyRelationships() *framework.TestSuite {
 		"test_put_ref_single",
 		"PUT $ref creates/updates single-valued relationship",
 		func(ctx *framework.TestContext) error {
-			// Get a product and a category
-			productPath, err := firstEntityPath(ctx, "Products")
+			// Get a product and its current category, then pick a category
+			// that differs from it — otherwise the PUT could be a no-op that
+			// happens to already match, and the verification below wouldn't
+			// be able to tell a working PUT from a broken one.
+			productID, err := firstEntityID(ctx, "Products")
 			if err != nil {
 				return err
 			}
+			productPath := "/Products(" + productID + ")"
 
-			categoryID, err := firstEntityID(ctx, "Categories")
+			productResp, err := ctx.GET(productPath)
 			if err != nil {
 				return err
+			}
+			var product map[string]interface{}
+			if err := ctx.GetJSON(productResp, &product); err != nil {
+				return fmt.Errorf("failed to parse product: %w", err)
+			}
+			currentCategoryID, _ := product["CategoryID"].(string)
+
+			categoryIDs, err := fetchEntityIDs(ctx, "Categories", 10)
+			if err != nil {
+				return err
+			}
+			var categoryID string
+			for _, id := range categoryIDs {
+				if id != currentCategoryID {
+					categoryID = id
+					break
+				}
+			}
+			if categoryID == "" {
+				return ctx.Skip("only one category exists; cannot pick one that differs from the product's current category")
 			}
 
 			categorySegment := fmt.Sprintf("Categories(%s)", categoryID)
