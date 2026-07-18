@@ -2,6 +2,7 @@ package v4_0
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -539,26 +540,37 @@ X-User-Role: admin
 			if err != nil {
 				return err
 			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
 
 			respBody := string(resp.Body)
 			createdCount := strings.Count(respBody, "HTTP/1.1 201")
-			if resp.StatusCode == 200 && createdCount == 2 {
-				// Known upstream gap: duplicate Content-ID within a multipart
-				// changeset is currently accepted rather than rejected, unlike
-				// the equivalent JSON-batch "id" uniqueness check. Skip rather
-				// than hard-fail until fixed, rather than silently passing.
-				return ctx.Skip("service accepts a duplicate Content-ID within a changeset instead of rejecting it; see NLstn/go-odata#815")
+			if createdCount == 2 {
+				return framework.NewError(
+					"duplicate Content-ID within a changeset was accepted (both sub-requests returned 201) instead of being rejected; see NLstn/go-odata#815")
+			}
+			if !strings.Contains(respBody, "HTTP/1.1 4") {
+				return fmt.Errorf("expected duplicate Content-ID to be rejected with a 4xx sub-response, got: %s", respBody)
 			}
 
-			// If not silently accepted, the batch (or the second conflicting
-			// sub-request) must be rejected with a client error.
-			if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-				return nil
+			// The changeset is atomic: a rejected duplicate must roll back any
+			// entity the changeset already created, not leave it persisted.
+			verifyResp, err := ctx.GET("/Products?$filter=" + url.QueryEscape("contains(Name,'CID Duplicate')"))
+			if err != nil {
+				return err
 			}
-			if strings.Contains(respBody, "HTTP/1.1 4") {
-				return nil
+			if err := ctx.AssertStatusCode(verifyResp, 200); err != nil {
+				return err
 			}
-			return fmt.Errorf("expected duplicate Content-ID to be rejected with a 4xx (batch-level status %d, sub-responses: %d x 201)", resp.StatusCode, createdCount)
+			items, err := ctx.ParseEntityCollection(verifyResp)
+			if err != nil {
+				return err
+			}
+			if len(items) != 0 {
+				return fmt.Errorf("changeset should have rolled back after the duplicate Content-ID was rejected, but %d matching product(s) still exist", len(items))
+			}
+			return nil
 		},
 	)
 

@@ -489,24 +489,17 @@ func NumericBoundaryTests() *framework.TestSuite {
 			}
 
 			// Soundness: every returned row must genuinely satisfy the predicate.
-			// A violation here is a more severe bug than a missing match below.
 			for id := range got {
 				if !expected[id] {
 					return fmt.Errorf("product %s was returned but does not satisfy (Price div 3) mul 3 eq Price under IEEE-754 double arithmetic", id)
 				}
 			}
-			// Completeness: at the time this test was written, $filter's nested-
-			// arithmetic `eq` comparison silently dropped matches that
-			// $apply=compute(...) independently proved were correct (confirmed
-			// via manual reproduction: NLstn/go-odata#814). Skip rather than
-			// hard-fail on that specific known gap so this test doesn't block on
-			// an unrelated upstream fix, while still failing loudly on the
-			// soundness violation above (a worse class of bug).
+			// Completeness: NLstn/go-odata#814 (fixed) — $filter's nested-
+			// arithmetic `eq` comparison used to silently drop matches that
+			// $apply=compute(...) independently proved were correct.
 			for id := range expected {
 				if !got[id] {
-					return ctx.Skip(fmt.Sprintf(
-						"product %s satisfies (Price div 3) mul 3 eq Price but was not returned; known upstream issue, see NLstn/go-odata#814",
-						id))
+					return fmt.Errorf("product %s satisfies (Price div 3) mul 3 eq Price under IEEE-754 double arithmetic but was not returned", id)
 				}
 			}
 
