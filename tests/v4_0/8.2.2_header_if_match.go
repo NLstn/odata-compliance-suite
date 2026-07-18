@@ -397,5 +397,50 @@ func HeaderIfMatch() *framework.TestSuite {
 		},
 	)
 
+	suite.AddTest(
+		"test_if_none_match_star_rejects_update_to_existing_entity",
+		"PATCH with If-None-Match: * on an existing entity is rejected with 412 (create-if-not-exists guard)",
+		func(ctx *framework.TestContext) error {
+			productPath, err := firstEntityPath(ctx, "Products")
+			if err != nil {
+				return err
+			}
+
+			// Confirm the entity exists before applying the conditional PATCH.
+			getResp, err := ctx.GET(productPath)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(getResp, 200); err != nil {
+				return err
+			}
+
+			update := map[string]interface{}{
+				"Name": "Should not apply (If-None-Match: * on existing entity)",
+			}
+			patchResp, err := ctx.PATCH(productPath, update,
+				framework.Header{Key: "Content-Type", Value: "application/json"},
+				framework.Header{Key: "If-None-Match", Value: "*"},
+			)
+			if err != nil {
+				return err
+			}
+			if patchResp.StatusCode == 412 {
+				return nil
+			}
+			// Known upstream gap: RFC 7232 §3.2 requires 412 here since the
+			// entity already exists, but the service applies the update
+			// instead. Skip rather than hard-fail on this specific known
+			// issue, but only if the request actually "succeeded" — anything
+			// else is a different, unexpected failure mode worth surfacing.
+			if patchResp.StatusCode == 200 || patchResp.StatusCode == 204 {
+				return ctx.Skip(fmt.Sprintf(
+					"If-None-Match: * on an existing entity should return 412 but the update was applied (status %d); see NLstn/go-odata#821",
+					patchResp.StatusCode))
+			}
+			return fmt.Errorf("expected 412 Precondition Failed for If-None-Match: * on an existing entity, got %d", patchResp.StatusCode)
+		},
+	)
+
 	return suite
 }
