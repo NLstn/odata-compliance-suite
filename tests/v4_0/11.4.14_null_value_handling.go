@@ -102,9 +102,154 @@ func NullValueHandling() *framework.TestSuite {
 
 			// Should return 204 or 200
 			if err := ctx.AssertStatusCode(resp, 204); err != nil {
-				return ctx.AssertStatusCode(resp, 200)
+				if err := ctx.AssertStatusCode(resp, 200); err != nil {
+					return err
+				}
 			}
 
+			// Verify the property actually became null, not just that the
+			// PATCH request itself returned a success status.
+			verifyResp, err := ctx.GET(fmt.Sprintf("/Products(%s)", createdID))
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(verifyResp, 200); err != nil {
+				return err
+			}
+			var verified map[string]interface{}
+			if err := ctx.GetJSON(verifyResp, &verified); err != nil {
+				return err
+			}
+			if desc, hasKey := verified["Description"]; hasKey && desc != nil {
+				return fmt.Errorf("expected Description to be null after PATCH, got %v", desc)
+			}
+
+			return nil
+		},
+	)
+
+	// Test 3b: PATCH omitting a property leaves its existing value unchanged
+	// (the partial-update contrast to explicit-null above).
+	suite.AddTest(
+		"test_patch_omit_is_noop",
+		"PATCH omitting a property preserves its existing value (contrast with explicit null)",
+		func(ctx *framework.TestContext) error {
+			payload := map[string]interface{}{
+				"Name":        "Omit Test Product",
+				"Price":       55.00,
+				"Description": "Description that must survive an unrelated PATCH",
+				"Status":      1,
+			}
+			createResp, err := ctx.POST("/Products", payload, framework.Header{Key: "Content-Type", Value: "application/json"})
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(createResp, 201); err != nil {
+				return err
+			}
+			var created map[string]interface{}
+			if err := ctx.GetJSON(createResp, &created); err != nil {
+				return err
+			}
+			id, err := parseEntityID(created["ID"])
+			if err != nil {
+				return err
+			}
+			entityPath := fmt.Sprintf("/Products(%s)", id)
+
+			// PATCH a different property; Description is not mentioned at all.
+			patchResp, err := ctx.PATCH(entityPath, map[string]interface{}{
+				"Name": "Omit Test Product - Renamed",
+			}, framework.Header{Key: "Content-Type", Value: "application/json"})
+			if err != nil {
+				return err
+			}
+			if patchResp.StatusCode != 200 && patchResp.StatusCode != 204 {
+				return fmt.Errorf("expected status 200 or 204, got %d", patchResp.StatusCode)
+			}
+
+			verifyResp, err := ctx.GET(entityPath)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(verifyResp, 200); err != nil {
+				return err
+			}
+			var verified map[string]interface{}
+			if err := ctx.GetJSON(verifyResp, &verified); err != nil {
+				return err
+			}
+			desc, _ := verified["Description"].(string)
+			if desc != "Description that must survive an unrelated PATCH" {
+				return fmt.Errorf("PATCH omitting Description must not change it; got %q", desc)
+			}
+			return nil
+		},
+	)
+
+	// Test 3c: PUT (full replacement) resets an omitted nullable property to
+	// null — the actual subject of §11.4.14, distinct from PATCH's partial
+	// semantics above.
+	suite.AddTest(
+		"test_put_omitted_nullable_resets_to_null",
+		"PUT replacement resets an omitted nullable property to null",
+		func(ctx *framework.TestContext) error {
+			categoryID, err := firstEntityID(ctx, "Categories")
+			if err != nil {
+				return err
+			}
+			payload := map[string]interface{}{
+				"Name":        "PUT Reset Test Product",
+				"Price":       65.00,
+				"Description": "Description that must be reset by PUT",
+				"CategoryID":  categoryID,
+				"Status":      1,
+			}
+			createResp, err := ctx.POST("/Products", payload, framework.Header{Key: "Content-Type", Value: "application/json"})
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(createResp, 201); err != nil {
+				return err
+			}
+			var created map[string]interface{}
+			if err := ctx.GetJSON(createResp, &created); err != nil {
+				return err
+			}
+			id, err := parseEntityID(created["ID"])
+			if err != nil {
+				return err
+			}
+			entityPath := fmt.Sprintf("/Products(%s)", id)
+
+			// Full replacement omitting Description entirely.
+			putResp, err := ctx.PUT(entityPath, map[string]interface{}{
+				"Name":       "PUT Reset Test Product - Replaced",
+				"Price":      75.00,
+				"CategoryID": categoryID,
+				"Status":     1,
+			}, framework.Header{Key: "Content-Type", Value: "application/json"})
+			if err != nil {
+				return err
+			}
+			if putResp.StatusCode != 200 && putResp.StatusCode != 204 {
+				return fmt.Errorf("expected status 200 or 204, got %d", putResp.StatusCode)
+			}
+
+			verifyResp, err := ctx.GET(entityPath)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(verifyResp, 200); err != nil {
+				return err
+			}
+			var verified map[string]interface{}
+			if err := ctx.GetJSON(verifyResp, &verified); err != nil {
+				return err
+			}
+			if desc, hasKey := verified["Description"]; hasKey && desc != nil {
+				return fmt.Errorf("expected Description to be reset to null by PUT (omitted from the replacement body), got %v", desc)
+			}
 			return nil
 		},
 	)
