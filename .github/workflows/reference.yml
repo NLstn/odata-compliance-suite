@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           # The reference compliance server requires Go 1.25; this also
           # satisfies the suite's own 1.24 requirement.
