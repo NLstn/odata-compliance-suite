@@ -182,4 +182,109 @@ func registerHeaderAcceptTests(suite *framework.TestSuite) {
 			return nil
 		},
 	)
+
+	suite.AddTest(
+		"Accept quality values JSON preferred over Atom",
+		"JSON q=1.0 beats Atom q=0.8; service must return application/json",
+		func(ctx *framework.TestContext) error {
+			productPath, err := firstEntityPath(ctx, "Products")
+			if err != nil {
+				return err
+			}
+			resp, err := ctx.GET(productPath, framework.Header{
+				Key:   "Accept",
+				Value: "application/json;odata.metadata=minimal;q=1.0, application/atom+xml;q=0.8",
+			})
+			if err != nil {
+				return err
+			}
+
+			if resp.StatusCode != 200 {
+				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			}
+
+			contentType := resp.Headers.Get("Content-Type")
+			if !strings.Contains(strings.ToLower(contentType), "application/json") {
+				return fmt.Errorf("expected Content-Type application/json (higher q-value), got %s", contentType)
+			}
+
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"Accept quality values JSON preferred over Atom (reversed order)",
+		"JSON q=1.0 beats Atom q=0.8 regardless of header order; service must return application/json",
+		func(ctx *framework.TestContext) error {
+			productPath, err := firstEntityPath(ctx, "Products")
+			if err != nil {
+				return err
+			}
+			resp, err := ctx.GET(productPath, framework.Header{
+				Key:   "Accept",
+				Value: "application/atom+xml;q=0.8, application/json;odata.metadata=minimal;q=1.0",
+			})
+			if err != nil {
+				return err
+			}
+
+			if resp.StatusCode != 200 {
+				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			}
+
+			contentType := resp.Headers.Get("Content-Type")
+			if !strings.Contains(strings.ToLower(contentType), "application/json") {
+				return fmt.Errorf("expected Content-Type application/json (higher q-value), got %s", contentType)
+			}
+
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"Accept quality values Atom preferred over JSON",
+		"Atom q=1.0 beats JSON q=0; service must return application/atom+xml when Atom is supported",
+		func(ctx *framework.TestContext) error {
+			productPath, err := firstEntityPath(ctx, "Products")
+			if err != nil {
+				return err
+			}
+
+			// Probe whether the service supports Atom at all.
+			probe, err := ctx.GET(productPath, framework.Header{
+				Key:   "Accept",
+				Value: "application/atom+xml",
+			})
+			if err != nil {
+				return err
+			}
+			if probe.StatusCode == http.StatusNotAcceptable {
+				return ctx.Skip("service does not support application/atom+xml; skipping Atom quality-value test")
+			}
+			probeContentType := strings.ToLower(probe.Headers.Get("Content-Type"))
+			if !strings.Contains(probeContentType, "application/atom+xml") {
+				return ctx.Skip("service does not serve application/atom+xml; skipping Atom quality-value test")
+			}
+
+			// Atom has q=1.0, JSON has q=0 (effectively excluded).
+			resp, err := ctx.GET(productPath, framework.Header{
+				Key:   "Accept",
+				Value: "application/json;q=0, application/atom+xml;q=1.0",
+			})
+			if err != nil {
+				return err
+			}
+
+			if resp.StatusCode != 200 {
+				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			}
+
+			contentType := resp.Headers.Get("Content-Type")
+			if !strings.Contains(strings.ToLower(contentType), "application/atom+xml") {
+				return fmt.Errorf("expected Content-Type application/atom+xml (higher q-value), got %s", contentType)
+			}
+
+			return nil
+		},
+	)
 }
