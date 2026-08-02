@@ -187,5 +187,80 @@ func HeaderODataVersion() *framework.TestSuite {
 		},
 	)
 
+	// Test 8: Entity collection response must carry exactly one OData-Version header value.
+	// A server that emits duplicate case-variant fields (e.g. "OData-Version" and
+	// "Odata-Version") causes HTTP recipients to combine them into "4.0,4.0", which is
+	// not a valid OData-Version value and breaks clients such as PowerQuery.
+	// OData Protocol 4.0 §8.2.6 requires a single OData-Version response header.
+	suite.AddTest(
+		"test_no_duplicate_odata_version_entity",
+		"Entity collection response contains exactly one OData-Version header value",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products")
+			if err != nil {
+				return err
+			}
+
+			var values []string
+			for key, vals := range resp.Headers {
+				if strings.EqualFold(key, "OData-Version") {
+					values = append(values, vals...)
+				}
+			}
+
+			if len(values) == 0 {
+				return framework.NewError("OData-Version header not found in entity collection response")
+			}
+			if len(values) != 1 {
+				return framework.NewError(fmt.Sprintf("OData-Version header must appear exactly once (OData Protocol §8.2.6), got %d values: %v", len(values), values))
+			}
+
+			version := strings.TrimSpace(values[0])
+			if version != "4.0" && version != "4.01" {
+				return framework.NewError(fmt.Sprintf("OData-Version must be \"4.0\" or \"4.01\", got: %q", version))
+			}
+
+			return nil
+		},
+	)
+
+	// Test 9: Error response must also carry exactly one OData-Version header value.
+	// The original defect (go-odata#874) was triggered by layered response writers
+	// that each set the header independently, so error paths are especially prone to
+	// emitting duplicates.
+	suite.AddTest(
+		"test_no_duplicate_odata_version_error",
+		"Error response contains exactly one OData-Version header value",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/",
+				framework.Header{Key: "OData-MaxVersion", Value: "3.0"},
+			)
+			if err != nil {
+				return err
+			}
+
+			var values []string
+			for key, vals := range resp.Headers {
+				if strings.EqualFold(key, "OData-Version") {
+					values = append(values, vals...)
+				}
+			}
+
+			if len(values) == 0 {
+				return framework.NewError("OData-Version header not found in error response")
+			}
+			if len(values) != 1 {
+				return framework.NewError(fmt.Sprintf("OData-Version header must appear exactly once in error responses (OData Protocol §8.2.6), got %d values: %v", len(values), values))
+			}
+
+			version := strings.TrimSpace(values[0])
+			if version != "4.0" && version != "4.01" {
+				return framework.NewError(fmt.Sprintf("OData-Version must be \"4.0\" or \"4.01\" in error responses, got: %q", version))
+			}
+
+			return nil
+		},
+	)
+
 	return suite
 }
