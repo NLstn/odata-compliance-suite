@@ -37,6 +37,25 @@ func BatchRequests() *framework.TestSuite {
 		}
 		return string(body), nil
 	}
+	productJSON401 := func(ctx *framework.TestContext, name string) (string, error) {
+		payload, err := buildProductPayload(ctx, name, 12.34)
+		if err != nil {
+			return "", err
+		}
+		namespace, err := schemaNamespace(ctx)
+		if err != nil {
+			return "", err
+		}
+		if namespace == "" {
+			return "", framework.NewError("could not determine Product type namespace")
+		}
+		payload["@type"] = namespace + ".Product"
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return "", err
+		}
+		return string(body), nil
+	}
 
 	// Test 1: $batch endpoint exists
 	suite.AddTest(
@@ -212,7 +231,7 @@ INVALID CONTENT
 		"test_batch_part_inherits_versions",
 		"A multipart part inherits outer request and maximum versions",
 		func(ctx *framework.TestContext) error {
-			payload, err := productJSON(ctx, "Batch Inherited Payload Version")
+			payload, err := productJSON401(ctx, "Batch Inherited Payload Version")
 			if err != nil {
 				return err
 			}
@@ -250,7 +269,7 @@ Content-Type: application/json
 		"test_batch_part_versions_override_outer",
 		"Explicit multipart part versions override inherited outer values",
 		func(ctx *framework.TestContext) error {
-			payload, err := productJSON(ctx, "Batch Overridden Payload Version")
+			payload, err := productJSON401(ctx, "Batch Overridden Payload Version")
 			if err != nil {
 				return err
 			}
@@ -260,14 +279,14 @@ Content-Transfer-Encoding: binary
 
 POST Products HTTP/1.1
 Content-Type: application/json
-OData-Version: 4.0
+OData-Version: 4.01
 OData-MaxVersion: 4.0
 
 %s
 --batch_version_override--`, payload)
 			resp, err := ctx.POSTRaw("/$batch", []byte(batchBody),
 				"multipart/mixed; boundary=batch_version_override",
-				framework.Header{Key: "OData-Version", Value: "4.01"},
+				framework.Header{Key: "OData-Version", Value: "4.0"},
 				framework.Header{Key: "OData-MaxVersion", Value: "4.01"})
 			if err != nil {
 				return err

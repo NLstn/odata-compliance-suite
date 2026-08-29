@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -105,6 +106,20 @@ func JSONBatch() *framework.TestSuite {
 			}
 		}
 		return ""
+	}
+	productTypeName := func(ctx *framework.TestContext) (string, error) {
+		resp, err := ctx.GET("/$metadata")
+		if err != nil {
+			return "", err
+		}
+		if err := ctx.AssertStatusCode(resp, 200); err != nil {
+			return "", err
+		}
+		match := regexp.MustCompile(`EntityType="([^"]+)\.Product"`).FindSubmatch(resp.Body)
+		if match == nil {
+			return "", framework.NewError("could not determine Product type namespace")
+		}
+		return string(match[1]) + ".Product", nil
 	}
 
 	// ── §19.2  JSON batch envelope accepted ──────────────────────────────────
@@ -524,6 +539,10 @@ func JSONBatch() *framework.TestSuite {
 		"test_json_batch_part_inherits_versions",
 		"A JSON batch request inherits outer OData-Version and OData-MaxVersion",
 		func(ctx *framework.TestContext) error {
+			productType, err := productTypeName(ctx)
+			if err != nil {
+				return err
+			}
 			resp, err := postJSONBatch(ctx, makeRequests(map[string]interface{}{
 				"id":     "r1",
 				"method": "POST",
@@ -531,7 +550,11 @@ func JSONBatch() *framework.TestSuite {
 				"headers": map[string]interface{}{
 					"Content-Type": "application/json",
 				},
-				"body": map[string]interface{}{"Name": "JSON Batch Inherited Version", "Price": 12.34},
+				"body": map[string]interface{}{
+					"@type": productType,
+					"Name":  "JSON Batch Inherited Version",
+					"Price": 12.34,
+				},
 			}),
 				framework.Header{Key: "OData-Version", Value: "4.01"},
 				framework.Header{Key: "OData-MaxVersion", Value: "4.01"})
@@ -561,6 +584,55 @@ func JSONBatch() *framework.TestSuite {
 		"test_json_batch_part_versions_override_outer",
 		"Explicit JSON batch request versions override inherited outer values",
 		func(ctx *framework.TestContext) error {
+			const name = "JSON Batch Overridden Version"
+			productType, err := productTypeName(ctx)
+			if err != nil {
+				return err
+			}
+			resp, err := postJSONBatch(ctx, makeRequests(map[string]interface{}{
+				"id":     "r1",
+				"method": "POST",
+				"url":    "Products",
+				"headers": map[string]interface{}{
+					"Content-Type":     "application/json",
+					"OData-Version":    "4.0",
+					"OData-MaxVersion": "4.0",
+				},
+				"body": map[string]interface{}{
+					"@type": productType,
+					"Name":  name,
+					"Price": 12.34,
+				},
+			}),
+				framework.Header{Key: "OData-Version", Value: "4.01"},
+				framework.Header{Key: "OData-MaxVersion", Value: "4.01"})
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+			responses, err := parseResponses(resp.Body)
+			if err != nil {
+				return err
+			}
+			r1 := responses["r1"]
+			status := r1["status"].(float64)
+			if status < 400 || status >= 500 {
+				return fmt.Errorf("4.01 payload overridden to OData-Version 4.0 status = %v, want 4xx", status)
+			}
+			return assertNoProductNamed(ctx, name)
+		},
+	)
+
+	suite.AddTest(
+		"test_json_batch_part_request_response_versions_independent",
+		"A 4.01 JSON batch payload can independently request a 4.0 response",
+		func(ctx *framework.TestContext) error {
+			productType, err := productTypeName(ctx)
+			if err != nil {
+				return err
+			}
 			resp, err := postJSONBatch(ctx, makeRequests(map[string]interface{}{
 				"id":     "r1",
 				"method": "POST",
@@ -570,7 +642,11 @@ func JSONBatch() *framework.TestSuite {
 					"OData-Version":    "4.01",
 					"OData-MaxVersion": "4.0",
 				},
-				"body": map[string]interface{}{"Name": "JSON Batch Overridden Version", "Price": 12.34},
+				"body": map[string]interface{}{
+					"@type": productType,
+					"Name":  "JSON Batch Independent Versions",
+					"Price": 12.34,
+				},
 			}),
 				framework.Header{Key: "OData-Version", Value: "4.01"},
 				framework.Header{Key: "OData-MaxVersion", Value: "4.01"})
@@ -587,10 +663,10 @@ func JSONBatch() *framework.TestSuite {
 			r1 := responses["r1"]
 			status := r1["status"].(float64)
 			if status < 200 || status >= 300 {
-				return fmt.Errorf("request with explicit versions status = %v, want 2xx", status)
+				return fmt.Errorf("4.01 payload status = %v, want 2xx", status)
 			}
 			if version := responseVersion(r1); version != "4.0" {
-				return fmt.Errorf("part OData-MaxVersion override response version = %q, want 4.0", version)
+				return fmt.Errorf("independent response version = %q, want 4.0", version)
 			}
 			return nil
 		},

@@ -266,11 +266,23 @@ func HeaderODataVersion() *framework.TestSuite {
 		"test_request_payload_supported_versions",
 		"Create payloads declare OData-Version 4.0 and 4.01",
 		func(ctx *framework.TestContext) error {
+			namespace, err := schemaNamespace(ctx)
+			if err != nil {
+				return err
+			}
+			if namespace == "" {
+				return framework.NewError("could not determine Product type namespace")
+			}
 			for _, version := range []string{"4.0", "4.01"} {
 				name := "Payload Version " + version
 				payload, err := buildProductPayload(ctx, name, 12.34)
 				if err != nil {
 					return err
+				}
+				if version == "4.0" {
+					payload["@odata.type"] = "#" + namespace + ".Product"
+				} else {
+					payload["@type"] = namespace + ".Product"
 				}
 				resp, err := ctx.POST("/Products", payload,
 					framework.Header{Key: "OData-Version", Value: version})
