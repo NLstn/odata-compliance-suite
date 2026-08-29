@@ -262,5 +262,161 @@ func HeaderODataVersion() *framework.TestSuite {
 		},
 	)
 
+	suite.AddTest(
+		"test_request_payload_supported_versions",
+		"Create payloads declare OData-Version 4.0 and 4.01",
+		func(ctx *framework.TestContext) error {
+			namespace, err := schemaNamespace(ctx)
+			if err != nil {
+				return err
+			}
+			if namespace == "" {
+				return framework.NewError("could not determine Product type namespace")
+			}
+			for _, version := range []string{"4.0", "4.01"} {
+				name := "Payload Version " + version
+				payload, err := buildProductPayload(ctx, name, 12.34)
+				if err != nil {
+					return err
+				}
+				if version == "4.0" {
+					payload["@odata.type"] = "#" + namespace + ".Product"
+				} else {
+					payload["@type"] = namespace + ".Product"
+				}
+				resp, err := ctx.POST("/Products", payload,
+					framework.Header{Key: "OData-Version", Value: version})
+				if err != nil {
+					return err
+				}
+				if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+					return fmt.Errorf("OData-Version %q create status = %d, want 2xx", version, resp.StatusCode)
+				}
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_request_payload_invalid_versions",
+		"Malformed and unsupported payload versions return 4xx without mutation",
+		func(ctx *framework.TestContext) error {
+			for _, version := range []string{"4", "4.1", "4.00", "4.0, 4.01", "4.02", "5.0"} {
+				name := "Rejected Payload Version " + version
+				payload, err := buildProductPayload(ctx, name, 12.34)
+				if err != nil {
+					return err
+				}
+				resp, err := ctx.POST("/Products", payload,
+					framework.Header{Key: "OData-Version", Value: version})
+				if err != nil {
+					return err
+				}
+				if resp.StatusCode < 400 || resp.StatusCode >= 500 {
+					return fmt.Errorf("OData-Version %q create status = %d, want 4xx", version, resp.StatusCode)
+				}
+				if err := assertNoProductNamed(ctx, name); err != nil {
+					return fmt.Errorf("OData-Version %q rejected request mutated data: %w", version, err)
+				}
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_request_payload_repeated_versions",
+		"Repeated and conflicting OData-Version fields return 4xx without mutation",
+		func(ctx *framework.TestContext) error {
+			cases := []struct {
+				name     string
+				versions []string
+			}{
+				{name: "Repeated Payload Version", versions: []string{"4.0", "4.0"}},
+				{name: "Conflicting Payload Version", versions: []string{"4.0", "4.01"}},
+			}
+			for _, test := range cases {
+				payload, err := buildProductPayload(ctx, test.name, 12.34)
+				if err != nil {
+					return err
+				}
+				resp, err := ctx.POST("/Products", payload,
+					framework.Header{Key: "OData-Version", Value: test.versions[0]},
+					framework.Header{Key: "OData-Version", Value: test.versions[1]})
+				if err != nil {
+					return err
+				}
+				if resp.StatusCode < 400 || resp.StatusCode >= 500 {
+					return fmt.Errorf("OData-Version fields %v create status = %d, want 4xx", test.versions, resp.StatusCode)
+				}
+				if err := assertNoProductNamed(ctx, test.name); err != nil {
+					return fmt.Errorf("OData-Version fields %v rejected request mutated data: %w", test.versions, err)
+				}
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_bodyless_request_ignores_payload_version",
+		"A malformed OData-Version does not cause payload-version failure on a bodyless request",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products?$top=1",
+				framework.Header{Key: "OData-Version", Value: "4.1"})
+			if err != nil {
+				return err
+			}
+			return ctx.AssertStatusCode(resp, 200)
+		},
+	)
+
+	suite.AddTest(
+		"test_request_and_response_versions_independent",
+		"A 4.01 payload with OData-MaxVersion 4.0 succeeds and receives a 4.0 response",
+		func(ctx *framework.TestContext) error {
+			payload, err := buildProductPayload(ctx, "Independent Payload Version", 12.34)
+			if err != nil {
+				return err
+			}
+			resp, err := ctx.POST("/Products", payload,
+				framework.Header{Key: "OData-Version", Value: "4.01"},
+				framework.Header{Key: "OData-MaxVersion", Value: "4.0"})
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				return fmt.Errorf("create status = %d, want 2xx", resp.StatusCode)
+			}
+			if version := strings.TrimSpace(resp.Headers.Get("OData-Version")); version != "4.0" {
+				return fmt.Errorf("response OData-Version = %q, want 4.0", version)
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_invalid_payload_version_rejected_before_async",
+		"An invalid payload version with respond-async is rejected immediately without mutation",
+		func(ctx *framework.TestContext) error {
+			const name = "Rejected Async Payload Version"
+			payload, err := buildProductPayload(ctx, name, 12.34)
+			if err != nil {
+				return err
+			}
+			resp, err := ctx.POST("/Products", payload,
+				framework.Header{Key: "OData-Version", Value: "5.0"},
+				framework.Header{Key: "Prefer", Value: "respond-async"})
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode < 400 || resp.StatusCode >= 500 {
+				return fmt.Errorf("invalid async payload-version status = %d, want 4xx", resp.StatusCode)
+			}
+			if location := resp.Headers.Get("Location"); location != "" {
+				return fmt.Errorf("invalid request created async monitor resource %q", location)
+			}
+			return assertNoProductNamed(ctx, name)
+		},
+	)
+
 	return suite
 }
