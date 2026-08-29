@@ -360,6 +360,7 @@ Content-Type: multipart/mixed; boundary=changeset_version_rollback
 --changeset_version_rollback
 Content-Type: application/http
 Content-Transfer-Encoding: binary
+Content-ID: 1
 
 POST Products HTTP/1.1
 Content-Type: application/json
@@ -368,6 +369,7 @@ Content-Type: application/json
 --changeset_version_rollback
 Content-Type: application/http
 Content-Transfer-Encoding: binary
+Content-ID: 2
 
 POST Products HTTP/1.1
 Content-Type: application/json
