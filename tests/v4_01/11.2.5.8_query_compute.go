@@ -17,6 +17,34 @@ func QueryCompute() *framework.TestSuite {
 		"https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part1-protocol.html#sec_SystemQueryOptioncompute",
 	)
 
+	suite.AddTest("test_compute_alias_filter_order_select", "Computed aliases in filter/orderby/select", func(ctx *framework.TestContext) error {
+		r, e := ctx.GET("/Products?$compute=Price mul 2 as Twice&$filter=Twice ge 31 and Twice lt 100&$orderby=Twice desc&$select=Name,Twice", framework.Header{Key: "OData-MaxVersion", Value: "4.01"})
+		if e != nil {
+			return e
+		}
+		if e = ctx.AssertStatusCode(r, 200); e != nil {
+			return e
+		}
+		rows, e := ctx.ParseEntityCollection(r)
+		if e != nil {
+			return e
+		}
+		if len(rows) != 2 {
+			return fmt.Errorf("got %d rows, want 2", len(rows))
+		}
+		for i, want := range []struct {
+			name  string
+			price float64
+		}{{"Wireless Mouse", 59.98}, {"Coffee Mug", 31}} {
+			if rows[i]["Name"] != want.name || rows[i]["Twice"] != want.price {
+				return fmt.Errorf("unexpected row %v", rows[i])
+			}
+			if _, ok := rows[i]["Price"]; ok {
+				return fmt.Errorf("unselected Price returned")
+			}
+		}
+		return nil
+	})
 	// Test 1: Simple $compute with arithmetic — verify PriceWithTax == Price * 1.1.
 	suite.AddTest(
 		"test_compute_arithmetic",
@@ -273,6 +301,29 @@ func QueryCompute() *framework.TestSuite {
 		"test_compute_nested_properties",
 		"$compute with nested properties",
 		func(ctx *framework.TestContext) error {
+			baseline, err := ctx.GET("/Products?$select=ID,ShippingAddress")
+			if err != nil {
+				return err
+			}
+			if err = requireStatusOK(baseline); err != nil {
+				return err
+			}
+			original, err := decodeCollection(baseline)
+			if err != nil {
+				return err
+			}
+			expected := make(map[string]interface{}, len(original))
+			for _, row := range original {
+				id, ok := row["ID"].(string)
+				if !ok {
+					return fmt.Errorf("missing product ID")
+				}
+				expected[id] = nil
+				if address, ok := row["ShippingAddress"].(map[string]interface{}); ok {
+					expected[id] = address["City"]
+				}
+			}
+
 			resp, err := ctx.GET("/Products?$compute=ShippingAddress/City as ShippingCity")
 			if err != nil {
 				return err
@@ -285,6 +336,21 @@ func QueryCompute() *framework.TestSuite {
 			entities, err := decodeCollection(resp)
 			if err != nil {
 				return err
+			}
+
+			for _, entity := range entities {
+				id, ok := entity["ID"].(string)
+				if !ok {
+					return fmt.Errorf("missing computed row ID")
+				}
+				want, ok := expected[id]
+				if !ok {
+					return fmt.Errorf("unexpected product ID %s", id)
+				}
+				got, ok := entity["ShippingCity"]
+				if !ok || got != want {
+					return fmt.Errorf("ShippingCity %v (present %v), expected %v", got, ok, want)
+				}
 			}
 
 			return ensureComputedProperties(entities, "ShippingCity")
