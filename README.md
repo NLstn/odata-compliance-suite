@@ -327,3 +327,11 @@ The reference implementation of [`CONTRACT.md`](./CONTRACT.md) lives in the
 ## License
 
 MIT — see [`LICENSE`](./LICENSE).
+
+### Additional aggregation coverage
+
+The pipeline suite checks nested concatenation, duplicates, heterogeneous result
+shapes, computed alias scope, and paging before filtering or aggregation. The
+hierarchy suite uses `HierarchyNodes` from CONTRACT.md to check ancestors,
+descendants, distance, start nodes, input-set restriction and tree traversal.
+Both extension suites apply to both supported protocol versions.
