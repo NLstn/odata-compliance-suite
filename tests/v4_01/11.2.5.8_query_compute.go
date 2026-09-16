@@ -273,7 +273,7 @@ func QueryCompute() *framework.TestSuite {
 		"test_compute_nested_properties",
 		"$compute with nested properties",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$compute=Address/City as Location")
+			resp, err := ctx.GET("/Products?$compute=ShippingAddress/City as ShippingCity")
 			if err != nil {
 				return err
 			}
@@ -287,7 +287,7 @@ func QueryCompute() *framework.TestSuite {
 				return err
 			}
 
-			return ensureComputedProperties(entities, "Location")
+			return ensureComputedProperties(entities, "ShippingCity")
 		},
 	)
 
