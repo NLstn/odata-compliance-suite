@@ -301,7 +301,30 @@ func QueryCompute() *framework.TestSuite {
 		"test_compute_nested_properties",
 		"$compute with nested properties",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$compute=Address/City as Location")
+			baseline, err := ctx.GET("/Products?$select=ID,ShippingAddress")
+			if err != nil {
+				return err
+			}
+			if err = requireStatusOK(baseline); err != nil {
+				return err
+			}
+			original, err := decodeCollection(baseline)
+			if err != nil {
+				return err
+			}
+			expected := make(map[string]interface{}, len(original))
+			for _, row := range original {
+				id, ok := row["ID"].(string)
+				if !ok {
+					return fmt.Errorf("missing product ID")
+				}
+				expected[id] = nil
+				if address, ok := row["ShippingAddress"].(map[string]interface{}); ok {
+					expected[id] = address["City"]
+				}
+			}
+
+			resp, err := ctx.GET("/Products?$compute=ShippingAddress/City as ShippingCity")
 			if err != nil {
 				return err
 			}
@@ -315,7 +338,22 @@ func QueryCompute() *framework.TestSuite {
 				return err
 			}
 
-			return ensureComputedProperties(entities, "Location")
+			for _, entity := range entities {
+				id, ok := entity["ID"].(string)
+				if !ok {
+					return fmt.Errorf("missing computed row ID")
+				}
+				want, ok := expected[id]
+				if !ok {
+					return fmt.Errorf("unexpected product ID %s", id)
+				}
+				got, ok := entity["ShippingCity"]
+				if !ok || got != want {
+					return fmt.Errorf("ShippingCity %v (present %v), expected %v", got, ok, want)
+				}
+			}
+
+			return ensureComputedProperties(entities, "ShippingCity")
 		},
 	)
 
