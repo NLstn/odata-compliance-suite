@@ -31,5 +31,5 @@ jobs:
       - name: Run compliance suite against go-odata reference server
         env:
           # Pin to a branch/tag/commit of the reference implementation here.
-          GO_ODATA_REF: main
+          GO_ODATA_REF: fix/904-apply-semantics
         run: ./scripts/run-reference.sh -verbose
