@@ -492,6 +492,10 @@ func main() {
 			Suite:   v4_0.QueryApplyRollup,
 		})
 		testSuites = append(testSuites, TestSuiteInfo{
+			Name: "11.2.5.4.4_apply_pipeline", Version: "4.0", Suite: v4_0.QueryApplyPipeline,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{Name: "11.2.5.4.5_apply_hierarchy", Version: "4.0", Suite: v4_0.QueryApplyHierarchy})
+		testSuites = append(testSuites, TestSuiteInfo{
 			Name:    "11.2.5.5_query_count",
 			Version: "4.0",
 			Suite:   v4_0.QueryCount,
