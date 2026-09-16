@@ -244,3 +244,21 @@ v1 hard-codes this reference model. Planned work to broaden applicability:
 
 Until then, the simplest path for a non-`go-odata` service is to expose an
 endpoint that reproduces the model above.
+
+## Recursive hierarchy fixture
+
+`HierarchyNodes` has an Edm.Int32 key `ID`, string `Name`, nullable Edm.Int32
+`ParentID`, and nullable self-navigation `Parent`. Its entity type carries
+`Org.OData.Aggregation.V1.RecursiveHierarchy#Tree` with `NodeProperty` path `ID`
+and `ParentNavigationProperty` path `Parent`.
+
+| ID | Name | ParentID |
+|---|---|---|
+| 1 | Node 1 | null |
+| 2 | Node 2 | 1 |
+| 3 | Node 3 | 1 |
+| 4 | Node 4 | 2 |
+| 5 | Node 5 | null |
+
+Keep this fixture when testing older server versions, so failures demonstrate
+unsupported transformations rather than a missing entity set.
