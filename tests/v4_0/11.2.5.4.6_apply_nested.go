@@ -15,7 +15,7 @@ func ApplyNested() *framework.TestSuite {
         resp, err := ctx.GET("/Products?$apply=" + url.QueryEscape(expr))
         if err != nil { return err }
         if err := ctx.AssertStatusCode(resp, 200); err != nil { return err }
-        var body struct{ Value []map[string]interface{} \`json:"value"\` }
+        var body struct{ Value []map[string]interface{} `json:"value"` }
         if err := json.Unmarshal(resp.Body, &body); err != nil { return err }
         if len(body.Value) != 1 { return fmt.Errorf("nest must return one row, got %d", len(body.Value)) }
         categories, ok := body.Value[0]["Categories"].([]interface{})
