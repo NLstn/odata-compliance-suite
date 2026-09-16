@@ -17,6 +17,34 @@ func QueryCompute() *framework.TestSuite {
 		"https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part1-protocol.html#sec_SystemQueryOptioncompute",
 	)
 
+	suite.AddTest("test_compute_alias_filter_order_select", "Computed aliases in filter/orderby/select", func(ctx *framework.TestContext) error {
+		r, e := ctx.GET("/Products?$compute=Price mul 2 as Twice&$filter=Twice ge 31 and Twice lt 100&$orderby=Twice desc&$select=Name,Twice", framework.Header{Key: "OData-MaxVersion", Value: "4.01"})
+		if e != nil {
+			return e
+		}
+		if e = ctx.AssertStatusCode(r, 200); e != nil {
+			return e
+		}
+		rows, e := ctx.ParseEntityCollection(r)
+		if e != nil {
+			return e
+		}
+		if len(rows) != 2 {
+			return fmt.Errorf("got %d rows, want 2", len(rows))
+		}
+		for i, want := range []struct {
+			name  string
+			price float64
+		}{{"Wireless Mouse", 59.98}, {"Coffee Mug", 31}} {
+			if rows[i]["Name"] != want.name || rows[i]["Twice"] != want.price {
+				return fmt.Errorf("unexpected row %v", rows[i])
+			}
+			if _, ok := rows[i]["Price"]; ok {
+				return fmt.Errorf("unselected Price returned")
+			}
+		}
+		return nil
+	})
 	// Test 1: Simple $compute with arithmetic — verify PriceWithTax == Price * 1.1.
 	suite.AddTest(
 		"test_compute_arithmetic",
