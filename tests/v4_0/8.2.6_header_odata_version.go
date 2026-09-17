@@ -262,7 +262,6 @@ func HeaderODataVersion() *framework.TestSuite {
 		},
 	)
 
-
 	suite.AddTest(
 		"test_request_payload_supported_versions",
 		"Payload-bearing requests accept OData-Version 4.0 and 4.01",
