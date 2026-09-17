@@ -203,7 +203,6 @@ func buildProductPayload(ctx *framework.TestContext, name string, price float64)
 	}, nil
 }
 
-
 func assertNoProductNamed(ctx *framework.TestContext, name string) error {
 	qp := url.Values{}
 	qp.Set("$filter", fmt.Sprintf("Name eq '%s'", strings.ReplaceAll(name, "'", "''")))
