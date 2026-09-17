@@ -182,4 +182,93 @@ func registerHeaderAcceptTests(suite *framework.TestSuite) {
 			return nil
 		},
 	)
+
+\tsuite.AddTest(
+\t\t"Accept quality values choose JSON over Atom",
+\t\t"JSON q=1.0 is selected over Atom q=0.8 when both are supported",
+\t\tfunc(ctx *framework.TestContext) error {
+\t\t\tproductPath, err := firstEntityPath(ctx, "Products")
+\t\t\tif err != nil {
+\t\t\t\treturn err
+\t\t\t}
+\t\t\tresp, err := ctx.GET(productPath, framework.Header{
+\t\t\t\tKey:   "Accept",
+\t\t\t\tValue: "application/json;odata.metadata=minimal;q=1.0, application/atom+xml;q=0.8",
+\t\t\t})
+\t\t\tif err != nil {
+\t\t\t\treturn err
+\t\t\t}
+\t\t\tif resp.StatusCode != http.StatusOK {
+\t\t\t\treturn fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+\t\t\t}
+\t\t\tif contentType := strings.ToLower(resp.Headers.Get("Content-Type")); !strings.Contains(contentType, "application/json") {
+\t\t\t\treturn fmt.Errorf("expected Content-Type application/json for the higher q-value, got %s", contentType)
+\t\t\t}
+\t\t\treturn nil
+\t\t},
+\t)
+
+\tsuite.AddTest(
+\t\t"Accept quality values ignore header order",
+\t\t"JSON q=1.0 is selected over Atom q=0.8 regardless of header order",
+\t\tfunc(ctx *framework.TestContext) error {
+\t\t\tproductPath, err := firstEntityPath(ctx, "Products")
+\t\t\tif err != nil {
+\t\t\t\treturn err
+\t\t\t}
+\t\t\tresp, err := ctx.GET(productPath, framework.Header{
+\t\t\t\tKey:   "Accept",
+\t\t\t\tValue: "application/atom+xml;q=0.8, application/json;odata.metadata=minimal;q=1.0",
+\t\t\t})
+\t\t\tif err != nil {
+\t\t\t\treturn err
+\t\t\t}
+\t\t\tif resp.StatusCode != http.StatusOK {
+\t\t\t\treturn fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+\t\t\t}
+\t\t\tif contentType := strings.ToLower(resp.Headers.Get("Content-Type")); !strings.Contains(contentType, "application/json") {
+\t\t\t\treturn fmt.Errorf("expected Content-Type application/json for the higher q-value, got %s", contentType)
+\t\t\t}
+\t\t\treturn nil
+\t\t},
+\t)
+
+\tsuite.AddTest(
+\t\t"Accept quality values choose Atom",
+\t\t"Atom q=1.0 is selected over JSON q=0 when Atom is supported",
+\t\tfunc(ctx *framework.TestContext) error {
+\t\t\tproductPath, err := firstEntityPath(ctx, "Products")
+\t\t\tif err != nil {
+\t\t\t\treturn err
+\t\t\t}
+
+\t\t\tprobe, err := ctx.GET(productPath, framework.Header{
+\t\t\t\tKey:   "Accept",
+\t\t\t\tValue: "application/atom+xml",
+\t\t\t})
+\t\t\tif err != nil {
+\t\t\t\treturn err
+\t\t\t}
+\t\t\tif probe.StatusCode == http.StatusNotAcceptable ||
+\t\t\t\t!strings.Contains(strings.ToLower(probe.Headers.Get("Content-Type")), "application/atom+xml") {
+\t\t\t\treturn ctx.Skip("service does not support application/atom+xml; skipping Atom quality-value test")
+\t\t\t}
+
+\t\t\tresp, err := ctx.GET(productPath, framework.Header{
+\t\t\t\tKey:   "Accept",
+\t\t\t\tValue: "application/json;q=0, application/atom+xml;q=1.0",
+\t\t\t})
+\t\t\tif err != nil {
+\t\t\t\treturn err
+\t\t\t}
+\t\t\tif resp.StatusCode != http.StatusOK {
+\t\t\t\treturn fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+\t\t\t}
+\t\t\tif contentType := strings.ToLower(resp.Headers.Get("Content-Type")); !strings.Contains(contentType, "application/atom+xml") {
+\t\t\t\treturn fmt.Errorf("expected Content-Type application/atom+xml for the higher q-value, got %s", contentType)
+\t\t\t}
+\t\t\treturn nil
+\t\t},
+\t)
+
 }
