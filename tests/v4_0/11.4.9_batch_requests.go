@@ -238,7 +238,7 @@ INVALID CONTENT
 			if err != nil {
 				return err
 			}
-			batchBody := fmt.Sprintf(\`--batch_version_inherit
+			batchBody := fmt.Sprintf(`--batch_version_inherit
 Content-Type: application/http
 Content-Transfer-Encoding: binary
 
@@ -246,7 +246,7 @@ POST Products HTTP/1.1
 Content-Type: application/json
 
 %s
---batch_version_inherit--\`, payload)
+--batch_version_inherit--`, payload)
 			resp, err := ctx.POSTRaw("/$batch", []byte(batchBody),
 				"multipart/mixed; boundary=batch_version_inherit",
 				framework.Header{Key: "OData-Version", Value: "4.01"},
@@ -276,7 +276,7 @@ Content-Type: application/json
 			if err != nil {
 				return err
 			}
-			batchBody := fmt.Sprintf(\`--batch_version_override
+			batchBody := fmt.Sprintf(`--batch_version_override
 Content-Type: application/http
 Content-Transfer-Encoding: binary
 
@@ -286,7 +286,7 @@ OData-Version: 4.01
 OData-MaxVersion: 4.0
 
 %s
---batch_version_override--\`, payload)
+--batch_version_override--`, payload)
 			resp, err := ctx.POSTRaw("/$batch", []byte(batchBody),
 				"multipart/mixed; boundary=batch_version_override",
 				framework.Header{Key: "OData-Version", Value: "4.0"},
@@ -317,7 +317,7 @@ OData-MaxVersion: 4.0
 			if err != nil {
 				return err
 			}
-			batchBody := fmt.Sprintf(\`--batch_invalid_version
+			batchBody := fmt.Sprintf(`--batch_invalid_version
 Content-Type: application/http
 Content-Transfer-Encoding: binary
 
@@ -326,7 +326,7 @@ Content-Type: application/json
 OData-Version: 4.02
 
 %s
---batch_invalid_version--\`, payload)
+--batch_invalid_version--`, payload)
 			resp, err := ctx.POSTRaw("/$batch", []byte(batchBody),
 				"multipart/mixed; boundary=batch_invalid_version",
 				framework.Header{Key: "OData-Version", Value: "4.0"})
@@ -358,7 +358,7 @@ OData-Version: 4.02
 			if err != nil {
 				return err
 			}
-			batchBody := fmt.Sprintf(\`--batch_version_rollback
+			batchBody := fmt.Sprintf(`--batch_version_rollback
 Content-Type: multipart/mixed; boundary=changeset_version_rollback
 
 --changeset_version_rollback
@@ -381,7 +381,7 @@ OData-Version: 4.02
 
 %s
 --changeset_version_rollback--
---batch_version_rollback--\`, firstPayload, secondPayload)
+--batch_version_rollback--`, firstPayload, secondPayload)
 			resp, err := ctx.POSTRaw("/$batch", []byte(batchBody),
 				"multipart/mixed; boundary=batch_version_rollback",
 				framework.Header{Key: "OData-Version", Value: "4.0"})
