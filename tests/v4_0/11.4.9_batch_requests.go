@@ -27,7 +27,6 @@ func BatchRequests() *framework.TestSuite {
 		return fmt.Sprintf("Products(%s)", ids[index]), nil
 	}
 
-
 	productJSON := func(ctx *framework.TestContext, name string) (string, error) {
 		payload, err := buildProductPayload(ctx, name, 12.34)
 		if err != nil {
@@ -75,7 +74,6 @@ Content-Transfer-Encoding: binary
 GET %s HTTP/1.1
 Accept: application/json
 
-
 --batch_boundary--`, segment)
 
 			resp, err := ctx.POSTRaw("/$batch", []byte(batchBody), "multipart/mixed; boundary=batch_boundary")
@@ -102,7 +100,6 @@ Content-Transfer-Encoding: binary
 
 GET %s HTTP/1.1
 Accept: application/json
-
 
 --batch_boundary--`, segment)
 
@@ -142,7 +139,6 @@ Content-Transfer-Encoding: binary
 GET %s HTTP/1.1
 Accept: application/json
 
-
 --batch_boundary--`, segment)
 
 			resp, err := ctx.POSTRaw("/$batch", []byte(batchBody), "multipart/mixed; boundary=batch_boundary")
@@ -181,14 +177,12 @@ Content-Transfer-Encoding: binary
 GET %s HTTP/1.1
 Accept: application/json
 
-
 --batch_boundary
 Content-Type: application/http
 Content-Transfer-Encoding: binary
 
 GET %s HTTP/1.1
 Accept: application/json
-
 
 --batch_boundary--`, firstSegment, secondSegment)
 
@@ -228,7 +222,6 @@ INVALID CONTENT
 			return ctx.AssertStatusCode(resp, 400)
 		},
 	)
-
 
 	suite.AddTest(
 		"test_batch_part_inherits_versions",
