@@ -525,7 +525,11 @@ func (c *TestContext) requestWithOptions(method, path string, body interface{}, 
 		if strings.EqualFold(h.Key, "Content-Type") {
 			contentTypeSet = true
 		}
-		req.Header.Set(h.Key, h.Value)
+		if strings.EqualFold(h.Key, "OData-Version") && len(req.Header.Values(h.Key)) > 0 {
+			req.Header.Add(h.Key, h.Value)
+		} else {
+			req.Header.Set(h.Key, h.Value)
+		}
 	}
 	if body != nil && !contentTypeSet && !options.skipDefaultContentType {
 		// Default to JSON for structured payloads
