@@ -117,7 +117,7 @@ func JSONBatch() *framework.TestSuite {
 		if err := ctx.AssertStatusCode(resp, 200); err != nil {
 			return "", err
 		}
-		match := regexp.MustCompile(`EntityType="([^"]+)\\.Product"`).FindSubmatch(resp.Body)
+		match := regexp.MustCompile(`EntityType="([^"]+)\.Product"`).FindSubmatch(resp.Body)
 		if match == nil {
 			return "", framework.NewError("could not determine Product type namespace")
 		}
@@ -609,7 +609,7 @@ func JSONBatch() *framework.TestSuite {
 					"Name":  name,
 					"Price": 12.34,
 				},
-			}), 
+			}),
 				framework.Header{Key: "OData-Version", Value: "4.01"},
 				framework.Header{Key: "OData-MaxVersion", Value: "4.01"})
 			if err != nil {
