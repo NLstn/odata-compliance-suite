@@ -133,6 +133,47 @@ func TestSuiteRunDoesNotReseedWhenAllPerTestCapabilitiesAreUnsupported(t *testin
 	}
 }
 
+func TestRequestPreservesRepeatedODataVersionHeaders(t *testing.T) {
+	var versions []string
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path == "/Reseed" {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(`{}`)),
+				Request:    req,
+			}, nil
+		}
+		versions = req.Header.Values("OData-Version")
+		return &http.Response{
+			StatusCode: http.StatusBadRequest,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{}`)),
+			Request:    req,
+		}, nil
+	})}
+
+	suite := framework.NewTestSuite("headers", "headers", "https://example.test/spec")
+	suite.ServerURL = "http://example.test"
+	suite.Client = client
+	suite.Out = io.Discard
+	suite.Quiet = true
+	suite.AddTest("repeated", "repeated", func(ctx *framework.TestContext) error {
+		_, err := ctx.POST("/Products", map[string]interface{}{},
+			framework.Header{Key: "OData-Version", Value: "4.0"},
+			framework.Header{Key: "OData-Version", Value: "4.01"},
+		)
+		return err
+	})
+
+	if err := suite.Run(); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(versions) != 2 || versions[0] != "4.0" || versions[1] != "4.01" {
+		t.Fatalf("OData-Version values = %v, want [4.0 4.01]", versions)
+	}
+}
+
 func TestAssertEntityOnlyAllowedFieldsIgnoresODataAnnotationsButCatchesLeaks(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
