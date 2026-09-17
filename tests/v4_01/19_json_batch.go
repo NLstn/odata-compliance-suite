@@ -77,7 +77,6 @@ func JSONBatch() *framework.TestSuite {
 		return nil
 	}
 
-
 	assertNoProductNamed := func(ctx *framework.TestContext, name string) error {
 		query := url.Values{}
 		query.Set("$filter", fmt.Sprintf("Name eq '%s'", strings.ReplaceAll(name, "'", "''")))
@@ -536,7 +535,6 @@ func JSONBatch() *framework.TestSuite {
 			))
 		},
 	)
-
 
 	suite.AddTest(
 		"test_json_batch_part_inherits_versions",
