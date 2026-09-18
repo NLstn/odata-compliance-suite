@@ -103,7 +103,6 @@ func AnnotationsMetadata() *framework.TestSuite {
 		},
 	)
 
-
 	suite.AddTest(
 		"test_annotation_terms_are_qualified",
 		"Every CSDL Annotation has a namespace- or alias-qualified Term",
