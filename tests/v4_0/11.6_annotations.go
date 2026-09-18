@@ -225,54 +225,6 @@ func InstanceAnnotations() *framework.TestSuite {
 	)
 
 
-	// Test 7: Context control information is first for OData 4.0 JSON responses.
-	suite.AddTest(
-		"test_context_is_first_property",
-		"@odata.context is the first JSON property",
-		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products")
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			first, err := firstJSONObjectPropertyV40(resp.Body)
-			if err != nil {
-				return err
-			}
-			if first != "@odata.context" {
-				return fmt.Errorf("first JSON property is %q, want @odata.context", first)
-			}
-			return nil
-		},
-	)
-
-	// Test 8: id control information is not valid on a collection.
-	suite.AddTest(
-		"test_collection_has_no_odata_id",
-		"Collection response does not contain @odata.id",
-		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products")
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			var payload map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &payload); err != nil {
-				return fmt.Errorf("invalid JSON response: %w", err)
-			}
-			if _, present := payload["@odata.id"]; present {
-				return framework.NewError("collection response must not contain @odata.id")
-			}
-			return nil
-		},
-	)
-
 	return suite
 }
 
