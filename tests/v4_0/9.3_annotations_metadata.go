@@ -1,6 +1,8 @@
 package v4_0
 
 import (
+	"encoding/xml"
+	"io"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -101,5 +103,66 @@ func AnnotationsMetadata() *framework.TestSuite {
 		},
 	)
 
+
+	suite.AddTest(
+		"test_annotation_terms_are_qualified",
+		"Every CSDL Annotation has a namespace- or alias-qualified Term",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/$metadata", framework.Header{Key: "Accept", Value: "application/xml"})
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			decoder := xml.NewDecoder(strings.NewReader(string(resp.Body)))
+			annotationCount := 0
+			schemaCount := 0
+			for {
+				token, err := decoder.Token()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					return framework.NewError("metadata is not valid XML: " + err.Error())
+				}
+				start, ok := token.(xml.StartElement)
+				if !ok {
+					continue
+				}
+				switch start.Name.Local {
+				case "Schema":
+					schemaCount++
+					if attributeValue(start.Attr, "Namespace") == "" {
+						return framework.NewError("Schema is missing its required Namespace attribute")
+					}
+				case "Annotation":
+					annotationCount++
+					term := attributeValue(start.Attr, "Term")
+					if term == "" || !strings.Contains(term, ".") {
+						return framework.NewError("Annotation Term must be namespace- or alias-qualified")
+					}
+				}
+			}
+			if schemaCount == 0 {
+				return framework.NewError("metadata contains no Schema elements")
+			}
+			if annotationCount == 0 {
+				return framework.NewError("metadata contains no Annotation elements")
+			}
+			return nil
+		},
+	)
+
 	return suite
+}
+
+func attributeValue(attributes []xml.Attr, name string) string {
+	for _, attribute := range attributes {
+		if attribute.Name.Local == name {
+			return attribute.Value
+		}
+	}
+	return ""
 }
