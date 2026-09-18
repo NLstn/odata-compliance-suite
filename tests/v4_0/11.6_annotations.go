@@ -175,7 +175,6 @@ func InstanceAnnotations() *framework.TestSuite {
 		},
 	)
 
-
 	// Test 7: Context control information is first for OData 4.0 JSON responses.
 	suite.AddTest(
 		"test_context_is_first_property",
@@ -223,7 +222,6 @@ func InstanceAnnotations() *framework.TestSuite {
 			return nil
 		},
 	)
-
 
 	return suite
 }
