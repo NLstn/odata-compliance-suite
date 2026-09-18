@@ -873,7 +873,7 @@ func main() {
 			Suite:   v4_01.MetadataDocuments,
 		})
 		testSuites = append(testSuites, TestSuiteInfo{
-			Name:    "10.2_json_control_information_4_01",
+			Name:    "10.2_json_control_4_01",
 			Version: "4.01",
 			Suite:   v4_01.JSONControlInformation,
 		})
@@ -1050,7 +1050,7 @@ func main() {
 		"9.3_annotations_metadata":       {framework.LevelMinimal, "Metadata"},
 		"11.2.12_query_schemaversion":    {framework.LevelAdvanced, "Metadata"},
 		"9.2_metadata_documents_4_01":    {framework.LevelAdvanced, "Metadata"},
-		"10.2_json_control_information_4_01": {framework.LevelAdvanced, "Metadata"},
+		"10.2_json_control_4_01": {framework.LevelAdvanced, "Metadata"},
 		// --- Data Types ---
 		"4.1_nominal_types":              {framework.LevelMinimal, "Data Types"},
 		"4.2_structured_types":           {framework.LevelMinimal, "Data Types"},
