@@ -123,6 +123,78 @@ func MetadataDocuments() *framework.TestSuite {
 		},
 	)
 
+
+	suite.AddTest(
+		"test_json_csdl_entity_sets_and_annotations",
+		"JSON CSDL entity sets have collection/type shape and annotations use qualified terms",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/$metadata",
+				framework.Header{Key: "Accept", Value: "application/json"},
+				framework.Header{Key: "OData-MaxVersion", Value: "4.01"},
+			)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			var document map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &document); err != nil {
+				return fmt.Errorf("invalid JSON CSDL: %w", err)
+			}
+			qualifiedContainer, ok := document["$EntityContainer"].(string)
+			if !ok || qualifiedContainer == "" {
+				return fmt.Errorf("JSON CSDL is missing a qualified $EntityContainer")
+			}
+			dot := strings.LastIndex(qualifiedContainer, ".")
+			if dot <= 0 || dot == len(qualifiedContainer)-1 {
+				return fmt.Errorf("JSON CSDL $EntityContainer %q is not namespace-qualified", qualifiedContainer)
+			}
+			schema, ok := document[qualifiedContainer[:dot]].(map[string]interface{})
+			if !ok {
+				return fmt.Errorf("JSON CSDL schema %q is missing", qualifiedContainer[:dot])
+			}
+			container, ok := schema[qualifiedContainer[dot+1:]].(map[string]interface{})
+			if !ok {
+				return fmt.Errorf("JSON CSDL entity container %q is missing", qualifiedContainer)
+			}
+
+			entitySetCount := 0
+			for name, raw := range container {
+				if strings.HasPrefix(name, "$") {
+					continue
+				}
+				entitySet, ok := raw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if _, hasCollection := entitySet["$Collection"]; !hasCollection {
+					continue
+				}
+				entitySetCount++
+				if collection, ok := entitySet["$Collection"].(bool); !ok || !collection {
+					return fmt.Errorf("entity set %q must declare $Collection=true", name)
+				}
+				if typeName, ok := entitySet["$Type"].(string); !ok || typeName == "" {
+					return fmt.Errorf("entity set %q must declare a non-empty $Type", name)
+				}
+			}
+			if entitySetCount == 0 {
+				return fmt.Errorf("JSON CSDL entity container contains no collection entity sets")
+			}
+
+			annotationCount, err := countQualifiedJSONCSDLAnnotations(document)
+			if err != nil {
+				return err
+			}
+			if annotationCount == 0 {
+				return fmt.Errorf("JSON CSDL contains no qualified annotations")
+			}
+			return nil
+		},
+	)
+
 	return suite
 }
 
@@ -157,4 +229,37 @@ func validateXMLCSDL(resp *framework.HTTPResponse, expectedVersion string) error
 		return fmt.Errorf("DataServices must contain at least one Schema")
 	}
 	return nil
+}
+
+func countQualifiedJSONCSDLAnnotations(value interface{}) (int, error) {
+	switch current := value.(type) {
+	case map[string]interface{}:
+		count := 0
+		for key, child := range current {
+			if strings.HasPrefix(key, "@") {
+				if len(key) < 3 || !strings.Contains(key[1:], ".") {
+					return 0, fmt.Errorf("JSON CSDL annotation key %q is not namespace- or alias-qualified", key)
+				}
+				count++
+			}
+			childCount, err := countQualifiedJSONCSDLAnnotations(child)
+			if err != nil {
+				return 0, err
+			}
+			count += childCount
+		}
+		return count, nil
+	case []interface{}:
+		count := 0
+		for _, child := range current {
+			childCount, err := countQualifiedJSONCSDLAnnotations(child)
+			if err != nil {
+				return 0, err
+			}
+			count += childCount
+		}
+		return count, nil
+	default:
+		return 0, nil
+	}
 }
