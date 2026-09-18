@@ -883,6 +883,11 @@ func main() {
 			Suite:   v4_01.KeyAsSegments,
 		})
 		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "11.2.1_additional_resource_paths_4_01",
+			Version: "4.01",
+			Suite:   v4_01.AdditionalResourcePaths,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
 			Name:    "11.2.5.9_nested_expand_options",
 			Version: "4.01",
 			Suite:   v4_01.NestedExpandOptions,
@@ -1111,6 +1116,7 @@ func main() {
 		"11.1_resource_path":            {framework.LevelMinimal, "Entity Read"},
 		"11.2.1_addressing_entities":    {framework.LevelMinimal, "Entity Read"},
 		"11.2.1_key_as_segments":        {framework.LevelMinimal, "Entity Read"},
+		"11.2.1_additional_resource_paths_4_01": {framework.LevelAdvanced, "Resource Paths"},
 		"11.2.2_canonical_url":          {framework.LevelMinimal, "Entity Read"},
 		"11.2.3_property_access":        {framework.LevelMinimal, "Entity Read"},
 		"11.2.4_collection_operations":  {framework.LevelMinimal, "Entity Read"},
