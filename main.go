@@ -13,8 +13,10 @@ import (
 	"github.com/nlstn/odata-compliance-suite/framework"
 	v4_0 "github.com/nlstn/odata-compliance-suite/tests/v4_0"
 	v4_01 "github.com/nlstn/odata-compliance-suite/tests/v4_01"
+	"github.com/nlstn/odata-compliance-suite/tests/vocabularies/aggregation"
 	"github.com/nlstn/odata-compliance-suite/tests/vocabularies/capabilities"
 	"github.com/nlstn/odata-compliance-suite/tests/vocabularies/core"
+	"github.com/nlstn/odata-compliance-suite/tests/vocabularies/validation"
 )
 
 const validFormats = "text, junit, json, sarif"
@@ -806,6 +808,16 @@ func main() {
 			Version: "vocabularies",
 			Suite:   core.OperationAvailableAnnotation,
 		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "vocab_core_long_description",
+			Version: "vocabularies",
+			Suite:   core.LongDescriptionAnnotation,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "vocab_core_optimistic_concurrency",
+			Version: "vocabularies",
+			Suite:   core.OptimisticConcurrencyAnnotation,
+		})
 
 		// Capabilities vocabulary tests
 		testSuites = append(testSuites, TestSuiteInfo{
@@ -847,6 +859,35 @@ func main() {
 			Name:    "vocab_capabilities_select_support",
 			Version: "vocabularies",
 			Suite:   capabilities.SelectSupport,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "vocab_capabilities_read",
+			Version: "vocabularies",
+			Suite:   capabilities.ReadRestrictions,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "vocab_capabilities_change_tracking",
+			Version: "vocabularies",
+			Suite:   capabilities.ChangeTracking,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "vocab_capabilities_reference_query_restrictions",
+			Version: "vocabularies",
+			Suite:   capabilities.ReferenceQueryRestrictions,
+		})
+
+		// Aggregation vocabulary tests
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "vocab_aggregation_recursive_hierarchy",
+			Version: "vocabularies",
+			Suite:   aggregation.RecursiveHierarchyAnnotation,
+		})
+
+		// Validation vocabulary tests
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "vocab_validation_pattern",
+			Version: "vocabularies",
+			Suite:   validation.PatternAnnotation,
 		})
 	}
 
