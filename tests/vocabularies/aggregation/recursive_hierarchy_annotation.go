@@ -153,6 +153,12 @@ func recursiveHierarchy(metadataXML []byte) (hierarchyAnnotation, error) {
 			}
 			if inside && node.Name.Local == "PropertyValue" {
 				currentProperty = xmlAttribute(node, "Property")
+				if currentProperty == "NodeProperty" {
+					result.nodeProperty = xmlAttribute(node, "PropertyPath")
+				}
+				if currentProperty == "ParentNavigationProperty" {
+					result.parentNavigationProperty = xmlAttribute(node, "NavigationPropertyPath")
+				}
 			}
 			if inside && (node.Name.Local == "PropertyPath" || node.Name.Local == "NavigationPropertyPath") {
 				var value string
