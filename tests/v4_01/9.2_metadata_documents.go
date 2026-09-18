@@ -123,7 +123,6 @@ func MetadataDocuments() *framework.TestSuite {
 		},
 	)
 
-
 	suite.AddTest(
 		"test_json_csdl_entity_sets_and_annotations",
 		"JSON CSDL entity sets have collection/type shape and annotations use qualified terms",
