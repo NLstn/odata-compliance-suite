@@ -258,7 +258,7 @@ func AddressingEntities() *framework.TestSuite {
 	// A missing implementation is a compliance failure; the test must not skip 404/501.
 	suite.AddTest(
 		"test_crossjoin_basic",
-		"$crossjoin(Products,Categories) returns cross-product with properties from both sets (§4.14)",
+		"$crossjoin(Products,Categories) returns cross-product with properties from both sets (§4.15)",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/$crossjoin(Products,Categories)?$top=5")
 			if err != nil {
