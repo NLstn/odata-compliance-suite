@@ -1,9 +1,11 @@
 package v4_0
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -137,10 +139,14 @@ func InstanceAnnotations() *framework.TestSuite {
 				return err
 			}
 
-			// @odata.context should not be present
-			body := string(resp.Body)
-			if framework.ContainsAny(body, `"@odata.context"`) {
-				return framework.NewError("@odata.context should not be present in metadata=none")
+			var payload map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &payload); err != nil {
+				return fmt.Errorf("invalid JSON response: %w", err)
+			}
+			for key := range payload {
+				if strings.HasPrefix(key, "@odata.") {
+					return framework.NewError(fmt.Sprintf("metadata=none should omit control information %q", key))
+				}
 			}
 
 			return nil
@@ -169,5 +175,123 @@ func InstanceAnnotations() *framework.TestSuite {
 		},
 	)
 
+
+	// Test 7: Context control information is first for OData 4.0 JSON responses.
+	suite.AddTest(
+		"test_context_is_first_property",
+		"@odata.context is the first JSON property",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			first, err := firstJSONObjectPropertyV40(resp.Body)
+			if err != nil {
+				return err
+			}
+			if first != "@odata.context" {
+				return fmt.Errorf("first JSON property is %q, want @odata.context", first)
+			}
+			return nil
+		},
+	)
+
+	// Test 8: id control information is not valid on a collection.
+	suite.AddTest(
+		"test_collection_has_no_odata_id",
+		"Collection response does not contain @odata.id",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			var payload map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &payload); err != nil {
+				return fmt.Errorf("invalid JSON response: %w", err)
+			}
+			if _, present := payload["@odata.id"]; present {
+				return framework.NewError("collection response must not contain @odata.id")
+			}
+			return nil
+		},
+	)
+
+
+	// Test 7: Context control information is first for OData 4.0 JSON responses.
+	suite.AddTest(
+		"test_context_is_first_property",
+		"@odata.context is the first JSON property",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			first, err := firstJSONObjectPropertyV40(resp.Body)
+			if err != nil {
+				return err
+			}
+			if first != "@odata.context" {
+				return fmt.Errorf("first JSON property is %q, want @odata.context", first)
+			}
+			return nil
+		},
+	)
+
+	// Test 8: id control information is not valid on a collection.
+	suite.AddTest(
+		"test_collection_has_no_odata_id",
+		"Collection response does not contain @odata.id",
+		func(ctx *framework.TestContext) error {
+			resp, err := ctx.GET("/Products")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, 200); err != nil {
+				return err
+			}
+
+			var payload map[string]interface{}
+			if err := json.Unmarshal(resp.Body, &payload); err != nil {
+				return fmt.Errorf("invalid JSON response: %w", err)
+			}
+			if _, present := payload["@odata.id"]; present {
+				return framework.NewError("collection response must not contain @odata.id")
+			}
+			return nil
+		},
+	)
+
 	return suite
+}
+
+func firstJSONObjectPropertyV40(body []byte) (string, error) {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	token, err := decoder.Token()
+	if err != nil {
+		return "", fmt.Errorf("read JSON object: %w", err)
+	}
+	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
+		return "", fmt.Errorf("JSON response root is %v, want object", token)
+	}
+	token, err = decoder.Token()
+	if err != nil {
+		return "", fmt.Errorf("read first JSON property: %w", err)
+	}
+	name, ok := token.(string)
+	if !ok {
+		return "", fmt.Errorf("first JSON property token is %T, want string", token)
+	}
+	return name, nil
 }
