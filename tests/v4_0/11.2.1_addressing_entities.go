@@ -254,9 +254,8 @@ func AddressingEntities() *framework.TestSuite {
 		},
 	)
 
-	// $crossjoin(E1,E2) addresses the Cartesian product of two entity sets (OData Part 2 §4.14).
-	// go-odata does not implement this endpoint; the test skips on 404/501 and validates
-	// the response structure if the server returns 200.
+	// $crossjoin(E1,E2) addresses the Cartesian product of two entity sets (OData Part 2 §4.15).
+	// A missing implementation is a compliance failure; the test must not skip 404/501.
 	suite.AddTest(
 		"test_crossjoin_basic",
 		"$crossjoin(Products,Categories) returns cross-product with properties from both sets (§4.14)",
@@ -264,9 +263,6 @@ func AddressingEntities() *framework.TestSuite {
 			resp, err := ctx.GET("/$crossjoin(Products,Categories)?$top=5")
 			if err != nil {
 				return err
-			}
-			if resp.StatusCode == 404 || resp.StatusCode == 501 {
-				return ctx.Skip("$crossjoin not implemented (404/501)")
 			}
 			if err := ctx.AssertStatusCode(resp, 200); err != nil {
 				return err
@@ -280,7 +276,7 @@ func AddressingEntities() *framework.TestSuite {
 				return fmt.Errorf("$crossjoin response missing 'value' array")
 			}
 			if len(rows) == 0 {
-				return ctx.Skip("$crossjoin returned empty result set — cannot validate row structure")
+				return fmt.Errorf("$crossjoin returned an empty Cartesian product")
 			}
 			// Each row must be an object; the spec requires @id on each item.
 			for i, r := range rows {
