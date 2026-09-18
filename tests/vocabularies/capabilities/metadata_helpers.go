@@ -224,6 +224,66 @@ func parseCapabilitiesMetadata(metadataXML []byte) (capabilitiesMetadata, error)
 	return capability, nil
 }
 
+func capabilityBoolean(metadataXML []byte, setName, term, property string) (bool, bool, error) {
+	var doc metadataDocument
+	if err := xml.Unmarshal(metadataXML, &doc); err != nil {
+		return false, false, fmt.Errorf("failed to parse metadata XML: %w", err)
+	}
+
+	fullTerm := term
+	if !strings.Contains(term, ".") {
+		fullTerm = "Org.OData.Capabilities.V1." + term
+	}
+
+	for _, schema := range doc.DataServices.Schemas {
+		for _, block := range schema.Annotations {
+			if !strings.HasSuffix(block.Target, "/"+setName) {
+				continue
+			}
+			for _, ann := range block.Annotations {
+				if ann.Term != fullTerm && ann.Term != "Capabilities."+term {
+					continue
+				}
+				if ann.Record == nil {
+					return false, false, nil
+				}
+				for _, value := range ann.Record.PropertyValues {
+					if value.Property == property && value.Bool != nil {
+						return *value.Bool, true, nil
+					}
+				}
+			}
+		}
+	}
+	return false, false, nil
+}
+
+func entitySetInfoFromMetadata(metadataXML []byte, name string) (entitySetInfo, error) {
+	var doc metadataDocument
+	if err := xml.Unmarshal(metadataXML, &doc); err != nil {
+		return entitySetInfo{}, fmt.Errorf("failed to parse metadata XML: %w", err)
+	}
+
+	entityTypes := make(map[string]entityTypeInfo)
+	entitySets := make(map[string]string)
+	for _, schema := range doc.DataServices.Schemas {
+		for _, typ := range schema.EntityTypes {
+			info := entityTypeInfo{propertyType: make(map[string]string)}
+			for _, ref := range typ.Key.PropertyRefs {
+				info.keys = append(info.keys, ref.Name)
+			}
+			for _, prop := range typ.Properties {
+				info.propertyType[prop.Name] = prop.Type
+			}
+			entityTypes[schema.Namespace+"."+typ.Name] = info
+		}
+		for _, set := range schema.EntityContainer.EntitySets {
+			entitySets[set.Name] = set.EntityType
+		}
+	}
+	return buildEntitySetInfo(name, entitySets, entityTypes)
+}
+
 func buildEntitySetInfo(setName string, entitySetTypes map[string]string, entityTypeMap map[string]entityTypeInfo) (entitySetInfo, error) {
 	entityType, ok := entitySetTypes[setName]
 	if !ok {

@@ -13,7 +13,7 @@ can all be measured the same way.
 
 ## What it checks
 
-162 suites / 1,188 individual tests across:
+170+ suites / 1,200+ individual tests across:
 
 - Service document & metadata (`$metadata` XML + JSON)
 - Query options: `$filter`, `$select`, `$orderby`, `$top`, `$skip`, `$expand`,
@@ -24,7 +24,7 @@ can all be measured the same way.
 - HTTP headers, content negotiation, conditional requests, ETags
 - Error response shape and consistency
 - Functions & actions (incl. overloading), async processing
-- Vocabulary annotations: Core, Capabilities
+- Vocabulary annotations: Core, Capabilities, Aggregation, Validation
 - OData 4.01-specific features (`in` operator, `divby`, key-as-segments,
   JSON batch, wildcard `$select`/`$expand`, `matchesPattern`, …)
 

@@ -47,7 +47,7 @@ Plus one **singleton**: `Company`.
 | Property          | EDM type                  | Nullable | Notes                                            |
 |-------------------|---------------------------|----------|--------------------------------------------------|
 | `ID`              | Edm.Guid                  | no       | Key, server-generated                            |
-| `Name`            | Edm.String (max 100)      | no       | Searchable; `Core.Description` annotation        |
+| `Name`            | Edm.String (max 100)      | no       | Searchable; Core Description/LongDescription and Validation Pattern annotations |
 | `Description`     | Edm.String (max 500)      | yes      | `Core.Description` annotation                    |
 | `Price`           | Edm.Double                | no       | precision 10, scale 2 (note: **Double**, not Decimal) |
 | `Rating`          | Edm.Byte                  | no       |                                                  |
@@ -62,7 +62,7 @@ Plus one **singleton**: `Company`.
 | `Offset`          | Edm.Duration              | yes      |                                                  |
 | `CategoryID`      | Edm.Guid                  | yes      | FK to `Categories`                               |
 | `Status`          | `ProductStatus` (enum, flags) | no   | see [Enum types](#enum-types)                    |
-| `Version`         | Edm.Int32                 | no       | **ETag** source; increments on update            |
+| `Version`         | Edm.Int32                 | no       | **ETag** source; increments on update; referenced by `Core.OptimisticConcurrency` |
 | `CreatedAt`       | Edm.DateTimeOffset        | no       | `Core.Computed`                                  |
 | `SerialNumber`    | Edm.String (max 50)       | yes      | `Core.Immutable`, `Core.Description`             |
 | `ProductType`     | Edm.String (max 50)       | no       | Discriminator (`Product` / `SpecialProduct`)     |
@@ -115,6 +115,34 @@ Properties: `ID` (key), `Name`. Carries entity-set capability annotations:
 - `Org.OData.Capabilities.V1.InsertRestrictions` → `Insertable: false`
 - `Org.OData.Capabilities.V1.UpdateRestrictions` → `Updatable: false`
 - `Org.OData.Capabilities.V1.DeleteRestrictions` → `Deletable: false`
+- `Org.OData.Capabilities.V1.FilterRestrictions` → `Filterable: false`
+- `Org.OData.Capabilities.V1.SortRestrictions` → `Sortable: false`
+- `Org.OData.Capabilities.V1.ExpandRestrictions` → `Expandable: false`
+- `Org.OData.Capabilities.V1.CountRestrictions` → `Countable: false`
+- `Org.OData.Capabilities.V1.SearchRestrictions` → `Searchable: false`
+- `Org.OData.Capabilities.V1.SelectSupport` → `Supported: false`
+
+The server must reject the corresponding prohibited query options with an OData
+`400 Bad Request` response. Advertising a restriction without enforcing it is
+not sufficient.
+
+### Vocabulary reference annotations
+
+The reference model carries the following positive annotations so vocabulary
+tests cannot pass solely by skipping optional terms:
+
+- `Products` entity set: `Capabilities.ReadRestrictions` with `Readable: true`
+- `Products` entity set: `Capabilities.ChangeTracking` with `Supported: true`
+- `Product/Name`: `Core.LongDescription` with value
+  `The customer-facing product name used in catalog listings and search results.`
+- `Products` entity set: `Core.OptimisticConcurrency` containing the `Version`
+  `PropertyPath`
+- `Product/Name`: `Validation.Pattern` with value
+  `^[A-Za-z0-9][A-Za-z0-9 -]{0,99}$`
+
+The existing `HierarchyNodes` fixture supplies
+`Aggregation.RecursiveHierarchy#Tree`; its record values must use
+`PropertyPath` for `ID` and `NavigationPropertyPath` for `Parent`.
 
 ### `DecimalSamples`
 
