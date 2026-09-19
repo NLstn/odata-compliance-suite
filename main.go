@@ -409,6 +409,11 @@ func main() {
 			Suite:   v4_0.MetadataDocument,
 		})
 		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "9.2.1_metadata_reference_integrity",
+			Version: "4.0",
+			Suite:   v4_0.MetadataReferenceIntegrity,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
 			Name:    "9.3_annotations_metadata",
 			Version: "4.0",
 			Suite:   v4_0.AnnotationsMetadata,
@@ -1097,16 +1102,17 @@ func main() {
 		"2.1_conformance":      {framework.LevelMinimal, "Service Discovery"},
 		"9.1_service_document": {framework.LevelMinimal, "Service Discovery"},
 		// --- Metadata ---
-		"3.1_edmx_element":               {framework.LevelMinimal, "Metadata"},
-		"3.2_dataservices_element":       {framework.LevelMinimal, "Metadata"},
-		"3.3_reference_element":          {framework.LevelMinimal, "Metadata"},
-		"3.4_include_element":            {framework.LevelMinimal, "Metadata"},
-		"3.5_includeannotations_element": {framework.LevelMinimal, "Metadata"},
-		"9.2_metadata_document":          {framework.LevelMinimal, "Metadata"},
-		"9.3_annotations_metadata":       {framework.LevelMinimal, "Metadata"},
-		"11.2.12_query_schemaversion":    {framework.LevelAdvanced, "Metadata"},
-		"9.2_metadata_documents_4_01":    {framework.LevelAdvanced, "Metadata"},
-		"10.2_json_control_4_01":         {framework.LevelAdvanced, "Metadata"},
+		"3.1_edmx_element":                   {framework.LevelMinimal, "Metadata"},
+		"3.2_dataservices_element":           {framework.LevelMinimal, "Metadata"},
+		"3.3_reference_element":              {framework.LevelMinimal, "Metadata"},
+		"3.4_include_element":                {framework.LevelMinimal, "Metadata"},
+		"3.5_includeannotations_element":     {framework.LevelMinimal, "Metadata"},
+		"9.2_metadata_document":              {framework.LevelMinimal, "Metadata"},
+		"9.2.1_metadata_reference_integrity": {framework.LevelMinimal, "Metadata"},
+		"9.3_annotations_metadata":           {framework.LevelMinimal, "Metadata"},
+		"11.2.12_query_schemaversion":        {framework.LevelAdvanced, "Metadata"},
+		"9.2_metadata_documents_4_01":        {framework.LevelAdvanced, "Metadata"},
+		"10.2_json_control_4_01":             {framework.LevelAdvanced, "Metadata"},
 		// --- Data Types ---
 		"4.1_nominal_types":              {framework.LevelMinimal, "Data Types"},
 		"4.2_structured_types":           {framework.LevelMinimal, "Data Types"},
