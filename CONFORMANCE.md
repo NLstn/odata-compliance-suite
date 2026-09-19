@@ -72,6 +72,7 @@ Coverage bands are **cumulative** in the report.
 |-------|---------|
 | `8.2.8.1_preference_allow_entityreferences` | HTTP Protocol |
 | `8.2.8.4_preference_include_annotations` | HTTP Protocol |
+| `8.1-8.3_header_preference_surface` | HTTP Protocol |
 | `11.2.7_metadata_levels` | JSON Format |
 | `11.2.10_addressing_operations` | Entity Read |
 | `11.2.15_entity_references` | Entity Read |
@@ -105,6 +106,7 @@ Coverage bands are **cumulative** in the report.
 | Suite | Feature |
 |-------|---------|
 | `8.2.8.6_preference_omit_values` (v4.01) | HTTP Protocol |
+| `8.2.8.10_preference_wait` (v4.01) | HTTP Protocol |
 | `8.3.1_header_async_result` (v4.01) | HTTP Protocol |
 | `11.2.12_query_schemaversion` (v4.01) | Metadata |
 | `11.3.7_filter_geo_functions` | Filtering |
