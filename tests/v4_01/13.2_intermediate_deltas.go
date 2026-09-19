@@ -16,7 +16,7 @@ import (
 func IntermediateDeltas() *framework.TestSuite {
 	suite := framework.NewTestSuite(
 		"13.2 OData 4.01 Intermediate Deltas",
-		"Validates 4.01 navigation null comparisons, filtered collection counts, special-octet aliases, and optional 4.01 URL/query extensions.",
+		"Validates 4.01 navigation null comparisons, nested $select, filtered collection counts, special-octet aliases, and optional 4.01 URL/query extensions.",
 		"https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part1-protocol.html#sec_OData401IntermediateConformanceLevel",
 	)
 
@@ -83,6 +83,47 @@ func IntermediateDeltas() *framework.TestSuite {
 			}
 			if count == 0 {
 				return fmt.Errorf("filtered collection count returned no categories; reference data contains categories with products priced over 100")
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_nested_select_on_complex_property",
+		"A complex property in $select accepts a nested $select option",
+		func(ctx *framework.TestContext) error {
+			selectOption := url.QueryEscape("ID,ShippingAddress($select=City,Country)")
+			filter := url.QueryEscape("Name eq 'Laptop'")
+			resp, err := ctx.GET("/Products?$filter="+filter+"&$select="+selectOption,
+				framework.Header{Key: "Accept", Value: "application/json"},
+				framework.Header{Key: "OData-MaxVersion", Value: "4.01"},
+			)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if len(items) != 1 {
+				return fmt.Errorf("nested complex $select returned %d Laptop entities, want 1", len(items))
+			}
+			address, ok := items[0]["ShippingAddress"].(map[string]interface{})
+			if !ok {
+				return fmt.Errorf("nested complex $select did not return ShippingAddress as an object: %T", items[0]["ShippingAddress"])
+			}
+			for _, property := range []string{"City", "Country"} {
+				if _, ok := address[property]; !ok {
+					return fmt.Errorf("nested complex $select omitted selected ShippingAddress.%s", property)
+				}
+			}
+			for _, property := range []string{"Street", "State", "PostalCode"} {
+				if _, ok := address[property]; ok {
+					return fmt.Errorf("nested complex $select returned unselected ShippingAddress.%s", property)
+				}
 			}
 			return nil
 		},
