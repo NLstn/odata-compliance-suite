@@ -37,7 +37,7 @@ Coverage bands are **cumulative** in the report.
 | `3.3_reference_element` | Metadata |
 | `3.4_include_element` | Metadata |
 | `3.5_includeannotations_element` | Metadata |
-| `9.2_metadata_document` | Metadata |
+| `9.2_metadata_document`, `9.2.1_metadata_reference_integrity` | Metadata |
 | `9.3_annotations_metadata` | Metadata |
 | `4.1_nominal_types` – `4.6_annotations` | Data Types |
 | `5.1.1_primitive_data_types` – `5.4_type_definitions` | Data Types |
