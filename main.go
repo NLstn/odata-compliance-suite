@@ -1003,6 +1003,11 @@ func main() {
 			Version: "4.01",
 			Suite:   v4_01.PrimitiveLiterals,
 		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "13.2_intermediate_deltas_4_01",
+			Version: "4.01",
+			Suite:   v4_01.IntermediateDeltas,
+		})
 	}
 
 	if len(testSuites) == 0 {
