@@ -29,15 +29,22 @@ type csdlMetadataSchema struct {
 	Namespace       string                       `xml:"Namespace,attr"`
 	Alias           string                       `xml:"Alias,attr"`
 	EntityTypes     []csdlMetadataEntityType     `xml:"EntityType"`
+	ComplexTypes    []csdlMetadataComplexType    `xml:"ComplexType"`
+	EnumTypes       []metadataEnumType           `xml:"EnumType"`
 	EntityContainer *csdlMetadataEntityContainer `xml:"EntityContainer"`
 }
 
 type csdlMetadataEntityType struct {
-	Name       string                 `xml:"Name,attr"`
-	BaseType   string                 `xml:"BaseType,attr"`
-	Abstract   string                 `xml:"Abstract,attr"`
-	Key        *csdlMetadataKey       `xml:"Key"`
-	Properties []csdlMetadataProperty `xml:"Property"`
+	Name                 string                       `xml:"Name,attr"`
+	BaseType             string                       `xml:"BaseType,attr"`
+	Abstract             string                       `xml:"Abstract,attr"`
+	Key                  *csdlMetadataKey             `xml:"Key"`
+	Properties           []csdlMetadataProperty       `xml:"Property"`
+	NavigationProperties []metadataNavigationProperty `xml:"NavigationProperty"`
+}
+
+type csdlMetadataComplexType struct {
+	Name string `xml:"Name,attr"`
 }
 
 type csdlMetadataProperty struct {
