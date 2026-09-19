@@ -314,6 +314,11 @@ func main() {
 			Suite:   v4_0.ResponseHeaders,
 		})
 		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "8.1-8.3_header_preference_surface",
+			Version: "4.0",
+			Suite:   v4_0.HeaderPreferenceSurface,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
 			Name:    "8.1.5_response_status_codes",
 			Version: "4.0",
 			Suite:   v4_0.ResponseStatusCodes,
@@ -939,6 +944,11 @@ func main() {
 			Suite:   v4_01.PreferenceOmitValues,
 		})
 		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "8.2.8.10_preference_wait",
+			Version: "4.01",
+			Suite:   v4_01.PreferenceWait,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
 			Name:    "8.3.1_header_async_result",
 			Version: "4.01",
 			Suite:   v4_01.HeaderAsyncResult,
@@ -1137,6 +1147,7 @@ func main() {
 		"8.1.1_header_content_type":                     {framework.LevelMinimal, "HTTP Protocol"},
 		"8.1.2_request_headers":                         {framework.LevelMinimal, "HTTP Protocol"},
 		"8.1.3_response_headers":                        {framework.LevelMinimal, "HTTP Protocol"},
+		"8.1-8.3_header_preference_surface":             {framework.LevelIntermediate, "HTTP Protocol"},
 		"8.1.5_response_status_codes":                   {framework.LevelMinimal, "HTTP Protocol"},
 		"8.1.6_invalid_query_parameters":                {framework.LevelMinimal, "HTTP Protocol"},
 		"8.1.7_method_not_allowed":                      {framework.LevelMinimal, "HTTP Protocol"},
@@ -1152,6 +1163,7 @@ func main() {
 		"8.2.8.1_preference_allow_entityreferences":     {framework.LevelIntermediate, "HTTP Protocol"},
 		"8.2.8.4_preference_include_annotations":        {framework.LevelIntermediate, "HTTP Protocol"},
 		"8.2.8.6_preference_omit_values":                {framework.LevelAdvanced, "HTTP Protocol"},
+		"8.2.8.10_preference_wait":                      {framework.LevelAdvanced, "HTTP Protocol"},
 		"8.2.9_header_maxversion":                       {framework.LevelMinimal, "HTTP Protocol"},
 		"8.3_error_responses":                           {framework.LevelMinimal, "HTTP Protocol"},
 		"8.3.1_header_async_result":                     {framework.LevelAdvanced, "HTTP Protocol"},
