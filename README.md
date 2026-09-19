@@ -27,7 +27,8 @@ can all be measured the same way.
 - Vocabulary annotations: Core, Capabilities, Aggregation, Validation
 - OData 4.01-specific features (`in` operator, `divby`, key-as-segments,
   JSON batch, wildcard `$select`/`$expand`, unprefixed primitive literals,
-  string-to-primitive casts, `matchesPattern`, …)
+  string-to-primitive casts, nested 4.01 query expressions, special-octet
+  parameter aliases, `matchesPattern`, …)
 
 The Minimal/Intermediate/Advanced summary is a suite coverage grouping, not a
 formal OASIS certification. See [`CONFORMANCE.md`](./CONFORMANCE.md); skipped
