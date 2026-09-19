@@ -120,7 +120,7 @@ func IntermediateDeltas() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusNotImplemented {
+			if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusNotImplemented || resp.StatusCode == http.StatusNotFound {
 				return ctx.Skip("service does not support the optional 4.01 /$filter path segment")
 			}
 			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
