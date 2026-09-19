@@ -1,6 +1,7 @@
 package v4_0
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -70,6 +71,45 @@ func DataServicesElement() *framework.TestSuite {
 				return framework.NewError("Schema should contain entity model elements")
 			}
 
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_dataservices_schemas_parse_with_namespaces",
+		"Each parsed Schema has a non-empty namespace without whitespace",
+		func(ctx *framework.TestContext) error {
+			doc, err := fetchCSDLDocument(ctx)
+			if err != nil {
+				return err
+			}
+			for i, schema := range doc.DataServices.Schemas {
+				if strings.TrimSpace(schema.Namespace) == "" {
+					return fmt.Errorf("Schema %d has an empty Namespace", i)
+				}
+				if strings.ContainsAny(schema.Namespace, " \t\r\n") {
+					return framework.NewError("Schema Namespace contains whitespace: " + schema.Namespace)
+				}
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_dataservices_schema_namespaces_are_unique",
+		"Schema namespace declarations are unique within the metadata document",
+		func(ctx *framework.TestContext) error {
+			doc, err := fetchCSDLDocument(ctx)
+			if err != nil {
+				return err
+			}
+			seen := make(map[string]struct{}, len(doc.DataServices.Schemas))
+			for _, schema := range doc.DataServices.Schemas {
+				if _, exists := seen[schema.Namespace]; exists {
+					return framework.NewError("duplicate Schema Namespace: " + schema.Namespace)
+				}
+				seen[schema.Namespace] = struct{}{}
+			}
 			return nil
 		},
 	)
