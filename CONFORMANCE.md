@@ -48,6 +48,7 @@ Coverage bands are **cumulative** in the report.
 | `8.2.1_cache_control_header` – `8.2.9_header_maxversion` | HTTP Protocol |
 | `8.3_error_responses`, `8.4_error_response_consistency` | HTTP Protocol |
 | `11.2.17_case_sensitivity`, `11.2.17_case_insensitive_system_query_options` | HTTP Protocol |
+| `5.1.1.13_primitive_literals_4_01` | URL Syntax |
 | `5.2_custom_query_options` | HTTP Protocol |
 | `11.4.11_head_requests` | HTTP Protocol |
 | `10.1_json_format`, `10.2_odata_annotations` | JSON Format |
