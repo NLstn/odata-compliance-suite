@@ -82,6 +82,7 @@ Coverage bands are **cumulative** in the report.
 | `11.2.5.1_filter_in_operator` (v4.01) | Filtering |
 | `11.5.1.1_filter_divby_operator` (v4.01) | Filtering |
 | `11.5.3.3_filter_matches_pattern` (v4.01) | Filtering |
+| `13.2_intermediate_deltas_4_01` (v4.01) | 4.01 Intermediate URL/Query Deltas |
 | `11.2.5.2_query_select_orderby`, `5.2.2_complex_orderby` | Sorting |
 | `11.2.5.3_query_top_skip` | Paging |
 | `11.2.5.7_query_skiptoken` | Paging |
