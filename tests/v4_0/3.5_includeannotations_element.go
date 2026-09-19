@@ -62,5 +62,38 @@ func IncludeAnnotationsElement() *framework.TestSuite {
 		},
 	)
 
+	suite.AddTest(
+		"test_includeannotations_attributes_parse",
+		"Every parsed edmx:IncludeAnnotations has a non-empty TermNamespace and valid optional attributes",
+		func(ctx *framework.TestContext) error {
+			doc, err := fetchCSDLDocument(ctx)
+			if err != nil {
+				return err
+			}
+			return validateCSDLReferenceAttributes(doc)
+		},
+	)
+
+	suite.AddTest(
+		"test_includeannotations_namespaces_are_whitespace_free",
+		"Parsed IncludeAnnotations namespace attributes contain no XML-ambiguous whitespace",
+		func(ctx *framework.TestContext) error {
+			doc, err := fetchCSDLDocument(ctx)
+			if err != nil {
+				return err
+			}
+			for _, ref := range doc.References {
+				for _, include := range ref.IncludeAnnotations {
+					if strings.ContainsAny(include.TermNamespace, " \t\r\n") ||
+						strings.ContainsAny(include.Qualifier, " \t\r\n") ||
+						strings.ContainsAny(include.TargetNamespace, " \t\r\n") {
+						return framework.NewError("IncludeAnnotations attribute contains whitespace")
+					}
+				}
+			}
+			return nil
+		},
+	)
+
 	return suite
 }
