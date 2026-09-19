@@ -138,7 +138,7 @@ func HeaderPreferenceSurface() *framework.TestSuite {
 				// does not vary on this header. Still validate the negotiated value.
 				return nil
 			}
-			if !varyContains(resp40.Headers.Get("Vary"), "OData-MaxVersion") || !varyContains(resp401.Headers.Get("Vary"), "OData-MaxVersion") {
+			if !varyContains(resp40.Headers.Values("Vary"), "OData-MaxVersion") || !varyContains(resp401.Headers.Values("Vary"), "OData-MaxVersion") {
 				return fmt.Errorf("responses vary by OData-MaxVersion (%q vs %q) but Vary does not include OData-MaxVersion (got %q and %q)", version40, version401, resp40.Headers.Get("Vary"), resp401.Headers.Get("Vary"))
 			}
 			return nil
@@ -226,8 +226,8 @@ func HeaderPreferenceSurface() *framework.TestSuite {
 			}
 
 			changed := plain.StatusCode != preferred.StatusCode || len(plain.Body) != len(preferred.Body)
-			if changed && !varyContains(preferred.Headers.Get("Vary"), "Prefer") {
-				return fmt.Errorf("Prefer changed the response (status/body %d/%d vs %d/%d) but Vary is %q", plain.StatusCode, len(plain.Body), preferred.StatusCode, len(preferred.Body), preferred.Headers.Get("Vary"))
+			if changed && !varyContains(preferred.Headers.Values("Vary"), "Prefer") {
+				return fmt.Errorf("Prefer changed the response (status/body %d/%d vs %d/%d) but Vary is %q", plain.StatusCode, len(plain.Body), preferred.StatusCode, len(preferred.Body), strings.Join(preferred.Headers.Values("Vary"), ", "))
 			}
 			return nil
 		},
@@ -236,10 +236,12 @@ func HeaderPreferenceSurface() *framework.TestSuite {
 	return suite
 }
 
-func varyContains(value, wanted string) bool {
-	for _, token := range strings.Split(value, ",") {
-		if strings.EqualFold(strings.TrimSpace(token), wanted) || strings.TrimSpace(token) == "*" {
-			return true
+func varyContains(values []string, wanted string) bool {
+	for _, value := range values {
+		for _, token := range strings.Split(value, ",") {
+			if strings.EqualFold(strings.TrimSpace(token), wanted) || strings.TrimSpace(token) == "*" {
+				return true
+			}
 		}
 	}
 	return false
