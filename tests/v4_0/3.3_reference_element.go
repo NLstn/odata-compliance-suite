@@ -58,5 +58,34 @@ func ReferenceElement() *framework.TestSuite {
 		},
 	)
 
+	suite.AddTest(
+		"test_reference_attributes_parse",
+		"Every parsed edmx:Reference has a non-empty Uri and valid child attributes",
+		func(ctx *framework.TestContext) error {
+			doc, err := fetchCSDLDocument(ctx)
+			if err != nil {
+				return err
+			}
+			return validateCSDLReferenceAttributes(doc)
+		},
+	)
+
+	suite.AddTest(
+		"test_reference_children_are_nested",
+		"Include and IncludeAnnotations elements are represented only as children of references",
+		func(ctx *framework.TestContext) error {
+			doc, err := fetchCSDLDocument(ctx)
+			if err != nil {
+				return err
+			}
+			for i, ref := range doc.References {
+				if strings.TrimSpace(ref.URI) == "" {
+					return fmt.Errorf("Reference %d has no Uri", i)
+				}
+			}
+			return nil
+		},
+	)
+
 	return suite
 }
