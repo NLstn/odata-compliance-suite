@@ -57,5 +57,36 @@ func IncludeElement() *framework.TestSuite {
 		},
 	)
 
+	suite.AddTest(
+		"test_include_attributes_parse",
+		"Every parsed edmx:Include has a non-empty Namespace and valid optional Alias",
+		func(ctx *framework.TestContext) error {
+			doc, err := fetchCSDLDocument(ctx)
+			if err != nil {
+				return err
+			}
+			return validateCSDLReferenceAttributes(doc)
+		},
+	)
+
+	suite.AddTest(
+		"test_include_namespaces_are_whitespace_free",
+		"Parsed Include Namespace and Alias values contain no XML-ambiguous whitespace",
+		func(ctx *framework.TestContext) error {
+			doc, err := fetchCSDLDocument(ctx)
+			if err != nil {
+				return err
+			}
+			for _, ref := range doc.References {
+				for _, include := range ref.Includes {
+					if strings.ContainsAny(include.Namespace, " \t\r\n") || strings.ContainsAny(include.Alias, " \t\r\n") {
+						return framework.NewError("Include Namespace or Alias contains whitespace")
+					}
+				}
+			}
+			return nil
+		},
+	)
+
 	return suite
 }
