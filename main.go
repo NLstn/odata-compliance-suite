@@ -998,6 +998,11 @@ func main() {
 			Version: "4.01",
 			Suite:   v4_01.MatchesPatternFilter,
 		})
+		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "5.1.1.13_primitive_literals_4_01",
+			Version: "4.01",
+			Suite:   v4_01.PrimitiveLiterals,
+		})
 	}
 
 	if len(testSuites) == 0 {
