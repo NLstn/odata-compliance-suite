@@ -69,5 +69,29 @@ func EDMXElement() *framework.TestSuite {
 		},
 	)
 
+	suite.AddTest(
+		"test_edmx_element_is_well_formed_xml",
+		"edmx:Edmx parses as a namespaced CSDL document with a non-empty Version",
+		func(ctx *framework.TestContext) error {
+			_, err := fetchCSDLDocument(ctx)
+			return err
+		},
+	)
+
+	suite.AddTest(
+		"test_edmx_element_has_data_services_container",
+		"edmx:Edmx contains a parsed DataServices container with at least one schema",
+		func(ctx *framework.TestContext) error {
+			doc, err := fetchCSDLDocument(ctx)
+			if err != nil {
+				return err
+			}
+			if doc.DataServices == nil || len(doc.DataServices.Schemas) == 0 {
+				return framework.NewError("edmx:Edmx must contain a non-empty DataServices container")
+			}
+			return nil
+		},
+	)
+
 	return suite
 }
