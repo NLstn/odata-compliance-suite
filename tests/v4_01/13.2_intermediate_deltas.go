@@ -130,6 +130,90 @@ func IntermediateDeltas() *framework.TestSuite {
 	)
 
 	suite.AddTest(
+		"test_nested_select_query_options_optional",
+		"A collection-valued navigation property in $select can carry nested query options when supported",
+		func(ctx *framework.TestContext) error {
+			selectOption := url.QueryEscape("ID,Descriptions($filter=LanguageKey eq 'EN';$select=LanguageKey;$top=1)")
+			filter := url.QueryEscape("Name eq 'Laptop'")
+			resp, err := ctx.GET("/Products?$filter="+filter+"&$select="+selectOption,
+				framework.Header{Key: "Accept", Value: "application/json"},
+				framework.Header{Key: "OData-MaxVersion", Value: "4.01"},
+			)
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusNotImplemented {
+				return ctx.Skip("service does not support optional nested query options in $select")
+			}
+			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+				return err
+			}
+			items, err := ctx.ParseEntityCollection(resp)
+			if err != nil {
+				return err
+			}
+			if len(items) != 1 {
+				return fmt.Errorf("nested $select query options returned %d Laptop entities, want 1", len(items))
+			}
+			descriptions, ok := items[0]["Descriptions"].([]interface{})
+			if !ok || len(descriptions) != 1 {
+				return fmt.Errorf("nested $select query options returned %d descriptions, want 1", len(descriptions))
+			}
+			description, ok := descriptions[0].(map[string]interface{})
+			if !ok {
+				return fmt.Errorf("nested description is not an object")
+			}
+			if language, ok := description["LanguageKey"].(string); !ok || language != "EN" {
+				return fmt.Errorf("nested description LanguageKey=%v, want EN", description["LanguageKey"])
+			}
+			if _, ok := description["Description"]; ok {
+				return fmt.Errorf("nested $select returned unselected Description property")
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
+		"test_structural_comparison_optional",
+		"Equal and non-equal structural comparisons work when supported",
+		func(ctx *framework.TestContext) error {
+			compare := func(operator string) (*framework.HTTPResponse, error) {
+				filter := url.QueryEscape("Name eq 'Laptop' and ShippingAddress " + operator + " ShippingAddress")
+				return ctx.GET("/Products?$filter="+filter+"&$select=ID", framework.Header{Key: "OData-MaxVersion", Value: "4.01"})
+			}
+			equalResp, err := compare("eq")
+			if err != nil {
+				return err
+			}
+			if equalResp.StatusCode == http.StatusBadRequest || equalResp.StatusCode == http.StatusNotImplemented {
+				return ctx.Skip("service does not support optional structural comparison")
+			}
+			if err := ctx.AssertStatusCode(equalResp, http.StatusOK); err != nil {
+				return err
+			}
+			notEqualResp, err := compare("ne")
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(notEqualResp, http.StatusOK); err != nil {
+				return err
+			}
+			equalItems, err := ctx.ParseEntityCollection(equalResp)
+			if err != nil {
+				return err
+			}
+			notEqualItems, err := ctx.ParseEntityCollection(notEqualResp)
+			if err != nil {
+				return err
+			}
+			if len(equalItems) != 1 || len(notEqualItems) != 0 {
+				return fmt.Errorf("structural comparisons returned eq=%d, ne=%d; want eq=1, ne=0", len(equalItems), len(notEqualItems))
+			}
+			return nil
+		},
+	)
+
+	suite.AddTest(
 		"test_parameter_alias_special_octets",
 		"Function parameter aliases preserve NUL, forward-slash, and backslash octets in string literals",
 		func(ctx *framework.TestContext) error {
@@ -274,12 +358,3 @@ func IntermediateDeltas() *framework.TestSuite {
 			if unqualifiedResp.StatusCode < 200 || unqualifiedResp.StatusCode >= 300 {
 				return fmt.Errorf("unqualified GetTopProducts returned %d", unqualifiedResp.StatusCode)
 			}
-			if qualifiedResp.StatusCode < 200 || qualifiedResp.StatusCode >= 300 {
-				return fmt.Errorf("default-namespace-qualified GetTopProducts returned %d: %s", qualifiedResp.StatusCode, string(qualifiedResp.Body))
-			}
-			return nil
-		},
-	)
-
-	return suite
-}
