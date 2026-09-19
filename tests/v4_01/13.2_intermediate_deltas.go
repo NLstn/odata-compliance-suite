@@ -358,3 +358,12 @@ func IntermediateDeltas() *framework.TestSuite {
 			if unqualifiedResp.StatusCode < 200 || unqualifiedResp.StatusCode >= 300 {
 				return fmt.Errorf("unqualified GetTopProducts returned %d", unqualifiedResp.StatusCode)
 			}
+			if qualifiedResp.StatusCode < 200 || qualifiedResp.StatusCode >= 300 {
+				return fmt.Errorf("default-namespace-qualified GetTopProducts returned %d: %s", qualifiedResp.StatusCode, string(qualifiedResp.Body))
+			}
+			return nil
+		},
+	)
+
+	return suite
+}
