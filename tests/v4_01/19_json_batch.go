@@ -368,8 +368,11 @@ func JSONBatch() *framework.TestSuite {
 					return fmt.Errorf("response %s atomicityGroup = %v, want g1", id, response["atomicityGroup"])
 				}
 			}
-			if r2["status"] == float64(200) || r2["status"] == float64(201) {
-				return framework.NewError(fmt.Sprintf("expected r2 to fail, got status %v", r2["status"]))
+			if r2["status"] != float64(404) {
+				return framework.NewError(fmt.Sprintf("expected r2 to fail on missing Product with 404, got status %v", r2["status"]))
+			}
+			if status := r1["status"]; status != float64(200) && status != float64(204) && status != float64(424) {
+				return fmt.Errorf("valid first PATCH returned %v; expected 200, 204, or rollback 424", status)
 			}
 			// A 2xx response for r1 is allowed even though the group is rolled back.
 			// Verify the original entity is unchanged instead of inferring state
