@@ -74,6 +74,7 @@ Content-Transfer-Encoding: binary
 GET %s HTTP/1.1
 Accept: application/json
 
+
 --batch_boundary--`, segment)
 
 			resp, err := ctx.POSTRaw("/$batch", []byte(batchBody), "multipart/mixed; boundary=batch_boundary")
@@ -100,6 +101,7 @@ Content-Transfer-Encoding: binary
 
 GET %s HTTP/1.1
 Accept: application/json
+
 
 --batch_boundary--`, segment)
 
@@ -139,6 +141,7 @@ Content-Transfer-Encoding: binary
 GET %s HTTP/1.1
 Accept: application/json
 
+
 --batch_boundary--`, segment)
 
 			resp, err := ctx.POSTRaw("/$batch", []byte(batchBody), "multipart/mixed; boundary=batch_boundary")
@@ -177,12 +180,14 @@ Content-Transfer-Encoding: binary
 GET %s HTTP/1.1
 Accept: application/json
 
+
 --batch_boundary
 Content-Type: application/http
 Content-Transfer-Encoding: binary
 
 GET %s HTTP/1.1
 Accept: application/json
+
 
 --batch_boundary--`, firstSegment, secondSegment)
 
@@ -195,10 +200,15 @@ Accept: application/json
 				return err
 			}
 
-			// Check for multiple HTTP responses in body
-			responseCount := strings.Count(string(resp.Body), "HTTP/1.1")
-			if responseCount < 2 {
-				return framework.NewError("Expected at least 2 responses in batch")
+			body := string(resp.Body)
+			if strings.Count(body, "HTTP/1.1 200") != 2 || strings.Count(body, "HTTP/1.1 ") != 2 {
+				return fmt.Errorf("expected exactly two successful batch sub-responses, got: %s", body)
+			}
+			for _, segment := range []string{firstSegment, secondSegment} {
+				id := strings.TrimSuffix(strings.TrimPrefix(segment, "Products("), ")")
+				if !strings.Contains(body, `"ID":"`+id+`"`) {
+					return fmt.Errorf("batch response omitted Product %s", id)
+				}
 			}
 
 			return nil
