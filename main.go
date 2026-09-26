@@ -1298,8 +1298,10 @@ func main() {
 	// — a suite that should have been capability-gated would instead run
 	// unconditionally, or one that should carry a coverage-band tag would
 	// silently be excluded from the coverage report. Validate both maps
-	// reference only suite names that actually exist, once, at startup.
-	{
+	// reference only suite names that actually exist. The registry is built
+	// for the selected version, so cross-version keys can only be checked when
+	// all versions are registered.
+	if *version == "all" {
 		suiteNames := make(map[string]bool, len(testSuites))
 		for _, suiteInfo := range testSuites {
 			suiteNames[suiteInfo.Name] = true
