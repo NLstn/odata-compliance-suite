@@ -444,6 +444,11 @@ func main() {
 			Suite:   v4_0.AddressingEntities,
 		})
 		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "11.2.1_crossjoin",
+			Version: "4.0",
+			Suite:   v4_0.CrossJoin,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
 			Name:    "11.2.2_canonical_url",
 			Version: "4.0",
 			Suite:   v4_0.CanonicalURL,
@@ -1184,6 +1189,7 @@ func main() {
 		// --- Entity Read ---
 		"11.1_resource_path":            {framework.LevelMinimal, "Entity Read"},
 		"11.2.1_addressing_entities":    {framework.LevelMinimal, "Entity Read"},
+		"11.2.1_crossjoin":              {framework.LevelAdvanced, "Advanced Querying"},
 		"11.2.1_key_as_segments":        {framework.LevelMinimal, "Entity Read"},
 		"11.2.1_additional_paths_4_01":  {framework.LevelAdvanced, "Resource Paths"},
 		"11.2.2_canonical_url":          {framework.LevelMinimal, "Entity Read"},
