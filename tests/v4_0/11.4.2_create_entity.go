@@ -206,7 +206,7 @@ func CreateEntity() *framework.TestSuite {
 			}
 
 			// 204 = preference honoured: OData-EntityId is MANDATORY.
-			// 201 = preference not honoured: OData-EntityId is optional (prefer to check).
+			// 201 = preference not honoured: OData-EntityId is optional.
 			if resp.StatusCode == 204 {
 				entityID := resp.Headers.Get("OData-EntityId")
 				if entityID == "" {
@@ -215,10 +215,6 @@ func CreateEntity() *framework.TestSuite {
 				return nil
 			}
 			if resp.StatusCode == 201 {
-				entityID := resp.Headers.Get("OData-EntityId")
-				if entityID == "" {
-					return fmt.Errorf("OData-EntityId header missing from 201 response")
-				}
 				return nil
 			}
 			return fmt.Errorf("expected 201 or 204 for return=minimal, got %d", resp.StatusCode)

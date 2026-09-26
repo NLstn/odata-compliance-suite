@@ -3,6 +3,7 @@ package v4_0
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -43,10 +44,10 @@ func QueryCount() *framework.TestSuite {
 			if !ok {
 				return fmt.Errorf("@odata.count is not a number, got %T", countVal)
 			}
-			count := int(countFloat)
-			if count < 0 {
-				return fmt.Errorf("@odata.count must be non-negative, got %d", count)
+			if countFloat < 0 || math.Trunc(countFloat) != countFloat {
+				return fmt.Errorf("@odata.count must be a non-negative integer, got %v", countFloat)
 			}
+			count := int(countFloat)
 
 			value, ok := result["value"].([]interface{})
 			if !ok {
@@ -68,10 +69,10 @@ func QueryCount() *framework.TestSuite {
 		},
 	)
 
-	// Test 2: $count=false does not include @odata.count
+	// Test 2: $count=false is a SHOULD NOT hint, not a prohibition.
 	suite.AddTest(
 		"test_count_false",
-		"$count=false excludes @odata.count",
+		"$count=false returns a valid collection (count is a SHOULD NOT hint)",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$count=false")
 			if err != nil {
@@ -86,11 +87,14 @@ func QueryCount() *framework.TestSuite {
 				return fmt.Errorf("failed to parse JSON: %w", err)
 			}
 
-			// Verify @odata.count is NOT present
-			if _, ok := result["@odata.count"]; ok {
-				return fmt.Errorf("@odata.count should not be present when $count=false")
+			if _, ok := result["value"].([]interface{}); !ok {
+				return fmt.Errorf("response missing value array")
 			}
-
+			if count, ok := result["@odata.count"]; ok {
+				if number, ok := count.(float64); !ok || number < 0 || number != float64(int64(number)) {
+					return fmt.Errorf("invalid optional @odata.count: %v", count)
+				}
+			}
 			return nil
 		},
 	)
@@ -133,28 +137,24 @@ func QueryCount() *framework.TestSuite {
 				return fmt.Errorf("@odata.count is not a number")
 			}
 
-			value, ok := result["value"].([]interface{})
-			if !ok {
-				return fmt.Errorf("response missing 'value' array")
+			items, err := collectEntityCollection(ctx, "/Products?$count=true&$filter=Price%20gt%20100")
+			if err != nil {
+				return err
 			}
 
 			// Cross-check @odata.count against the independently computed oracle
 			// total, not merely against len(value) — a server that filters wrong
 			// but reports a self-consistent count would otherwise still pass.
-			if int(count) != len(expected) {
+			if count < 0 || math.Trunc(count) != count || int(count) != len(expected) {
 				return fmt.Errorf("@odata.count=%d but %d product(s) actually satisfy Price gt 100", int(count), len(expected))
 			}
-			if len(value) != len(expected) {
-				return fmt.Errorf("response contains %d item(s) but %d product(s) actually satisfy Price gt 100", len(value), len(expected))
+			if len(items) != len(expected) {
+				return fmt.Errorf("response contains %d item(s) but %d product(s) actually satisfy Price gt 100", len(items), len(expected))
 			}
 
 			// Verify the returned set is exactly the expected set (soundness + completeness).
 			got := map[string]bool{}
-			for i, v := range value {
-				item, ok := v.(map[string]interface{})
-				if !ok {
-					return fmt.Errorf("item %d is not an object", i)
-				}
+			for i, item := range items {
 				got[productID(item)] = true
 				price, ok := item["Price"].(float64)
 				if !ok {
@@ -217,25 +217,21 @@ func QueryCount() *framework.TestSuite {
 				return fmt.Errorf("@odata.count is not a number")
 			}
 
-			value, ok := result["value"].([]interface{})
-			if !ok {
-				return fmt.Errorf("response missing 'value' array")
+			items, err := collectEntityCollection(ctx, "/Products?$count=true&$search=Laptop")
+			if err != nil {
+				return err
 			}
 
-			if len(value) == 0 {
+			if len(items) == 0 {
 				return fmt.Errorf("expected at least one search result for 'Laptop'")
 			}
 
-			if int(countFloat) != len(value) {
-				return fmt.Errorf("count=%d but response contains %d items", int(countFloat), len(value))
+			if countFloat < 0 || math.Trunc(countFloat) != countFloat || int(countFloat) != len(items) {
+				return fmt.Errorf("count=%v but response contains %d items", countFloat, len(items))
 			}
 
 			got := map[string]bool{}
-			for i, v := range value {
-				item, ok := v.(map[string]interface{})
-				if !ok {
-					return fmt.Errorf("item %d is not an object", i)
-				}
+			for _, item := range items {
 				got[productID(item)] = true
 			}
 			for id := range mustMatch {

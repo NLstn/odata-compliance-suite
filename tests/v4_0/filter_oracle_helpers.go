@@ -41,14 +41,7 @@ func schemaNamespace(ctx *framework.TestContext) (string, error) {
 // semantics: the expected result of a server-side filter is computed in Go from
 // the full set and compared against what the server actually returns.
 func fetchAllProducts(ctx *framework.TestContext) ([]map[string]interface{}, error) {
-	resp, err := ctx.GET("/Products?$top=1000")
-	if err != nil {
-		return nil, err
-	}
-	if err := ctx.AssertStatusCode(resp, 200); err != nil {
-		return nil, err
-	}
-	return ctx.ParseEntityCollection(resp)
+	return collectEntityCollection(ctx, "/Products")
 }
 
 // assertProductFilter runs /Products?$filter=<expr> and asserts the returned
@@ -71,14 +64,7 @@ func assertProductFilter(ctx *framework.TestContext, expr string, want func(map[
 // product's related Descriptions collection (for any()/all() lambda predicates).
 // The full set is fetched with $expand=Descriptions so want() can inspect them.
 func assertProductLambdaFilter(ctx *framework.TestContext, expr string, want func(map[string]interface{}) bool) error {
-	resp, err := ctx.GET("/Products?$expand=Descriptions&$top=1000")
-	if err != nil {
-		return err
-	}
-	if err := ctx.AssertStatusCode(resp, 200); err != nil {
-		return err
-	}
-	all, err := ctx.ParseEntityCollection(resp)
+	all, err := collectEntityCollection(ctx, "/Products?$expand=Descriptions")
 	if err != nil {
 		return err
 	}
@@ -95,14 +81,7 @@ func assertProductFilterFrom(ctx *framework.TestContext, all []map[string]interf
 		}
 	}
 
-	resp, err := ctx.GET("/Products?$filter=" + url.QueryEscape(expr))
-	if err != nil {
-		return err
-	}
-	if err := ctx.AssertStatusCode(resp, 200); err != nil {
-		return err
-	}
-	items, err := ctx.ParseEntityCollection(resp)
+	items, err := collectEntityCollection(ctx, "/Products?$filter="+url.QueryEscape(expr))
 	if err != nil {
 		return err
 	}

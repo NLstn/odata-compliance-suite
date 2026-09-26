@@ -45,18 +45,18 @@ func Upsert() *framework.TestSuite {
 			}
 
 			// Now PUT to update it
-			putResp, err := ctx.PUT(fmt.Sprintf("/Products(%s)", id), map[string]interface{}{
-				"ID":          id,
-				"Name":        "Updated Product",
-				"Price":       199.99,
-				"Description": "Updated via PUT",
-			})
+			replacement, err := buildProductPayload(ctx, "Updated Product", 199.99)
+			if err != nil {
+				return err
+			}
+			replacement["Description"] = "Updated via PUT"
+			putResp, err := ctx.PUT(fmt.Sprintf("/Products(%s)", id), replacement)
 			if err != nil {
 				return err
 			}
 
-			if putResp.StatusCode != 204 && putResp.StatusCode != 201 {
-				return fmt.Errorf("expected status 201 or 204, got %d", putResp.StatusCode)
+			if putResp.StatusCode != 200 && putResp.StatusCode != 204 {
+				return fmt.Errorf("expected status 200 or 204, got %d", putResp.StatusCode)
 			}
 
 			getResp, err := ctx.GET(fmt.Sprintf("/Products(%s)", id))
@@ -85,14 +85,11 @@ func Upsert() *framework.TestSuite {
 		},
 	)
 
-	// Test 2: PUT to a non-existent entity is an upsert.
-	// Per OData v4.01 Part 1 §11.4.3, a PUT/PATCH to a URL that does not identify
-	// an existing entity SHOULD create it (upsert -> 201 Created). A service that
-	// does not support upsert (or whose entity set is not insertable) instead
-	// rejects with 404. Both are conformant; we must NOT mandate one or the other.
+	// Product keys are server-generated; §11.4.4 forbids upserting one at a
+	// client-selected URL even if upsert is supported for other entity sets.
 	suite.AddTest(
 		"test_put_create_nonexistent",
-		"PUT to non-existent entity performs an upsert (201) or is rejected (404)",
+		"PUT cannot upsert a Product with a server-generated key",
 		func(ctx *framework.TestContext) error {
 			const nonexistentID = "00000000-0000-0000-0000-000000000000"
 			path := fmt.Sprintf("/Products(%s)", nonexistentID)
@@ -106,23 +103,14 @@ func Upsert() *framework.TestSuite {
 				return err
 			}
 
-			switch resp.StatusCode {
-			case 201, 200, 204:
-				// Upsert supported: the entity must now be retrievable.
-				getResp, err := ctx.GET(path)
-				if err != nil {
-					return err
-				}
-				if err := ctx.AssertStatusCode(getResp, 200); err != nil {
-					return fmt.Errorf("PUT-upsert reported success (%d) but the entity is not retrievable: %w", resp.StatusCode, err)
-				}
-				return nil
-			case 404:
-				// Upsert not supported: rejection is conformant.
-				return nil
-			default:
-				return fmt.Errorf("expected 201/200/204 (upsert) or 404 (upsert unsupported), got %d", resp.StatusCode)
+			if resp.StatusCode < 400 || resp.StatusCode >= 500 {
+				return fmt.Errorf("expected 4xx for generated-key upsert, got %d", resp.StatusCode)
 			}
+			getResp, err := ctx.GET(path)
+			if err != nil {
+				return err
+			}
+			return ctx.AssertStatusCode(getResp, 404)
 		},
 	)
 
@@ -130,7 +118,7 @@ func Upsert() *framework.TestSuite {
 	// their default/null values (full-replacement semantics, §11.4.3).
 	suite.AddTest(
 		"test_put_incomplete_entity",
-		"PUT replace resets omitted properties to defaults",
+		"PUT missing a required property without a default is rejected",
 		func(ctx *framework.TestContext) error {
 			payload, err := buildProductPayload(ctx, "Test Product", 50.00)
 			if err != nil {
@@ -164,8 +152,8 @@ func Upsert() *framework.TestSuite {
 				return err
 			}
 
-			if putResp.StatusCode != 204 && putResp.StatusCode != 201 {
-				return fmt.Errorf("expected status 201 or 204, got %d", putResp.StatusCode)
+			if putResp.StatusCode != 400 {
+				return fmt.Errorf("expected 400 for omitted non-nullable Price without a default, got %d", putResp.StatusCode)
 			}
 
 			getResp, err := ctx.GET(fmt.Sprintf("/Products(%s)", id))
@@ -180,14 +168,11 @@ func Upsert() *framework.TestSuite {
 			if err := json.Unmarshal(getResp.Body, &updated); err != nil {
 				return fmt.Errorf("failed to parse replaced entity: %w", err)
 			}
-			if updated["Name"] != "Incomplete" {
-				return fmt.Errorf("expected replacement Name to be Incomplete, got %v", updated["Name"])
+			if updated["Name"] != "Test Product" {
+				return fmt.Errorf("rejected PUT changed Name to %v", updated["Name"])
 			}
-			if updated["Price"] != 0.0 {
-				return fmt.Errorf("expected omitted Price to be reset to 0, got %v", updated["Price"])
-			}
-			if updated["CategoryID"] != nil {
-				return fmt.Errorf("expected omitted CategoryID to be reset to null, got %v", updated["CategoryID"])
+			if updated["Price"] != 50.0 {
+				return fmt.Errorf("rejected PUT changed Price to %v", updated["Price"])
 			}
 
 			return nil
@@ -224,18 +209,18 @@ func Upsert() *framework.TestSuite {
 			}
 
 			// PUT to update
-			putResp, err := ctx.PUT(fmt.Sprintf("/Products(%s)", id), map[string]interface{}{
-				"ID":          id,
-				"Name":        "Header Test Product",
-				"Price":       99.99,
-				"Description": "Testing headers",
-			})
+			replacement, err := buildProductPayload(ctx, "Header Test Product", 99.99)
+			if err != nil {
+				return err
+			}
+			replacement["Description"] = "Testing headers"
+			putResp, err := ctx.PUT(fmt.Sprintf("/Products(%s)", id), replacement)
 			if err != nil {
 				return err
 			}
 
-			if putResp.StatusCode != 204 && putResp.StatusCode != 201 {
-				return fmt.Errorf("expected status 201 or 204, got %d", putResp.StatusCode)
+			if putResp.StatusCode != 200 && putResp.StatusCode != 204 {
+				return fmt.Errorf("expected status 200 or 204, got %d", putResp.StatusCode)
 			}
 
 			// Check for OData-Version header
@@ -286,12 +271,12 @@ func Upsert() *framework.TestSuite {
 			etag := getResp.Headers.Get("ETag")
 			if etag != "" {
 				// If ETag is supported, try PUT with If-Match
-				putResp, err := ctx.PUT(fmt.Sprintf("/Products(%s)", id), map[string]interface{}{
-					"ID":          id,
-					"Name":        "Conditional Update",
-					"Price":       149.99,
-					"Description": "With ETag",
-				}, framework.Header{Key: "If-Match", Value: etag})
+				replacement, err := buildProductPayload(ctx, "Conditional Update", 149.99)
+				if err != nil {
+					return err
+				}
+				replacement["Description"] = "With ETag"
+				putResp, err := ctx.PUT(fmt.Sprintf("/Products(%s)", id), replacement, framework.Header{Key: "If-Match", Value: etag})
 				if err != nil {
 					return err
 				}

@@ -121,16 +121,7 @@ func PaginationEdgeCases() *framework.TestSuite {
 		"test_top_large_number",
 		"$top with very large number",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=999999")
-			if err != nil {
-				return err
-			}
-
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			items, err := ctx.ParseEntityCollection(resp)
+			items, err := collectEntityCollection(ctx, "/Products?$top=999999")
 			if err != nil {
 				return err
 			}
@@ -177,7 +168,7 @@ func PaginationEdgeCases() *framework.TestSuite {
 		"test_nextlink_present",
 		"@odata.nextLink present when more results available",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=2")
+			resp, err := ctx.GET("/Products?$count=true", framework.Header{Key: "Prefer", Value: "odata.maxpagesize=2"})
 			if err != nil {
 				return err
 			}
@@ -196,10 +187,16 @@ func PaginationEdgeCases() *framework.TestSuite {
 				return fmt.Errorf("expected value array in response")
 			}
 
-			if nextLink, hasNextLink := result["@odata.nextLink"].(string); hasNextLink {
-				// Server chose to page; verify the nextLink is actually followable.
-				ctx.Log("@odata.nextLink found: " + nextLink)
-				resp2, err := ctx.GET(nextLink)
+			count, ok := result["@odata.count"].(float64)
+			if !ok {
+				return fmt.Errorf("@odata.count missing or invalid")
+			}
+			if count > float64(len(value)) {
+				nextLink, ok := result["@odata.nextLink"].(string)
+				if !ok || nextLink == "" {
+					return fmt.Errorf("partial result has no @odata.nextLink")
+				}
+				resp2, err := ctx.GETNextLink(nextLink)
 				if err != nil {
 					return fmt.Errorf("failed to follow @odata.nextLink: %w", err)
 				}
@@ -207,11 +204,7 @@ func PaginationEdgeCases() *framework.TestSuite {
 					return fmt.Errorf("@odata.nextLink follow: %w", err)
 				}
 			} else {
-				// No nextLink is valid when the server returns all items within $top.
-				// With 7 seed products and $top=2, the server is expected to set a
-				// nextLink, but we allow the no-nextLink path for non-conformant servers
-				// that return all rows regardless of $top.
-				ctx.Log(fmt.Sprintf("No @odata.nextLink (server returned %d items for $top=2)", len(value)))
+				return ctx.Skip("Service returned the complete collection in one page")
 			}
 
 			return nil
@@ -221,9 +214,9 @@ func PaginationEdgeCases() *framework.TestSuite {
 	// Test 8: @odata.nextLink absent when no more results
 	suite.AddTest(
 		"test_nextlink_absent",
-		"@odata.nextLink absent when all results returned",
+		"@odata.nextLink absent for $top=0",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=10000")
+			resp, err := ctx.GET("/Products?$top=0")
 			if err != nil {
 				return err
 			}

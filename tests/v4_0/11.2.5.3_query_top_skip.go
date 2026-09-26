@@ -264,8 +264,21 @@ func collectionSize(ctx *framework.TestContext, path string) (int, error) {
 func orderedProductIDs(ctx *framework.TestContext, path string) ([]string, error) {
 	ids := []string{}
 	next := path
+	first := true
+	seen := map[string]bool{}
 	for next != "" {
-		resp, err := ctx.GET(next)
+		if seen[next] {
+			return nil, fmt.Errorf("repeated @odata.nextLink %q", next)
+		}
+		seen[next] = true
+		var resp *framework.HTTPResponse
+		var err error
+		if first {
+			resp, err = ctx.GET(next)
+			first = false
+		} else {
+			resp, err = ctx.GETNextLink(next)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -283,13 +296,7 @@ func orderedProductIDs(ctx *framework.TestContext, path string) ([]string, error
 			return nil, fmt.Errorf("failed to parse JSON: %w", err)
 		}
 		nextLink, _ := result["@odata.nextLink"].(string)
-		next = ""
-		if nextLink != "" {
-			next = nextLink
-			if strings.HasPrefix(next, ctx.ServerURL()) {
-				next = strings.TrimPrefix(next, ctx.ServerURL())
-			}
-		}
+		next = nextLink
 	}
 	return ids, nil
 }

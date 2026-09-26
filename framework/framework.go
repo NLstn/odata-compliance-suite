@@ -456,6 +456,20 @@ func (c *TestContext) GETWithHeaders(path string, customHeaders map[string]strin
 	return c.request("GET", path, nil, headers...)
 }
 
+// GETNextLink follows a server-provided continuation URL without rewriting its
+// opaque query string. Relative links are resolved against the service root.
+func (c *TestContext) GETNextLink(link string, headers ...Header) (*HTTPResponse, error) {
+	base, err := url.Parse(strings.TrimRight(c.suite.ServerURL, "/") + "/")
+	if err != nil {
+		return nil, fmt.Errorf("invalid service URL: %w", err)
+	}
+	continuation, err := url.Parse(link)
+	if err != nil || link == "" {
+		return nil, fmt.Errorf("invalid @odata.nextLink %q: %v", link, err)
+	}
+	return c.requestWithOptions("GET", base.ResolveReference(continuation).String(), nil, requestOptions{rawURL: true}, headers...)
+}
+
 // Log logs a message during test execution
 func (c *TestContext) Log(message string) {
 	if c.suite.Debug {
@@ -481,11 +495,12 @@ func (c *TestContext) request(method, path string, body interface{}, headers ...
 
 type requestOptions struct {
 	skipDefaultContentType bool
+	rawURL                 bool
 }
 
 func (c *TestContext) requestWithOptions(method, path string, body interface{}, options requestOptions, headers ...Header) (*HTTPResponse, error) {
 	// Normalize query strings so callers don't need to URL encode manually
-	if strings.Contains(path, "?") {
+	if !options.rawURL && strings.Contains(path, "?") {
 		if parsed, err := url.Parse(path); err == nil {
 			encodedPath := parsed.Path
 			if rawQuery := parsed.Query().Encode(); rawQuery != "" {
@@ -495,7 +510,10 @@ func (c *TestContext) requestWithOptions(method, path string, body interface{}, 
 		}
 	}
 
-	url := c.suite.ServerURL + path
+	requestURL := c.suite.ServerURL + path
+	if options.rawURL {
+		requestURL = path
+	}
 
 	var bodyReader io.Reader
 	if body != nil {
@@ -515,7 +533,7 @@ func (c *TestContext) requestWithOptions(method, path string, body interface{}, 
 		bodyReader = bytes.NewReader(bodyBytes)
 	}
 
-	req, err := http.NewRequest(method, url, bodyReader)
+	req, err := http.NewRequest(method, requestURL, bodyReader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

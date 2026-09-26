@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"net/url"
 	"regexp"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
@@ -134,7 +133,7 @@ func VocabularyAnnotations() *framework.TestSuite {
 		"test_odata_nextlink_annotation",
 		"@odata.nextLink in paginated results",
 		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$count=true&$top=1")
+			resp, err := ctx.GET("/Products?$count=true", framework.Header{Key: "Prefer", Value: "odata.maxpagesize=1"})
 			if err != nil {
 				return err
 			}
@@ -162,26 +161,22 @@ func VocabularyAnnotations() *framework.TestSuite {
 				return fmt.Errorf("@odata.count must be an integer value, got %f", countNum)
 			}
 
-			if countNum <= 1 {
-				return ctx.Skip("Not enough entities to require pagination for $top=1")
+			value, ok := result["value"].([]interface{})
+			if !ok {
+				return fmt.Errorf("response missing value array")
 			}
-
+			if countNum <= float64(len(value)) {
+				return ctx.Skip("Service returned the complete collection in one page")
+			}
 			nextLink, ok := result["@odata.nextLink"].(string)
 			if !ok || nextLink == "" {
-				return fmt.Errorf("@odata.nextLink required when @odata.count exceeds $top=1")
+				return fmt.Errorf("@odata.nextLink required for a partial collection")
 			}
-
-			parsed, err := url.Parse(nextLink)
+			next, err := ctx.GETNextLink(nextLink)
 			if err != nil {
-				return fmt.Errorf("invalid @odata.nextLink URL: %w", err)
+				return err
 			}
-
-			query := parsed.Query()
-			if !query.Has("$skip") && !query.Has("$skiptoken") {
-				return fmt.Errorf("@odata.nextLink must include $skip or $skiptoken parameter, got: %s", nextLink)
-			}
-
-			return nil
+			return ctx.AssertStatusCode(next, 200)
 		},
 	)
 
