@@ -54,10 +54,10 @@ Accept: application/json
 		},
 	)
 
-	// Test 2: Independent requests don't affect each other
+	// Test 2: Batch processing stops after an error unless continue-on-error was requested.
 	suite.AddTest(
 		"test_independent_requests",
-		"Independent requests don't affect each other",
+		"Batch stops after the first failed request by default",
 		func(ctx *framework.TestContext) error {
 			firstSegment, err := getProductSegment(ctx, 0)
 			if err != nil {
@@ -103,12 +103,12 @@ Accept: application/json
 				return err
 			}
 
-			// Should have both 200 and 404 responses
+			// The third request must not execute after the 404.
 			successCount := strings.Count(string(resp.Body), "HTTP/1.1 200")
 			notFoundCount := strings.Count(string(resp.Body), "HTTP/1.1 404")
 
-			if successCount < 2 || notFoundCount < 1 {
-				return framework.NewError("Expected at least two 200 responses and one 404 response")
+			if successCount != 1 || notFoundCount != 1 {
+				return fmt.Errorf("expected one 200 then one 404 and no third response; got %d successes and %d failures", successCount, notFoundCount)
 			}
 
 			return nil
@@ -186,6 +186,18 @@ Accept: application/json
 				return err
 			}
 			originalName, _ := originalEntity["Name"].(string)
+			if originalName == "" {
+				return fmt.Errorf("product has no Name for rollback comparison")
+			}
+			// Prove the first operation is valid outside a changeset, so a parser
+			// rejection cannot masquerade as a successful rollback.
+			control, err := ctx.PATCH(productPath, map[string]interface{}{"Name": originalName})
+			if err != nil {
+				return err
+			}
+			if control.StatusCode != 200 && control.StatusCode != 204 {
+				return fmt.Errorf("control PATCH failed with %d; cannot test rollback", control.StatusCode)
+			}
 
 			// Changeset: valid PATCH on real product followed by DELETE on nonexistent
 			// entity (must 404). If the server supports changeset atomicity the PATCH
@@ -199,6 +211,7 @@ Content-Type: multipart/mixed; boundary=%[2]s
 --%[2]s
 Content-Type: application/http
 Content-Transfer-Encoding: binary
+Content-ID: 1
 
 PATCH %[3]s HTTP/1.1
 Content-Type: application/json
@@ -208,6 +221,7 @@ Content-Type: application/json
 --%[2]s
 Content-Type: application/http
 Content-Transfer-Encoding: binary
+Content-ID: 2
 
 DELETE /Products(%[5]s) HTTP/1.1
 
@@ -250,7 +264,7 @@ DELETE /Products(%[5]s) HTTP/1.1
 				return err
 			}
 			currentName, _ := currentEntity["Name"].(string)
-			if currentName == changedName {
+			if currentName != originalName {
 				return framework.NewError(
 					fmt.Sprintf("changeset atomicity violated: PATCH was not rolled back after "+
 						"changeset failure; product Name is %q but should still be %q "+

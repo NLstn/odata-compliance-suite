@@ -3,7 +3,6 @@ package v4_0
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -82,8 +81,7 @@ func HeaderIsolation() *framework.TestSuite {
 				return fmt.Errorf("setup: failed to delete product between pages: %w", err)
 			}
 
-			nextPath := strings.TrimPrefix(page1.NextLink, ctx.ServerURL())
-			page2Resp, err := ctx.GET(nextPath, isolationHeaders...)
+			page2Resp, err := ctx.GETNextLink(page1.NextLink, isolationHeaders...)
 			if err != nil {
 				return err
 			}
