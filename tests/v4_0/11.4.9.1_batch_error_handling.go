@@ -243,11 +243,12 @@ DELETE /Products(%[5]s) HTTP/1.1
 				return err
 			}
 
-			// The DELETE on the nonexistent entity must produce a 4xx sub-response.
+			// The DELETE on the nonexistent entity must produce a 404. A
+			// parser-level 400 would not prove that rollback was exercised.
 			body := string(resp.Body)
-			if !strings.Contains(body, "HTTP/1.1 4") {
+			if !strings.Contains(body, "HTTP/1.1 404") {
 				return framework.NewError(
-					"expected a 4xx sub-response for DELETE on nonexistent entity; " +
+					"expected a 404 sub-response for DELETE on nonexistent entity; " +
 						"changeset did not fail as required")
 			}
 
