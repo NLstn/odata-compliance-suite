@@ -254,8 +254,19 @@ func AddressingEntities() *framework.TestSuite {
 		},
 	)
 
+	return suite
+}
+
+// CrossJoin covers the optional cross-join feature at the Advanced level.
+func CrossJoin() *framework.TestSuite {
+	suite := framework.NewTestSuite(
+		"11.2.1 Cross-Join Queries",
+		"Tests the optional cross-join resource when implemented.",
+		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part2-url-conventions/odata-v4.0-errata03-os-part2-url-conventions-complete.html#sec_AddressingtheCrossJoinofEntitySets",
+	)
 	// $crossjoin(E1,E2) addresses the Cartesian product of two entity sets (OData Part 2 §4.15).
-	// A missing implementation is a compliance failure; the test must not skip 404/501.
+	// Cross-join is a SHOULD in the Advanced conformance level, so a service
+	// without this feature is not non-conformant solely for omitting it.
 	suite.AddTest(
 		"test_crossjoin_basic",
 		"$crossjoin(Products,Categories) returns cross-product with properties from both sets (§4.15)",
@@ -263,6 +274,9 @@ func AddressingEntities() *framework.TestSuite {
 			resp, err := ctx.GET("/$crossjoin(Products,Categories)?$top=5")
 			if err != nil {
 				return err
+			}
+			if resp.StatusCode == 404 || resp.StatusCode == 501 {
+				return ctx.Skip("service does not implement optional cross-join queries")
 			}
 			if err := ctx.AssertStatusCode(resp, 200); err != nil {
 				return err
@@ -278,17 +292,21 @@ func AddressingEntities() *framework.TestSuite {
 			if len(rows) == 0 {
 				return fmt.Errorf("$crossjoin returned an empty Cartesian product")
 			}
-			// Each row must be an object; the spec requires @id on each item.
+			if len(rows) > 5 {
+				return fmt.Errorf("$crossjoin?$top=5 returned %d rows", len(rows))
+			}
+			// Neither side was expanded, so each row must identify both joined
+			// entities through their navigation links.
 			for i, r := range rows {
 				row, ok := r.(map[string]interface{})
 				if !ok {
 					return fmt.Errorf("crossjoin row %d is not an object", i)
 				}
-				// Each cross-join row must address both sides; we expect namespace-qualified
-				// property bags (Products/... and Categories/...). Accept either property-bag
-				// keys or at least an @odata.id annotation.
-				if len(row) == 0 {
-					return fmt.Errorf("crossjoin row %d is empty — expected at least @odata.id or namespace-qualified properties", i)
+				for _, set := range []string{"Products", "Categories"} {
+					link, ok := row[set+"@odata.navigationLink"].(string)
+					if !ok || link == "" {
+						return fmt.Errorf("crossjoin row %d lacks %s navigation link", i, set)
+					}
 				}
 			}
 			return nil

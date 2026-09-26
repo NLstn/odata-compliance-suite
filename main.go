@@ -444,6 +444,11 @@ func main() {
 			Suite:   v4_0.AddressingEntities,
 		})
 		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "11.2.1_crossjoin",
+			Version: "4.0",
+			Suite:   v4_0.CrossJoin,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
 			Name:    "11.2.2_canonical_url",
 			Version: "4.0",
 			Suite:   v4_0.CanonicalURL,
@@ -1184,6 +1189,7 @@ func main() {
 		// --- Entity Read ---
 		"11.1_resource_path":            {framework.LevelMinimal, "Entity Read"},
 		"11.2.1_addressing_entities":    {framework.LevelMinimal, "Entity Read"},
+		"11.2.1_crossjoin":              {framework.LevelAdvanced, "Advanced Querying"},
 		"11.2.1_key_as_segments":        {framework.LevelMinimal, "Entity Read"},
 		"11.2.1_additional_paths_4_01":  {framework.LevelAdvanced, "Resource Paths"},
 		"11.2.2_canonical_url":          {framework.LevelMinimal, "Entity Read"},
@@ -1298,8 +1304,10 @@ func main() {
 	// — a suite that should have been capability-gated would instead run
 	// unconditionally, or one that should carry a coverage-band tag would
 	// silently be excluded from the coverage report. Validate both maps
-	// reference only suite names that actually exist, once, at startup.
-	{
+	// reference only suite names that actually exist. The registry is built
+	// for the selected version, so cross-version keys can only be checked when
+	// all versions are registered.
+	if *version == "all" {
 		suiteNames := make(map[string]bool, len(testSuites))
 		for _, suiteInfo := range testSuites {
 			suiteNames[suiteInfo.Name] = true

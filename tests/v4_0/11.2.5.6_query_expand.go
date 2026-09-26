@@ -22,7 +22,7 @@ func QueryExpand() *framework.TestSuite {
 		"$expand includes related entities inline",
 		func(ctx *framework.TestContext) error {
 			expand := url.QueryEscape("Descriptions")
-			resp, err := ctx.GET("/Products?$expand=" + expand + "&$top=1")
+			resp, err := ctx.GET("/Products?$filter=" + url.QueryEscape("Name eq 'Laptop'") + "&$expand=" + expand + "&$top=1")
 			if err != nil {
 				return err
 			}
@@ -46,9 +46,23 @@ func QueryExpand() *framework.TestSuite {
 				return fmt.Errorf("descriptions field is missing")
 			}
 
-			// Verify Descriptions is an array (expanded data)
-			if _, ok := descriptions.([]interface{}); !ok {
+			// Verify the inline entities actually belong to this Product. Merely
+			// checking for an array lets an unrelated collection pass.
+			descArray, ok := descriptions.([]interface{})
+			if !ok {
 				return fmt.Errorf("descriptions field is not an array (not properly expanded)")
+			}
+			if len(descArray) == 0 {
+				return fmt.Errorf("fixture Product has no expanded Descriptions")
+			}
+			for i, raw := range descArray {
+				desc, ok := raw.(map[string]interface{})
+				if !ok {
+					return fmt.Errorf("expanded Description %d is not an object", i)
+				}
+				if desc["ProductID"] != item["ID"] {
+					return fmt.Errorf("expanded Description %d belongs to Product %v, want %v", i, desc["ProductID"], item["ID"])
+				}
 			}
 
 			return nil

@@ -297,21 +297,49 @@ func JSONBatch() *framework.TestSuite {
 		"test_json_batch_atomicitygroup_rollback",
 		"A failed atomicityGroup rolls back all changes and echoes the group id",
 		func(ctx *framework.TestContext) error {
-			// r1 succeeds (creates entity); r2 fails (non-existent delete).
-			// Both are in the same atomicityGroup, so both should end up as 4xx.
+			id, err := firstEntityID(ctx, "Products")
+			if err != nil {
+				return err
+			}
+			path := fmt.Sprintf("/Products(%s)", id)
+			before, err := ctx.GET(path)
+			if err != nil {
+				return err
+			}
+			if err := ctx.AssertStatusCode(before, 200); err != nil {
+				return err
+			}
+			var original map[string]interface{}
+			if err := ctx.GetJSON(before, &original); err != nil {
+				return err
+			}
+			originalName, ok := original["Name"].(string)
+			if !ok {
+				return fmt.Errorf("product has no Name for rollback comparison")
+			}
+			// Establish that the first PATCH is valid outside the group.
+			control, err := ctx.PATCH(path, map[string]interface{}{"Name": originalName})
+			if err != nil {
+				return err
+			}
+			if control.StatusCode != 200 && control.StatusCode != 204 {
+				return fmt.Errorf("control PATCH failed with %d", control.StatusCode)
+			}
+			changedName := "AtomicRollbackTest"
+			// r1 is a valid PATCH; r2 fails on a non-existent Product.
 			resp, err := postJSONBatch(ctx, makeRequests(
 				map[string]interface{}{
 					"id":             "r1",
-					"method":         "POST",
-					"url":            "Products",
+					"method":         "PATCH",
+					"url":            strings.TrimPrefix(path, "/"),
 					"headers":        map[string]interface{}{"Content-Type": "application/json"},
-					"body":           map[string]interface{}{"Name": "AtomicRollbackTest", "Price": 1.0},
+					"body":           map[string]interface{}{"Name": changedName},
 					"atomicityGroup": "g1",
 				},
 				map[string]interface{}{
 					"id":             "r2",
 					"method":         "DELETE",
-					"url":            "Products(2147483647)", // non-existent
+					"url":            "Products(00000000-0000-0000-0000-000000000000)",
 					"atomicityGroup": "g1",
 				},
 			))
@@ -340,33 +368,28 @@ func JSONBatch() *framework.TestSuite {
 					return fmt.Errorf("response %s atomicityGroup = %v, want g1", id, response["atomicityGroup"])
 				}
 			}
-			if r2["status"] == float64(200) || r2["status"] == float64(201) {
-				return framework.NewError(fmt.Sprintf("expected r2 to fail, got status %v", r2["status"]))
+			if r2["status"] != float64(404) {
+				return framework.NewError(fmt.Sprintf("expected r2 to fail on missing Product with 404, got status %v", r2["status"]))
 			}
-			// r1 itself succeeded when submitted, but the group failed and was
-			// rolled back — its own response status must reflect that too, not
-			// just the downstream side effect (checked below). A server that
-			// returns 201 for r1 while silently discarding the row underneath
-			// would otherwise only be caught indirectly.
-			if r1["status"] == float64(200) || r1["status"] == float64(201) {
-				return fmt.Errorf("expected r1's response status to reflect the atomicityGroup rollback (not 2xx), got %v", r1["status"])
+			if status := r1["status"]; status != float64(200) && status != float64(204) && status != float64(424) {
+				return fmt.Errorf("valid first PATCH returned %v; expected 200, 204, or rollback 424", status)
 			}
-
-			// Verify the entity was NOT persisted.
-			listResp, err := ctx.GET("/Products?$filter=Name eq 'AtomicRollbackTest'")
+			// A 2xx response for r1 is allowed even though the group is rolled back.
+			// Verify the original entity is unchanged instead of inferring state
+			// from individual response codes.
+			verifyResp, err := ctx.GET(path)
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(listResp, 200); err != nil {
+			if err := ctx.AssertStatusCode(verifyResp, 200); err != nil {
 				return err
 			}
-			var listEnvelope map[string]interface{}
-			if err := json.Unmarshal(listResp.Body, &listEnvelope); err != nil {
-				return framework.NewError(fmt.Sprintf("failed to parse product list: %v", err))
+			var verified map[string]interface{}
+			if err := ctx.GetJSON(verifyResp, &verified); err != nil {
+				return err
 			}
-			items, _ := listEnvelope["value"].([]interface{})
-			if len(items) > 0 {
-				return framework.NewError("entity should have been rolled back but still exists")
+			if verified["Name"] != originalName {
+				return fmt.Errorf("failed atomicityGroup changed Name from %q to %v", originalName, verified["Name"])
 			}
 			return nil
 		},

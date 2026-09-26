@@ -179,6 +179,24 @@ func ConditionalRequests() *framework.TestSuite {
 		etag := resp.Headers.Get("ETag")
 		return path, etag, nil
 	}
+	getName := func(ctx *framework.TestContext, path string) (string, error) {
+		resp, err := ctx.GET(path)
+		if err != nil {
+			return "", err
+		}
+		if err := ctx.AssertStatusCode(resp, 200); err != nil {
+			return "", err
+		}
+		var entity map[string]interface{}
+		if err := ctx.GetJSON(resp, &entity); err != nil {
+			return "", err
+		}
+		name, ok := entity["Name"].(string)
+		if !ok {
+			return "", fmt.Errorf("entity has no Name")
+		}
+		return name, nil
+	}
 
 	// Test 1: Entity with @odata.etag should include ETag header
 	suite.AddTest(
@@ -280,7 +298,6 @@ func ConditionalRequests() *framework.TestSuite {
 			if etag == "" {
 				return framework.NewError("No ETag support")
 			}
-
 			payload := map[string]interface{}{
 				"Name": "Test update",
 			}
@@ -314,6 +331,10 @@ func ConditionalRequests() *framework.TestSuite {
 			if etag == "" {
 				return framework.NewError("No ETag support")
 			}
+			originalName, err := getName(ctx, path)
+			if err != nil {
+				return err
+			}
 
 			payload := map[string]interface{}{
 				"Name": "Test update",
@@ -326,7 +347,17 @@ func ConditionalRequests() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, 412)
+			if err := ctx.AssertStatusCode(resp, 412); err != nil {
+				return err
+			}
+			name, err := getName(ctx, path)
+			if err != nil {
+				return err
+			}
+			if name != originalName {
+				return fmt.Errorf("failed If-Match PATCH changed Name from %q to %q", originalName, name)
+			}
+			return nil
 		},
 	)
 
@@ -420,7 +451,11 @@ func ConditionalRequests() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(resp, 412)
+			if err := ctx.AssertStatusCode(resp, 412); err != nil {
+				return err
+			}
+			_, err = getName(ctx, path)
+			return err
 		},
 	)
 
@@ -463,7 +498,17 @@ func ConditionalRequests() *framework.TestSuite {
 				return err
 			}
 
-			return ctx.AssertStatusCode(stalePatch, 412)
+			if err := ctx.AssertStatusCode(stalePatch, 412); err != nil {
+				return err
+			}
+			name, err := getName(ctx, path)
+			if err != nil {
+				return err
+			}
+			if name != "StaleETagFirstPatch" {
+				return fmt.Errorf("stale If-Match PATCH changed Name to %q", name)
+			}
+			return nil
 		},
 	)
 

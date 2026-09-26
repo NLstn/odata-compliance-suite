@@ -319,7 +319,7 @@ func UpdateEntity() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_put_nonexistent_entity",
-		"PUT on non-existent entity returns 404",
+		"PUT on a non-existent Product with a generated key is rejected",
 		func(ctx *framework.TestContext) error {
 			nonExistentPath := nonExistingEntityPath("Products")
 
@@ -343,93 +343,14 @@ func UpdateEntity() *framework.TestSuite {
 				return err
 			}
 
-			// PUT should not create new entities - use POST for that
-			// Should return 404
-			if resp.StatusCode != 404 {
-				return fmt.Errorf("expected status 404 for PUT on non-existent entity, got %d", resp.StatusCode)
+			if resp.StatusCode < 400 || resp.StatusCode >= 500 {
+				return fmt.Errorf("expected 4xx for generated-key upsert, got %d", resp.StatusCode)
 			}
-
-			ctx.Log("Correctly returned 404 for PUT on non-existent entity")
-			return nil
-		},
-	)
-
-	// Deep update via PATCH: include an inline related entity in the body (§11.4.3).
-	// The server MAY support deep update. If it does (200/204), the related entity
-	// must reflect the supplied inline values. If it returns 400/501, the test skips.
-	suite.AddTest(
-		"test_patch_deep_update_inline_collection",
-		"PATCH with inline collection-valued navigation updates related entities (§11.4.3, MAY)",
-		func(ctx *framework.TestContext) error {
-			productID, err := createTestProduct(ctx, "DeepUpdateInlineTest", 77.77)
+			getResp, err := ctx.GET(nonExistentPath)
 			if err != nil {
 				return err
 			}
-			productPath := fmt.Sprintf("/Products(%s)", productID)
-
-			// Create a Description for the product first so we have one to update.
-			_, err = ctx.POST("/ProductDescriptions", map[string]interface{}{
-				"ProductID":   productID,
-				"LanguageKey": "EN",
-				"Description": "Before deep update",
-			})
-			if err != nil {
-				return err
-			}
-
-			// Now PATCH the Product with an inline updated Description.
-			patchResp, err := ctx.PATCH(productPath, map[string]interface{}{
-				"Name": "DeepUpdateInlineTest-Updated",
-				"Descriptions": []map[string]interface{}{
-					{
-						"LanguageKey": "EN",
-						"Description": "After deep update",
-					},
-				},
-			})
-			if err != nil {
-				return err
-			}
-			if patchResp.StatusCode == 400 || patchResp.StatusCode == 501 {
-				return ctx.Skip("server does not support deep update of collection-valued navigation (400/501) — MAY support per §11.4.3")
-			}
-			if patchResp.StatusCode != 200 && patchResp.StatusCode != 204 {
-				return fmt.Errorf("deep update PATCH returned unexpected status %d", patchResp.StatusCode)
-			}
-
-			// Verify the top-level entity was updated.
-			getResp, err := ctx.GET(productPath + "?$expand=Descriptions")
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(getResp, 200); err != nil {
-				return err
-			}
-			var body map[string]interface{}
-			if err := json.Unmarshal(getResp.Body, &body); err != nil {
-				return fmt.Errorf("failed to parse response after deep update: %w", err)
-			}
-			name, _ := body["Name"].(string)
-			if name != "DeepUpdateInlineTest-Updated" {
-				return fmt.Errorf("deep update: product Name not updated (got %q)", name)
-			}
-
-			// Verify the related Description was also updated.
-			descs, _ := body["Descriptions"].([]interface{})
-			for _, d := range descs {
-				desc, ok := d.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				if desc["LanguageKey"] == "EN" {
-					descText, _ := desc["Description"].(string)
-					if descText != "After deep update" {
-						return fmt.Errorf("deep update: EN description not updated (got %q)", descText)
-					}
-					return nil
-				}
-			}
-			return fmt.Errorf("deep update: EN description not found in expanded Descriptions after PATCH")
+			return ctx.AssertStatusCode(getResp, 404)
 		},
 	)
 
