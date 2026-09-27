@@ -40,3 +40,56 @@ func firstEntityID(ctx *framework.TestContext, entitySet string) (string, error)
 	}
 	return fmt.Sprintf("%v", id), nil
 }
+
+// collectEntityCollection follows every opaque continuation URL so assertions
+// compare complete query results rather than only the first server-driven page.
+func collectEntityCollection(ctx *framework.TestContext, path string, headers ...framework.Header) ([]map[string]interface{}, error) {
+	resp, err := ctx.GET(path, headers...)
+	if err != nil {
+		return nil, err
+	}
+	return collectEntityPages(ctx, resp, headers...)
+}
+
+func collectEntityPages(ctx *framework.TestContext, resp *framework.HTTPResponse, headers ...framework.Header) ([]map[string]interface{}, error) {
+	seenLinks := map[string]bool{}
+	seenIDs := map[string]bool{}
+	var all []map[string]interface{}
+	for page := 0; page < 100; page++ {
+		if err := ctx.AssertStatusCode(resp, 200); err != nil {
+			return nil, err
+		}
+		items, err := ctx.ParseEntityCollection(resp)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			if id, ok := item["ID"]; ok {
+				key := fmt.Sprint(id)
+				if seenIDs[key] {
+					return nil, fmt.Errorf("entity %s appears on multiple pages", key)
+				}
+				seenIDs[key] = true
+			}
+			all = append(all, item)
+		}
+		var envelope struct {
+			NextLink string `json:"@odata.nextLink"`
+		}
+		if err := ctx.GetJSON(resp, &envelope); err != nil {
+			return nil, err
+		}
+		if envelope.NextLink == "" {
+			return all, nil
+		}
+		if seenLinks[envelope.NextLink] {
+			return nil, fmt.Errorf("repeated @odata.nextLink %q", envelope.NextLink)
+		}
+		seenLinks[envelope.NextLink] = true
+		resp, err = ctx.GETNextLink(envelope.NextLink, headers...)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("pagination exceeded 100 pages")
+}

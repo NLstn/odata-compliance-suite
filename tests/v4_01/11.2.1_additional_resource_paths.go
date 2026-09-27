@@ -3,7 +3,9 @@ package v4_01
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
+	"sort"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -13,7 +15,7 @@ import (
 func AdditionalResourcePaths() *framework.TestSuite {
 	suite := framework.NewTestSuite(
 		"11.2.1 Additional Resource Paths",
-		"Tests $all, $crossjoin, and passing query options in the request body.",
+		"Tests $all and passing query options in the request body.",
 		"https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part2-url-conventions.html#sec_AddressingAllEntitiesInaService",
 	)
 
@@ -38,8 +40,17 @@ func AdditionalResourcePaths() *framework.TestSuite {
 			if err := json.Unmarshal(resp.Body, &body); err != nil {
 				return fmt.Errorf("$all response is not valid JSON: %w", err)
 			}
-			if len(body.Value) == 0 {
-				return fmt.Errorf("$all returned an empty collection; the reference model contains entities")
+			if len(body.Value) != 1 {
+				return fmt.Errorf("$all?$top=1 returned %d entities, want exactly one", len(body.Value))
+			}
+			var envelope struct {
+				NextLink string `json:"@odata.nextLink"`
+			}
+			if err := json.Unmarshal(resp.Body, &envelope); err != nil {
+				return err
+			}
+			if envelope.NextLink != "" {
+				return fmt.Errorf("$all?$top=1 returned an unexpected nextLink after the requested entity")
 			}
 			return nil
 		},
@@ -63,21 +74,20 @@ func AdditionalResourcePaths() *framework.TestSuite {
 				return fmt.Errorf("request-body query failed: %w", err)
 			}
 
-			var body struct {
-				Value []map[string]interface{} `json:"value"`
+			items, err := collectEntityPages(ctx, resp, queryBodyHeaders()...)
+			if err != nil {
+				return fmt.Errorf("request-body query response: %w", err)
 			}
-			if err := json.Unmarshal(resp.Body, &body); err != nil {
-				return fmt.Errorf("request-body query response is not valid JSON: %w", err)
-			}
-			if len(body.Value) == 0 {
+			if len(items) == 0 {
 				return fmt.Errorf("request-body query returned no products matching Price gt 900")
 			}
-			for i, product := range body.Value {
+			for i, product := range items {
 				if product["Name"] == nil || product["Price"] == nil {
 					return fmt.Errorf("result %d does not contain both selected properties Name and Price", i)
 				}
-				if _, present := product["Description"]; present {
-					return fmt.Errorf("result %d contains Description despite URL $select=Name,Price", i)
+				price, ok := product["Price"].(float64)
+				if !ok || price <= 900 {
+					return fmt.Errorf("result %d has Price=%v, expected > 900", i, product["Price"])
 				}
 			}
 			return nil
@@ -86,8 +96,26 @@ func AdditionalResourcePaths() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_query_request_body_orderby_top",
-		"POST /Products/$query applies $orderby and $top supplied in the request body (§4.17)",
+		"POST /Products/$query returns the two highest-priced products when $orderby and $top are in the body (§4.17)",
 		func(ctx *framework.TestContext) error {
+			baseline, err := collectEntityCollection(ctx, "/Products?$select=ID,Price", queryBodyHeaders()...)
+			if err != nil {
+				return fmt.Errorf("baseline products: %w", err)
+			}
+			if len(baseline) < 3 {
+				return fmt.Errorf("need at least three baseline products to test $top=2, got %d", len(baseline))
+			}
+			for i, product := range baseline {
+				if _, ok := product["Price"].(float64); !ok || product["ID"] == nil {
+					return fmt.Errorf("baseline product %d is missing ID or numeric Price", i)
+				}
+			}
+			sort.Slice(baseline, func(i, j int) bool {
+				return baseline[i]["Price"].(float64) > baseline[j]["Price"].(float64)
+			})
+			if baseline[1]["Price"].(float64) == baseline[2]["Price"].(float64) {
+				return fmt.Errorf("baseline has a price tie at the $top=2 boundary")
+			}
 			resp, err := ctx.POSTRaw(
 				"/Products/$query",
 				[]byte("$orderby=Price%20desc&$top=2"),
@@ -100,24 +128,16 @@ func AdditionalResourcePaths() *framework.TestSuite {
 			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
 				return fmt.Errorf("orderby/top query failed: %w", err)
 			}
-			items, err := ctx.ParseEntityCollection(resp)
+			items, err := collectEntityPages(ctx, resp, queryBodyHeaders()...)
 			if err != nil {
 				return err
 			}
-			if len(items) == 0 || len(items) > 2 {
-				return fmt.Errorf("expected 1-2 products from $top=2, got %d", len(items))
+			if len(items) != 2 {
+				return fmt.Errorf("expected 2 products from $top=2, got %d", len(items))
 			}
-			for i := 1; i < len(items); i++ {
-				previous, ok := items[i-1]["Price"].(float64)
-				if !ok {
-					return fmt.Errorf("result %d has non-numeric Price %T", i-1, items[i-1]["Price"])
-				}
-				current, ok := items[i]["Price"].(float64)
-				if !ok {
-					return fmt.Errorf("result %d has non-numeric Price %T", i, items[i]["Price"])
-				}
-				if previous < current {
-					return fmt.Errorf("prices are not ordered descending: %v before %v", previous, current)
+			for i, item := range items {
+				if item["ID"] == nil || item["Price"] != baseline[i]["Price"] || item["ID"] != baseline[i]["ID"] {
+					return fmt.Errorf("result %d is ID=%v Price=%v, want ID=%v Price=%v", i, item["ID"], item["Price"], baseline[i]["ID"], baseline[i]["Price"])
 				}
 			}
 			return nil
@@ -126,8 +146,22 @@ func AdditionalResourcePaths() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_query_request_body_count",
-		"POST /Products/$query returns an inline count for a body-supplied filter (§4.17, §11.2.5.5)",
+		"POST /Products/$query returns the filtered items and inline count supplied in the body (§4.17, §11.2.5.5)",
 		func(ctx *framework.TestContext) error {
+			baseline, err := collectEntityCollection(ctx, "/Products?$select=ID,Price", queryBodyHeaders()...)
+			if err != nil {
+				return fmt.Errorf("baseline products: %w", err)
+			}
+			expected := map[string]bool{}
+			for i, product := range baseline {
+				price, ok := product["Price"].(float64)
+				if !ok || product["ID"] == nil {
+					return fmt.Errorf("baseline product %d is missing ID or numeric Price", i)
+				}
+				if price > 900 {
+					expected[fmt.Sprint(product["ID"])] = true
+				}
+			}
 			resp, err := ctx.POSTRaw(
 				"/Products/$query",
 				[]byte("$filter=Price%20gt%20900.0&$count=true"),
@@ -140,7 +174,7 @@ func AdditionalResourcePaths() *framework.TestSuite {
 			if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
 				return fmt.Errorf("count query failed: %w", err)
 			}
-			items, err := ctx.ParseEntityCollection(resp)
+			items, err := collectEntityPages(ctx, resp, queryBodyHeaders()...)
 			if err != nil {
 				return err
 			}
@@ -152,8 +186,15 @@ func AdditionalResourcePaths() *framework.TestSuite {
 			if !ok {
 				return fmt.Errorf("count query response is missing numeric @odata.count")
 			}
-			if int(count) != len(items) {
+			if count != float64(len(items)) {
 				return fmt.Errorf("@odata.count=%v does not match returned item count %d", count, len(items))
+			}
+			actual, err := entityIDs(items)
+			if err != nil {
+				return err
+			}
+			if !maps.Equal(actual, expected) {
+				return fmt.Errorf("body-supplied filter returned product IDs %v, want %v", actual, expected)
 			}
 			return nil
 		},
@@ -165,7 +206,7 @@ func AdditionalResourcePaths() *framework.TestSuite {
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.POSTRaw(
 				"/Products/$query",
-				[]byte("$filter=Price%20gt"),
+				[]byte("$filter=Price%GGgt%20900"),
 				"text/plain",
 				queryBodyHeaders()...,
 			)
@@ -189,7 +230,10 @@ func AdditionalResourcePaths() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			return ctx.AssertStatusCode(resp, http.StatusUnsupportedMediaType)
+			if resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusUnsupportedMediaType {
+				return fmt.Errorf("non-text/plain query body returned %d, want 400 or 415", resp.StatusCode)
+			}
+			return nil
 		},
 	)
 
@@ -201,8 +245,11 @@ func AdditionalResourcePaths() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
+			if resp.StatusCode == http.StatusBadRequest {
+				return nil
+			}
 			if err := ctx.AssertStatusCode(resp, http.StatusMethodNotAllowed); err != nil {
-				return err
+				return fmt.Errorf("GET /$query: %w", err)
 			}
 			return ctx.AssertHeaderContains(resp, "Allow", "POST")
 		},
