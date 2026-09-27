@@ -21,13 +21,13 @@ func MetadataReferenceIntegrity() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_entity_set_entity_types_resolve",
-		"Every EntitySet EntityType reference resolves to an EntityType declared in the metadata document",
+		"Every EntitySet EntityType reference names an entity type in scope",
 		func(ctx *framework.TestContext) error {
 			metadata, _, err := loadMetadataDocument(ctx)
 			if err != nil {
 				return err
 			}
-			types, aliases := metadataTypeIndex(metadata)
+			types, aliases, referenced := metadataTypeIndex(metadata)
 			for _, schema := range metadata.DataServices.Schemas {
 				if schema.EntityContainer == nil {
 					continue
@@ -39,8 +39,8 @@ func MetadataReferenceIntegrity() *framework.TestSuite {
 					if strings.TrimSpace(set.EntityType) == "" {
 						return fmt.Errorf("EntitySet %q is missing its EntityType attribute", set.Name)
 					}
-					if !resolveMetadataType(set.EntityType, types, aliases) {
-						return fmt.Errorf("EntitySet %q references undeclared EntityType %q", set.Name, set.EntityType)
+					if !resolveMetadataEntityType(set.EntityType, types, aliases, referenced) {
+						return fmt.Errorf("EntitySet %q references an EntityType that is not in scope: %q", set.Name, set.EntityType)
 					}
 				}
 			}
@@ -50,13 +50,13 @@ func MetadataReferenceIntegrity() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_singleton_types_resolve",
-		"Every Singleton Type reference resolves to a declared structured type",
+		"Every Singleton Type reference names an entity type in scope",
 		func(ctx *framework.TestContext) error {
 			metadata, _, err := loadMetadataDocument(ctx)
 			if err != nil {
 				return err
 			}
-			types, aliases := metadataTypeIndex(metadata)
+			types, aliases, referenced := metadataTypeIndex(metadata)
 			for _, schema := range metadata.DataServices.Schemas {
 				if schema.EntityContainer == nil {
 					continue
@@ -68,8 +68,8 @@ func MetadataReferenceIntegrity() *framework.TestSuite {
 					if strings.TrimSpace(singleton.Type) == "" {
 						return fmt.Errorf("Singleton %q is missing its Type attribute", singleton.Name)
 					}
-					if !resolveMetadataType(singleton.Type, types, aliases) {
-						return fmt.Errorf("Singleton %q references undeclared type %q", singleton.Name, singleton.Type)
+					if !resolveMetadataEntityType(singleton.Type, types, aliases, referenced) {
+						return fmt.Errorf("Singleton %q references an entity type that is not in scope: %q", singleton.Name, singleton.Type)
 					}
 				}
 			}
@@ -117,7 +117,7 @@ func MetadataReferenceIntegrity() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_structural_properties_are_unambiguous",
-		"EntityType structural property names are non-empty, unique, and use valid Nullable values",
+		"EntityType and ComplexType structural property names are non-empty, unique, and use valid Nullable values",
 		func(ctx *framework.TestContext) error {
 			metadata, _, err := loadMetadataDocument(ctx)
 			if err != nil {
@@ -125,19 +125,13 @@ func MetadataReferenceIntegrity() *framework.TestSuite {
 			}
 			for _, schema := range metadata.DataServices.Schemas {
 				for _, entityType := range schema.EntityTypes {
-					seen := map[string]bool{}
-					for _, property := range entityType.Properties {
-						name := strings.TrimSpace(property.Name)
-						if name == "" {
-							return fmt.Errorf("EntityType %q contains a Property without a Name", entityType.Name)
-						}
-						if seen[name] {
-							return fmt.Errorf("EntityType %q declares structural Property %q more than once", entityType.Name, name)
-						}
-						seen[name] = true
-						if property.Nullable != "" && property.Nullable != "true" && property.Nullable != "false" && property.Nullable != "1" && property.Nullable != "0" {
-							return fmt.Errorf("EntityType %q Property %q has invalid Nullable value %q", entityType.Name, name, property.Nullable)
-						}
+					if err := checkStructuralProperties("EntityType", entityType.Name, entityType.Properties); err != nil {
+						return err
+					}
+				}
+				for _, complexType := range schema.ComplexTypes {
+					if err := checkStructuralProperties("ComplexType", complexType.Name, complexType.Properties); err != nil {
+						return err
 					}
 				}
 			}
@@ -147,7 +141,7 @@ func MetadataReferenceIntegrity() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_navigation_properties_are_unambiguous",
-		"EntityType navigation property names are non-empty and do not collide with structural properties",
+		"EntityType and ComplexType navigation names are non-empty and do not collide with structural properties",
 		func(ctx *framework.TestContext) error {
 			metadata, _, err := loadMetadataDocument(ctx)
 			if err != nil {
@@ -155,23 +149,13 @@ func MetadataReferenceIntegrity() *framework.TestSuite {
 			}
 			for _, schema := range metadata.DataServices.Schemas {
 				for _, entityType := range schema.EntityTypes {
-					structural := map[string]bool{}
-					for _, property := range entityType.Properties {
-						structural[property.Name] = true
+					if err := checkNavigationProperties("EntityType", entityType.Name, entityType.Properties, entityType.NavigationProperties); err != nil {
+						return err
 					}
-					seen := map[string]bool{}
-					for _, navigation := range entityType.NavigationProperties {
-						name := strings.TrimSpace(navigation.Name)
-						if name == "" {
-							return fmt.Errorf("EntityType %q contains a NavigationProperty without a Name", entityType.Name)
-						}
-						if structural[name] {
-							return fmt.Errorf("EntityType %q uses %q for both Property and NavigationProperty", entityType.Name, name)
-						}
-						if seen[name] {
-							return fmt.Errorf("EntityType %q declares NavigationProperty %q more than once", entityType.Name, name)
-						}
-						seen[name] = true
+				}
+				for _, complexType := range schema.ComplexTypes {
+					if err := checkNavigationProperties("ComplexType", complexType.Name, complexType.Properties, complexType.NavigationProperties); err != nil {
+						return err
 					}
 				}
 			}
@@ -228,9 +212,20 @@ type metadataEnumType struct {
 	Members []metadataEnumMember `xml:"Member"`
 }
 
-func metadataTypeIndex(metadata *csdlMetadataDocument) (map[string]bool, map[string]string) {
+func metadataTypeIndex(metadata *csdlMetadataDocument) (map[string]bool, map[string]string, map[string]bool) {
 	types := map[string]bool{}
 	aliases := map[string]string{}
+	referenced := map[string]bool{}
+	for _, reference := range metadata.References {
+		for _, include := range reference.Includes {
+			if include.Namespace != "" {
+				referenced[include.Namespace] = true
+				if include.Alias != "" {
+					aliases[include.Alias] = include.Namespace
+				}
+			}
+		}
+	}
 	for _, schema := range metadata.DataServices.Schemas {
 		if schema.Alias != "" {
 			aliases[schema.Alias] = schema.Namespace
@@ -238,35 +233,63 @@ func metadataTypeIndex(metadata *csdlMetadataDocument) (map[string]bool, map[str
 		for _, entityType := range schema.EntityTypes {
 			types[schema.Namespace+"."+entityType.Name] = true
 		}
-		for _, complexType := range schema.ComplexTypes {
-			types[schema.Namespace+"."+complexType.Name] = true
-		}
 	}
-	return types, aliases
+	return types, aliases, referenced
 }
 
-func resolveMetadataType(typeName string, types map[string]bool, aliases map[string]string) bool {
+func resolveMetadataEntityType(typeName string, types map[string]bool, aliases map[string]string, referenced map[string]bool) bool {
 	typeName = strings.TrimSpace(typeName)
-	if strings.HasPrefix(typeName, "Collection(") && strings.HasSuffix(typeName, ")") {
-		typeName = strings.TrimSuffix(strings.TrimPrefix(typeName, "Collection("), ")")
-	}
-	if types[typeName] {
-		return true
-	}
-	if dot := strings.Index(typeName, "."); dot > 0 {
-		if namespace, ok := aliases[typeName[:dot]]; ok {
-			return types[namespace+typeName[dot:]]
-		}
+	dot := strings.LastIndex(typeName, ".")
+	if dot <= 0 || dot == len(typeName)-1 || strings.ContainsAny(typeName, "() ") {
 		return false
 	}
-	for qualified := range types {
-		if strings.HasSuffix(qualified, "."+typeName) {
-			return true
-		}
+	if namespace, ok := aliases[typeName[:dot]]; ok {
+		typeName = namespace + typeName[dot:]
+		dot = strings.LastIndex(typeName, ".")
 	}
-	return false
+	return types[typeName] || referenced[typeName[:dot]]
 }
 
 func parseEnumValue(value string) (int64, error) {
 	return strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+}
+
+func checkStructuralProperties(kind, typeName string, properties []csdlMetadataProperty) error {
+	seen := map[string]bool{}
+	for _, property := range properties {
+		name := strings.TrimSpace(property.Name)
+		if name == "" {
+			return fmt.Errorf("%s %q contains a Property without a Name", kind, typeName)
+		}
+		if seen[name] {
+			return fmt.Errorf("%s %q declares Property %q more than once", kind, typeName, name)
+		}
+		seen[name] = true
+		if property.Nullable != "" && property.Nullable != "true" && property.Nullable != "false" && property.Nullable != "1" && property.Nullable != "0" {
+			return fmt.Errorf("%s %q Property %q has invalid Nullable value %q", kind, typeName, name, property.Nullable)
+		}
+	}
+	return nil
+}
+
+func checkNavigationProperties(kind, typeName string, properties []csdlMetadataProperty, navigationProperties []metadataNavigationProperty) error {
+	structural := map[string]bool{}
+	for _, property := range properties {
+		structural[strings.TrimSpace(property.Name)] = true
+	}
+	seen := map[string]bool{}
+	for _, navigation := range navigationProperties {
+		name := strings.TrimSpace(navigation.Name)
+		if name == "" {
+			return fmt.Errorf("%s %q contains a NavigationProperty without a Name", kind, typeName)
+		}
+		if structural[name] {
+			return fmt.Errorf("%s %q uses %q for both Property and NavigationProperty", kind, typeName, name)
+		}
+		if seen[name] {
+			return fmt.Errorf("%s %q declares NavigationProperty %q more than once", kind, typeName, name)
+		}
+		seen[name] = true
+	}
+	return nil
 }

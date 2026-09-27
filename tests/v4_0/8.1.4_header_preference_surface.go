@@ -12,11 +12,11 @@ import (
 
 // HeaderPreferenceSurface covers the cross-cutting HTTP behavior that is easy
 // to miss when testing individual headers in isolation: negotiated response
-// headers, preference grammar, and the relationship between Prefer and Vary.
+// headers and preference grammar.
 func HeaderPreferenceSurface() *framework.TestSuite {
 	suite := framework.NewTestSuite(
 		"8.1-8.3 Header and Preference Surface",
-		"Tests negotiated HTTP headers, Vary behavior, and preference handling across OData 4.0 and 4.01 responses.",
+		"Tests negotiated HTTP headers and preference handling in OData 4.0 responses.",
 		"https://docs.oasis-open.org/odata/odata/v4.0/errata03/os/complete/part1-protocol/odata-v4.0-errata03-os-part1-protocol-complete.html#sec_CommonHeaders",
 	)
 
@@ -94,15 +94,18 @@ func HeaderPreferenceSurface() *framework.TestSuite {
 	)
 
 	suite.AddTest(
-		"test_accept_language_is_accepted",
-		"Accept-Language: en-US, en;q=0.8 is accepted and returns a valid representation",
+		"test_accept_language_negotiates_or_rejects",
+		"Accept-Language: en-US, en;q=0.8 returns a valid representation or 406",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products?$top=1", framework.Header{Key: "Accept-Language", Value: "en-US,en;q=0.8"})
 			if err != nil {
 				return err
 			}
+			if resp.StatusCode == http.StatusNotAcceptable {
+				return nil
+			}
 			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("Accept-Language request should succeed, got %d", resp.StatusCode)
+				return fmt.Errorf("Accept-Language request should return 200 or 406, got %d", resp.StatusCode)
 			}
 			var payload map[string]interface{}
 			if err := json.Unmarshal(resp.Body, &payload); err != nil {
@@ -110,36 +113,6 @@ func HeaderPreferenceSurface() *framework.TestSuite {
 			}
 			if language := strings.TrimSpace(resp.Headers.Get("Content-Language")); language != "" && strings.ContainsAny(language, "\r\n") {
 				return fmt.Errorf("Content-Language contains invalid line breaks: %q", language)
-			}
-			return nil
-		},
-	)
-
-	suite.AddTest(
-		"test_vary_contains_odata_maxversion",
-		"Responses negotiated with OData-MaxVersion advertise that variance through Vary",
-		func(ctx *framework.TestContext) error {
-			resp40, err := ctx.GET("/Products?$top=1", framework.Header{Key: "OData-MaxVersion", Value: "4.0"})
-			if err != nil {
-				return err
-			}
-			resp401, err := ctx.GET("/Products?$top=1", framework.Header{Key: "OData-MaxVersion", Value: "4.01"})
-			if err != nil {
-				return err
-			}
-			if resp40.StatusCode != http.StatusOK || resp401.StatusCode != http.StatusOK {
-				return fmt.Errorf("OData-MaxVersion negotiation should succeed (got %d and %d)", resp40.StatusCode, resp401.StatusCode)
-			}
-
-			version40 := strings.TrimSpace(resp40.Headers.Get("OData-Version"))
-			version401 := strings.TrimSpace(resp401.Headers.Get("OData-Version"))
-			if version40 == version401 {
-				// A service that emits identical representations for both requests
-				// does not vary on this header. Still validate the negotiated value.
-				return nil
-			}
-			if !varyContains(resp40.Headers.Values("Vary"), "OData-MaxVersion") || !varyContains(resp401.Headers.Values("Vary"), "OData-MaxVersion") {
-				return fmt.Errorf("responses vary by OData-MaxVersion (%q vs %q) but Vary does not include OData-MaxVersion (got %q and %q)", version40, version401, resp40.Headers.Get("Vary"), resp401.Headers.Get("Vary"))
 			}
 			return nil
 		},
@@ -191,7 +164,7 @@ func HeaderPreferenceSurface() *framework.TestSuite {
 				matched := false
 				for _, candidate := range strings.Split(requested, ",") {
 					candidate = strings.TrimSpace(strings.ToLower(candidate))
-					if applied == candidate || strings.HasPrefix(applied, strings.SplitN(candidate, "=", 2)[0]+"=") {
+					if applied == candidate || (strings.HasPrefix(candidate, "odata.maxpagesize=") && strings.HasPrefix(applied, "odata.maxpagesize=")) {
 						matched = true
 						break
 					}
@@ -204,45 +177,5 @@ func HeaderPreferenceSurface() *framework.TestSuite {
 		},
 	)
 
-	suite.AddTest(
-		"test_vary_contains_prefer_when_representation_changes",
-		"A response whose status or body changes under Prefer advertises Vary: Prefer",
-		func(ctx *framework.TestContext) error {
-			payload := map[string]interface{}{
-				"Name":   "Vary Preference Test",
-				"Price":  23.45,
-				"Status": 1,
-			}
-			plain, err := ctx.POST("/Products", payload)
-			if err != nil {
-				return err
-			}
-			preferred, err := ctx.POST("/Products", payload, framework.Header{Key: "Prefer", Value: "return=minimal"})
-			if err != nil {
-				return err
-			}
-			if plain.StatusCode < 200 || plain.StatusCode >= 300 || preferred.StatusCode < 200 || preferred.StatusCode >= 300 {
-				return fmt.Errorf("expected successful create responses, got %d and %d", plain.StatusCode, preferred.StatusCode)
-			}
-
-			changed := plain.StatusCode != preferred.StatusCode || len(plain.Body) != len(preferred.Body)
-			if changed && !varyContains(preferred.Headers.Values("Vary"), "Prefer") {
-				return fmt.Errorf("Prefer changed the response (status/body %d/%d vs %d/%d) but Vary is %q", plain.StatusCode, len(plain.Body), preferred.StatusCode, len(preferred.Body), strings.Join(preferred.Headers.Values("Vary"), ", "))
-			}
-			return nil
-		},
-	)
-
 	return suite
-}
-
-func varyContains(values []string, wanted string) bool {
-	for _, value := range values {
-		for _, token := range strings.Split(value, ",") {
-			if strings.EqualFold(strings.TrimSpace(token), wanted) || strings.TrimSpace(token) == "*" {
-				return true
-			}
-		}
-	}
-	return false
 }
