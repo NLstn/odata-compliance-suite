@@ -924,6 +924,11 @@ func main() {
 			Suite:   v4_01.HeaderMaxVersion,
 		})
 		testSuites = append(testSuites, TestSuiteInfo{
+			Name:    "8.3.8_header_vary",
+			Version: "4.01",
+			Suite:   v4_01.HeaderVary,
+		})
+		testSuites = append(testSuites, TestSuiteInfo{
 			Name:    "9.2_metadata_documents_4_01",
 			Version: "4.01",
 			Suite:   v4_01.MetadataDocuments,
@@ -1176,6 +1181,7 @@ func main() {
 		"8.2.6_header_odata_version":                    {framework.LevelMinimal, "HTTP Protocol"},
 		"8.2.6_header_isolation":                        {framework.LevelMinimal, "HTTP Protocol"},
 		"8.2.7_header_accept":                           {framework.LevelMinimal, "HTTP Protocol"},
+		"8.3.8_header_vary":                             {framework.LevelMinimal, "HTTP Protocol"},
 		"8.2.8_header_prefer":                           {framework.LevelMinimal, "HTTP Protocol"},
 		"8.2.8.1_preference_allow_entityreferences":     {framework.LevelIntermediate, "HTTP Protocol"},
 		"8.2.8.4_preference_include_annotations":        {framework.LevelIntermediate, "HTTP Protocol"},

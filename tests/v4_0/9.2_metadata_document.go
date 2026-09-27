@@ -16,7 +16,17 @@ const (
 type csdlMetadataDocument struct {
 	XMLName      xml.Name                 `xml:"Edmx"`
 	Version      string                   `xml:"Version,attr"`
+	References   []csdlMetadataReference  `xml:"Reference"`
 	DataServices csdlMetadataDataServices `xml:"DataServices"`
+}
+
+type csdlMetadataReference struct {
+	Includes []csdlMetadataInclude `xml:"Include"`
+}
+
+type csdlMetadataInclude struct {
+	Namespace string `xml:"Namespace,attr"`
+	Alias     string `xml:"Alias,attr"`
 }
 
 type csdlMetadataDataServices struct {
@@ -44,7 +54,9 @@ type csdlMetadataEntityType struct {
 }
 
 type csdlMetadataComplexType struct {
-	Name string `xml:"Name,attr"`
+	Name                 string                       `xml:"Name,attr"`
+	Properties           []csdlMetadataProperty       `xml:"Property"`
+	NavigationProperties []metadataNavigationProperty `xml:"NavigationProperty"`
 }
 
 type csdlMetadataProperty struct {

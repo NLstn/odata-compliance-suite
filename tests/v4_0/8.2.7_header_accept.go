@@ -2,8 +2,8 @@ package v4_0
 
 import (
 	"fmt"
+	"mime"
 	"net/http"
-	"strings"
 
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
@@ -42,18 +42,23 @@ func registerHeaderAcceptTests(suite *framework.TestSuite) {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
-			contentType := resp.Headers.Get("Content-Type")
-			if !strings.Contains(strings.ToLower(contentType), "application/json") {
-				return fmt.Errorf("expected Content-Type application/json, got %s", contentType)
+			if err := assertResponseMediaType(resp, "application/json"); err != nil {
+				return err
 			}
-
+			_, params, err := mime.ParseMediaType(resp.Headers.Get("Content-Type"))
+			if err != nil {
+				return err
+			}
+			if charset, ok := params["charset"]; ok {
+				return fmt.Errorf("response added charset %q although Accept did not request one", charset)
+			}
 			return nil
 		},
 	)
 
 	suite.AddTest(
-		"Accept */* returns JSON",
-		"Accept: */* should return JSON (default)",
+		"Accept */* returns a representation",
+		"Accept: */* permits any supported response format",
 		func(ctx *framework.TestContext) error {
 			productPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
@@ -71,18 +76,19 @@ func registerHeaderAcceptTests(suite *framework.TestSuite) {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
-			contentType := resp.Headers.Get("Content-Type")
-			if !strings.Contains(strings.ToLower(contentType), "application/json") {
-				return fmt.Errorf("expected Content-Type application/json, got %s", contentType)
+			if _, _, err := mime.ParseMediaType(resp.Headers.Get("Content-Type")); err != nil {
+				return fmt.Errorf("response has invalid Content-Type %q: %w", resp.Headers.Get("Content-Type"), err)
 			}
-
+			if len(resp.Body) == 0 {
+				return fmt.Errorf("wildcard Accept returned an empty entity representation")
+			}
 			return nil
 		},
 	)
 
 	suite.AddTest(
 		"Unsupported Accept returns 406",
-		"Unsupported entity media type returns 406 with an OData error payload",
+		"An unsupported entity media type returns 406",
 		func(ctx *framework.TestContext) error {
 			productPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
@@ -90,13 +96,29 @@ func registerHeaderAcceptTests(suite *framework.TestSuite) {
 			}
 			resp, err := ctx.GET(productPath, framework.Header{
 				Key:   "Accept",
-				Value: "application/xml",
+				Value: "application/x-odata-compliance-unsupported",
 			})
 			if err != nil {
 				return err
 			}
 
-			return ctx.AssertODataError(resp, http.StatusNotAcceptable, "requested format")
+			return ctx.AssertStatusCode(resp, http.StatusNotAcceptable)
+		},
+	)
+
+	suite.AddTest(
+		"Unknown Accept format parameter is rejected",
+		"A JSON format with an unknown parameter is rejected",
+		func(ctx *framework.TestContext) error {
+			productPath, err := firstEntityPath(ctx, "Products")
+			if err != nil {
+				return err
+			}
+			resp, err := ctx.GET(productPath, framework.Header{Key: "Accept", Value: "application/json;odata.compliance-unknown=true"})
+			if err != nil {
+				return err
+			}
+			return ctx.AssertStatusCode(resp, http.StatusNotAcceptable)
 		},
 	)
 
@@ -120,18 +142,13 @@ func registerHeaderAcceptTests(suite *framework.TestSuite) {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
-			contentType := resp.Headers.Get("Content-Type")
-			if !strings.Contains(strings.ToLower(contentType), "application/json") {
-				return fmt.Errorf("expected Content-Type application/json, got %s", contentType)
-			}
-
-			return nil
+			return assertResponseMediaType(resp, "application/json")
 		},
 	)
 
 	suite.AddTest(
 		"Accept quality values respected",
-		"Accept with quality values should prefer higher quality",
+		"An unsupported lower-quality media type does not displace JSON",
 		func(ctx *framework.TestContext) error {
 			productPath, err := firstEntityPath(ctx, "Products")
 			if err != nil {
@@ -149,12 +166,23 @@ func registerHeaderAcceptTests(suite *framework.TestSuite) {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
-			contentType := resp.Headers.Get("Content-Type")
-			if !strings.Contains(strings.ToLower(contentType), "application/json") {
-				return fmt.Errorf("expected JSON, got %s", contentType)
-			}
+			return assertResponseMediaType(resp, "application/json")
+		},
+	)
 
-			return nil
+	suite.AddTest(
+		"Accept q=0 rejects JSON",
+		"Accept: application/json;q=0 makes JSON unacceptable when no other format is offered",
+		func(ctx *framework.TestContext) error {
+			productPath, err := firstEntityPath(ctx, "Products")
+			if err != nil {
+				return err
+			}
+			resp, err := ctx.GET(productPath, framework.Header{Key: "Accept", Value: "application/json;q=0"})
+			if err != nil {
+				return err
+			}
+			return ctx.AssertStatusCode(resp, http.StatusNotAcceptable)
 		},
 	)
 
@@ -174,12 +202,7 @@ func registerHeaderAcceptTests(suite *framework.TestSuite) {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
-			contentType := resp.Headers.Get("Content-Type")
-			if !strings.Contains(strings.ToLower(contentType), "application/xml") {
-				return fmt.Errorf("expected Content-Type application/xml, got %s", contentType)
-			}
-
-			return nil
+			return assertResponseMediaType(resp, "application/xml")
 		},
 	)
 
@@ -201,10 +224,7 @@ func registerHeaderAcceptTests(suite *framework.TestSuite) {
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
-			if contentType := strings.ToLower(resp.Headers.Get("Content-Type")); !strings.Contains(contentType, "application/json") {
-				return fmt.Errorf("expected Content-Type application/json for the higher q-value, got %s", contentType)
-			}
-			return nil
+			return assertResponseMediaType(resp, "application/json")
 		},
 	)
 
@@ -226,10 +246,7 @@ func registerHeaderAcceptTests(suite *framework.TestSuite) {
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
-			if contentType := strings.ToLower(resp.Headers.Get("Content-Type")); !strings.Contains(contentType, "application/json") {
-				return fmt.Errorf("expected Content-Type application/json for the higher q-value, got %s", contentType)
-			}
-			return nil
+			return assertResponseMediaType(resp, "application/json")
 		},
 	)
 
@@ -249,9 +266,14 @@ func registerHeaderAcceptTests(suite *framework.TestSuite) {
 			if err != nil {
 				return err
 			}
-			if probe.StatusCode == http.StatusNotAcceptable ||
-				!strings.Contains(strings.ToLower(probe.Headers.Get("Content-Type")), "application/atom+xml") {
+			if probe.StatusCode == http.StatusNotAcceptable {
 				return ctx.Skip("service does not support application/atom+xml; skipping Atom quality-value test")
+			}
+			if err := ctx.AssertStatusCode(probe, http.StatusOK); err != nil {
+				return err
+			}
+			if err := assertResponseMediaType(probe, "application/atom+xml"); err != nil {
+				return err
 			}
 
 			resp, err := ctx.GET(productPath, framework.Header{
@@ -264,11 +286,19 @@ func registerHeaderAcceptTests(suite *framework.TestSuite) {
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
-			if contentType := strings.ToLower(resp.Headers.Get("Content-Type")); !strings.Contains(contentType, "application/atom+xml") {
-				return fmt.Errorf("expected Content-Type application/atom+xml for the higher q-value, got %s", contentType)
-			}
-			return nil
+			return assertResponseMediaType(resp, "application/atom+xml")
 		},
 	)
 
+}
+
+func assertResponseMediaType(resp *framework.HTTPResponse, expected string) error {
+	actual, _, err := mime.ParseMediaType(resp.Headers.Get("Content-Type"))
+	if err != nil {
+		return fmt.Errorf("invalid Content-Type %q: %w", resp.Headers.Get("Content-Type"), err)
+	}
+	if actual != expected {
+		return fmt.Errorf("expected Content-Type %s, got %s", expected, resp.Headers.Get("Content-Type"))
+	}
+	return nil
 }
