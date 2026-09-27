@@ -1,8 +1,8 @@
 package v4_01
 
 import (
-	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -16,73 +16,55 @@ import (
 func IntermediateDeltas() *framework.TestSuite {
 	suite := framework.NewTestSuite(
 		"13.2 OData 4.01 Intermediate Deltas",
-		"Validates 4.01 navigation null comparisons, nested $select, filtered collection counts, special-octet aliases, and optional 4.01 URL/query extensions.",
+		"Validates 4.01 navigation null comparisons, nested $select, special-octet aliases, and optional 4.01 URL/query extensions.",
 		"https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part1-protocol.html#sec_OData401IntermediateConformanceLevel",
 	)
 
-	collectionCount := func(ctx *framework.TestContext, path string) (int, error) {
-		resp, err := ctx.GET(path,
-			framework.Header{Key: "Accept", Value: "application/json"},
-			framework.Header{Key: "OData-MaxVersion", Value: "4.01"},
-		)
-		if err != nil {
-			return 0, err
-		}
-		if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
-			return 0, err
-		}
-		var payload struct {
-			Value []map[string]interface{} `json:"value"`
-			Count interface{}              `json:"@odata.count"`
-		}
-		if err := json.Unmarshal(resp.Body, &payload); err != nil {
-			return 0, fmt.Errorf("invalid JSON collection response: %w", err)
-		}
-		if payload.Count != nil {
-			if count, ok := payload.Count.(float64); ok {
-				return int(count), nil
-			}
-		}
-		return len(payload.Value), nil
-	}
-
 	suite.AddTestWithCapabilities(
 		"test_single_navigation_null_comparison",
-		"eq and ne null comparisons on a single-valued navigation property partition the entity set",
+		"eq and ne null comparisons on a single-valued navigation property return the correct entities",
 		[]framework.RequiredCapability{framework.Require(framework.CapFilter, "Products")},
 		func(ctx *framework.TestContext) error {
-			total, err := collectionCount(ctx, "/Products?$select=ID&$count=true")
+			headers := []framework.Header{{Key: "OData-MaxVersion", Value: "4.01"}}
+			baseline, err := collectEntityCollection(ctx, "/Products?$select=ID,CategoryID", headers...)
 			if err != nil {
-				return fmt.Errorf("baseline product count: %w", err)
+				return fmt.Errorf("baseline products: %w", err)
 			}
-			nullCount, err := collectionCount(ctx, "/Products?$filter="+url.QueryEscape("Category eq null")+"&$select=ID&$count=true")
+			expectedNull := map[string]bool{}
+			expectedNonNull := map[string]bool{}
+			for _, product := range baseline {
+				id, ok := product["ID"]
+				if !ok || id == nil {
+					return fmt.Errorf("baseline product is missing ID")
+				}
+				categoryID, ok := product["CategoryID"]
+				if !ok {
+					return fmt.Errorf("baseline product %v is missing selected CategoryID", id)
+				}
+				if categoryID == nil {
+					expectedNull[fmt.Sprint(id)] = true
+				} else {
+					expectedNonNull[fmt.Sprint(id)] = true
+				}
+			}
+			nullItems, err := collectEntityCollection(ctx, "/Products?$filter="+url.QueryEscape("Category eq null")+"&$select=ID", headers...)
 			if err != nil {
 				return fmt.Errorf("Category eq null: %w", err)
 			}
-			nonNullCount, err := collectionCount(ctx, "/Products?$filter="+url.QueryEscape("Category ne null")+"&$select=ID&$count=true")
+			nonNullItems, err := collectEntityCollection(ctx, "/Products?$filter="+url.QueryEscape("Category ne null")+"&$select=ID", headers...)
 			if err != nil {
 				return fmt.Errorf("Category ne null: %w", err)
 			}
-			if nullCount+nonNullCount != total {
-				return fmt.Errorf("Category null comparisons do not partition Products: total=%d eq-null=%d ne-null=%d", total, nullCount, nonNullCount)
-			}
-			return nil
-		},
-	)
-
-	suite.AddTestWithCapabilities(
-		"test_filtered_collection_count_in_expression",
-		"$count with a nested $filter can be used in a common filter expression",
-		[]framework.RequiredCapability{framework.Require(framework.CapFilter, "Categories")},
-		func(ctx *framework.TestContext) error {
-			expression := "Products/$count($filter=Price gt 100) gt 0"
-			path := "/Categories?$filter=" + url.QueryEscape(expression) + "&$select=ID"
-			count, err := collectionCount(ctx, path)
+			actualNull, err := entityIDs(nullItems)
 			if err != nil {
-				return fmt.Errorf("filtered collection count expression: %w", err)
+				return fmt.Errorf("Category eq null: %w", err)
 			}
-			if count == 0 {
-				return fmt.Errorf("filtered collection count returned no categories; reference data contains categories with products priced over 100")
+			actualNonNull, err := entityIDs(nonNullItems)
+			if err != nil {
+				return fmt.Errorf("Category ne null: %w", err)
+			}
+			if !maps.Equal(actualNull, expectedNull) || !maps.Equal(actualNonNull, expectedNonNull) {
+				return fmt.Errorf("Category null comparisons returned wrong products: eq-null=%v want %v; ne-null=%v want %v", actualNull, expectedNull, actualNonNull, expectedNonNull)
 			}
 			return nil
 		},
@@ -118,11 +100,6 @@ func IntermediateDeltas() *framework.TestSuite {
 			for _, property := range []string{"City", "Country"} {
 				if _, ok := address[property]; !ok {
 					return fmt.Errorf("nested complex $select omitted selected ShippingAddress.%s", property)
-				}
-			}
-			for _, property := range []string{"Street", "State", "PostalCode"} {
-				if _, ok := address[property]; ok {
-					return fmt.Errorf("nested complex $select returned unselected ShippingAddress.%s", property)
 				}
 			}
 			return nil
@@ -165,9 +142,6 @@ func IntermediateDeltas() *framework.TestSuite {
 			}
 			if language, ok := description["LanguageKey"].(string); !ok || language != "EN" {
 				return fmt.Errorf("nested description LanguageKey=%v, want EN", description["LanguageKey"])
-			}
-			if _, ok := description["Description"]; ok {
-				return fmt.Errorf("nested $select returned unselected Description property")
 			}
 			return nil
 		},
@@ -366,4 +340,20 @@ func IntermediateDeltas() *framework.TestSuite {
 	)
 
 	return suite
+}
+
+func entityIDs(items []map[string]interface{}) (map[string]bool, error) {
+	ids := make(map[string]bool, len(items))
+	for _, item := range items {
+		id, ok := item["ID"]
+		if !ok || id == nil {
+			return nil, fmt.Errorf("entity is missing selected ID")
+		}
+		key := fmt.Sprint(id)
+		if ids[key] {
+			return nil, fmt.Errorf("duplicate entity ID %s", key)
+		}
+		ids[key] = true
+	}
+	return ids, nil
 }

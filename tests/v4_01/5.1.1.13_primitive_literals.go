@@ -22,14 +22,7 @@ func PrimitiveLiterals() *framework.TestSuite {
 
 	queryIDs := func(ctx *framework.TestContext, filter string, maxVersion string) ([]string, error) {
 		path := "/Products?$filter=" + url.QueryEscape(filter) + "&$select=ID"
-		resp, err := ctx.GET(path, framework.Header{Key: "OData-MaxVersion", Value: maxVersion})
-		if err != nil {
-			return nil, err
-		}
-		if err := ctx.AssertStatusCode(resp, 200); err != nil {
-			return nil, err
-		}
-		items, err := ctx.ParseEntityCollection(resp)
+		items, err := collectEntityCollection(ctx, path, framework.Header{Key: "OData-MaxVersion", Value: maxVersion})
 		if err != nil {
 			return nil, err
 		}
