@@ -8,19 +8,6 @@ import (
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
 
-func fetchComparisonItems(ctx *framework.TestContext, filterExpr string) ([]map[string]interface{}, error) {
-	filter := url.QueryEscape(filterExpr)
-	resp, err := ctx.GET("/Products?$filter=" + filter)
-	if err != nil {
-		return nil, err
-	}
-	if err := ctx.AssertStatusCode(resp, 200); err != nil {
-		return nil, err
-	}
-
-	return ctx.ParseEntityCollection(resp)
-}
-
 // FilterComparisonOperators creates the 11.3.6 Comparison Operators test suite
 func FilterComparisonOperators() *framework.TestSuite {
 	suite := framework.NewTestSuite(
@@ -177,20 +164,11 @@ func FilterComparisonOperators() *framework.TestSuite {
 
 	suite.AddTest(
 		"test_ne_null_on_non_nullable_property_returns_only_non_null_values",
-		"ne null returns only entities where a populated property is non-null",
+		"ne null returns every entity whose Name is non-null",
 		func(ctx *framework.TestContext) error {
-			items, err := fetchComparisonItems(ctx, "Name ne null")
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertMinCollectionSize(items, 1); err != nil {
-				return fmt.Errorf("Name ne null returned no items: %w", err)
-			}
-			return ctx.AssertAllEntitiesSatisfy(items, "Name ne null", func(entity map[string]interface{}) (bool, string) {
-				if value, ok := entity["Name"]; !ok || value == nil {
-					return false, "Name is missing or null"
-				}
-				return true, ""
+			return assertProductFilter(ctx, "Name ne null", func(entity map[string]interface{}) bool {
+				value, ok := entity["Name"]
+				return ok && value != nil
 			})
 		},
 	)

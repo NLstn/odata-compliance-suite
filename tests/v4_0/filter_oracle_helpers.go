@@ -75,9 +75,19 @@ func assertProductLambdaFilter(ctx *framework.TestContext, expr string, want fun
 // set computed by applying want() to the supplied full collection.
 func assertProductFilterFrom(ctx *framework.TestContext, all []map[string]interface{}, expr string, want func(map[string]interface{}) bool) error {
 	expected := map[string]bool{}
+	seenAll := map[string]bool{}
 	for _, p := range all {
+		rawID, ok := p["ID"]
+		if !ok || rawID == nil {
+			return fmt.Errorf("unfiltered Product is missing its ID")
+		}
+		id := productID(p)
+		if seenAll[id] {
+			return fmt.Errorf("unfiltered collection repeats Product %s", id)
+		}
+		seenAll[id] = true
 		if want(p) {
-			expected[productID(p)] = true
+			expected[id] = true
 		}
 	}
 
@@ -87,7 +97,15 @@ func assertProductFilterFrom(ctx *framework.TestContext, all []map[string]interf
 	}
 	got := map[string]bool{}
 	for _, p := range items {
-		got[productID(p)] = true
+		rawID, ok := p["ID"]
+		if !ok || rawID == nil {
+			return fmt.Errorf("filter %q returned a Product without its ID", expr)
+		}
+		id := productID(p)
+		if got[id] {
+			return fmt.Errorf("filter %q returned Product %s more than once", expr, id)
+		}
+		got[id] = true
 	}
 
 	for id := range expected {
