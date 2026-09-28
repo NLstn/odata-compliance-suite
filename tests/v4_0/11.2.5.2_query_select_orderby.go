@@ -7,6 +7,23 @@ import (
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
 
+// collectUnfilteredProductQuery checks that projection or sorting did not drop
+// entities, even if the service returns its collection in multiple pages.
+func collectUnfilteredProductQuery(ctx *framework.TestContext, path string) ([]map[string]interface{}, error) {
+	all, err := fetchAllProducts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items, err := collectEntityCollection(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) != len(all) {
+		return nil, fmt.Errorf("query returned %d products, unfiltered collection has %d", len(items), len(all))
+	}
+	return items, nil
+}
+
 // QuerySelectOrderby creates the 11.2.5.2 System Query Option $select and $orderby test suite
 func QuerySelectOrderby() *framework.TestSuite {
 	suite := framework.NewTestSuite(
@@ -20,6 +37,10 @@ func QuerySelectOrderby() *framework.TestSuite {
 		framework.Require(framework.CapSelect, "Products"),
 		framework.Require(framework.CapSort, "Products"),
 	}
+	insertSortCaps := []framework.RequiredCapability{
+		framework.Require(framework.CapInsert, "Products"),
+		framework.Require(framework.CapSort, "Products"),
+	}
 
 	// Test 1: Basic $select with single property
 	suite.AddTestWithCapabilities(
@@ -27,16 +48,7 @@ func QuerySelectOrderby() *framework.TestSuite {
 		"$select with single property",
 		selectCap,
 		func(ctx *framework.TestContext) error {
-			select_ := url.QueryEscape("Name")
-			resp, err := ctx.GET("/Products?$select=" + select_)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			items, err := ctx.ParseEntityCollection(resp)
+			items, err := collectUnfilteredProductQuery(ctx, "/Products?$select="+url.QueryEscape("Name"))
 			if err != nil {
 				return err
 			}
@@ -44,17 +56,10 @@ func QuerySelectOrderby() *framework.TestSuite {
 				return err
 			}
 
-			item := items[0]
-
-			// Verify Name field is present...
-			if err := ctx.AssertEntityHasFields(item, "Name"); err != nil {
-				return err
-			}
-			// ...and that no other structural property leaked through
-			// unselected (services always return key properties, so ID is
-			// allowed alongside the selected Name).
-			if err := ctx.AssertEntityOnlyAllowedFields(item, "ID", "Name"); err != nil {
-				return err
+			for i, item := range items {
+				if err := ctx.AssertEntityHasFields(item, "Name"); err != nil {
+					return fmt.Errorf("selected entity %d: %w", i, err)
+				}
 			}
 
 			return nil
@@ -67,16 +72,7 @@ func QuerySelectOrderby() *framework.TestSuite {
 		"$select with multiple properties",
 		selectCap,
 		func(ctx *framework.TestContext) error {
-			select_ := url.QueryEscape("Name,Price")
-			resp, err := ctx.GET("/Products?$select=" + select_)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			items, err := ctx.ParseEntityCollection(resp)
+			items, err := collectUnfilteredProductQuery(ctx, "/Products?$select="+url.QueryEscape("Name,Price"))
 			if err != nil {
 				return err
 			}
@@ -84,15 +80,10 @@ func QuerySelectOrderby() *framework.TestSuite {
 				return err
 			}
 
-			item := items[0]
-
-			// Verify both Name and Price are present, and that no
-			// unselected structural property leaked through.
-			if err := ctx.AssertEntityHasFields(item, "Name", "Price"); err != nil {
-				return err
-			}
-			if err := ctx.AssertEntityOnlyAllowedFields(item, "ID", "Name", "Price"); err != nil {
-				return err
+			for i, item := range items {
+				if err := ctx.AssertEntityHasFields(item, "Name", "Price"); err != nil {
+					return fmt.Errorf("selected entity %d: %w", i, err)
+				}
 			}
 
 			return nil
@@ -105,16 +96,7 @@ func QuerySelectOrderby() *framework.TestSuite {
 		"$orderby ascending",
 		sortCap,
 		func(ctx *framework.TestContext) error {
-			orderby := url.QueryEscape("Price asc")
-			resp, err := ctx.GET("/Products?$orderby=" + orderby)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			items, err := ctx.ParseEntityCollection(resp)
+			items, err := collectUnfilteredProductQuery(ctx, "/Products?$orderby="+url.QueryEscape("Price asc"))
 			if err != nil {
 				return err
 			}
@@ -132,16 +114,7 @@ func QuerySelectOrderby() *framework.TestSuite {
 		"$orderby descending",
 		sortCap,
 		func(ctx *framework.TestContext) error {
-			orderby := url.QueryEscape("Price desc")
-			resp, err := ctx.GET("/Products?$orderby=" + orderby)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			items, err := ctx.ParseEntityCollection(resp)
+			items, err := collectUnfilteredProductQuery(ctx, "/Products?$orderby="+url.QueryEscape("Price desc"))
 			if err != nil {
 				return err
 			}
@@ -159,16 +132,7 @@ func QuerySelectOrderby() *framework.TestSuite {
 		"$orderby with multiple properties",
 		sortCap,
 		func(ctx *framework.TestContext) error {
-			orderby := url.QueryEscape("Name,Price desc")
-			resp, err := ctx.GET("/Products?$orderby=" + orderby)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			items, err := ctx.ParseEntityCollection(resp)
+			items, err := collectUnfilteredProductQuery(ctx, "/Products?$orderby="+url.QueryEscape("Name,Price desc"))
 			if err != nil {
 				return err
 			}
@@ -214,23 +178,52 @@ func QuerySelectOrderby() *framework.TestSuite {
 		},
 	)
 
-	// Test 6: Combining $select and $orderby
+	// Test 6: Equal primary keys make the secondary sort observable.
+	suite.AddTestWithCapabilities(
+		"test_orderby_secondary_key_with_duplicate_name",
+		"$orderby uses Price desc to break ties in Name",
+		insertSortCaps,
+		func(ctx *framework.TestContext) error {
+			for _, price := range []float64{12.34, 56.78} {
+				resp, err := ctx.POST("/Products", map[string]interface{}{
+					"Name": "Secondary Sort Fixture", "Price": price, "Status": 1,
+				})
+				if err != nil {
+					return err
+				}
+				if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+					return fmt.Errorf("fixture creation failed with status %d", resp.StatusCode)
+				}
+			}
+			items, err := collectUnfilteredProductQuery(ctx, "/Products?$orderby="+url.QueryEscape("Name,Price desc"))
+			if err != nil {
+				return err
+			}
+			var prices []float64
+			for _, item := range items {
+				if item["Name"] != "Secondary Sort Fixture" {
+					continue
+				}
+				price, ok := productFloat(item, "Price")
+				if !ok {
+					return fmt.Errorf("fixture row has no numeric Price")
+				}
+				prices = append(prices, price)
+			}
+			if len(prices) != 2 || prices[0] != 56.78 || prices[1] != 12.34 {
+				return fmt.Errorf("secondary sort returned fixture prices %v; want [56.78 12.34]", prices)
+			}
+			return nil
+		},
+	)
+
+	// Test 7: Combining $select and $orderby
 	suite.AddTestWithCapabilities(
 		"test_select_orderby_combined",
 		"Combining $select and $orderby",
 		selectSortCaps,
 		func(ctx *framework.TestContext) error {
-			select_ := url.QueryEscape("Name,Price")
-			orderby := url.QueryEscape("Price")
-			resp, err := ctx.GET("/Products?$select=" + select_ + "&$orderby=" + orderby)
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			items, err := ctx.ParseEntityCollection(resp)
+			items, err := collectUnfilteredProductQuery(ctx, "/Products?$select="+url.QueryEscape("Name,Price")+"&$orderby="+url.QueryEscape("Price"))
 			if err != nil {
 				return err
 			}
@@ -238,38 +231,22 @@ func QuerySelectOrderby() *framework.TestSuite {
 				return err
 			}
 
-			// Check first item
-			item := items[0]
-
-			// Verify selected fields are present, and no other structural
-			// property leaked through unselected.
-			if err := ctx.AssertEntityHasFields(item, "Name", "Price"); err != nil {
-				return err
-			}
-			if err := ctx.AssertEntityOnlyAllowedFields(item, "ID", "Name", "Price"); err != nil {
-				return err
+			for i, item := range items {
+				if err := ctx.AssertEntityHasFields(item, "Name", "Price"); err != nil {
+					return fmt.Errorf("selected entity %d: %w", i, err)
+				}
 			}
 			return ctx.AssertEntitiesSortedByFloat(items, "Price", true)
 		},
 	)
 
-	// Test 7: null is smaller than any non-null value, so ascending order places
-	// nulls first (URL Conventions §5.1.4).
+	// Test 8: null sorts before non-null values in ascending order (§11.2.5.2).
 	suite.AddTestWithCapabilities(
 		"test_orderby_nullable_property",
 		"$orderby ascending on a nullable property places nulls first and orders non-nulls",
-		sortCap,
+		selectSortCaps,
 		func(ctx *framework.TestContext) error {
-			orderby := url.QueryEscape("ReleaseDate asc")
-			resp, err := ctx.GET("/Products?$orderby=" + orderby + "&$select=ReleaseDate")
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			items, err := ctx.ParseEntityCollection(resp)
+			items, err := collectUnfilteredProductQuery(ctx, "/Products?$orderby="+url.QueryEscape("ReleaseDate asc")+"&$select=ReleaseDate")
 			if err != nil {
 				return err
 			}
