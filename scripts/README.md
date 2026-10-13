@@ -41,5 +41,11 @@ git clone https://github.com/NLstn/go-odata /tmp/go-odata
 GO_ODATA_DIR=/tmp/go-odata ./scripts/run-reference.sh -verbose
 ```
 
+For coordinated server and suite fixes, set `GO_ODATA_REF` to the server's
+full commit SHA. The script accepts branches, tags, commit SHAs, and pull-request
+refs such as `refs/pull/950/head`. CI pins an immutable server commit that has
+been validated with the suite, so either repository can merge first. Update the
+pin explicitly when adopting a newer reference implementation.
+
 This is the same flow the `Reference compliance run` GitHub Actions workflow
 (`.github/workflows/reference.yml`) uses.

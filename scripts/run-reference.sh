@@ -35,7 +35,11 @@ else
 	ref_dir="$(mktemp -d)"
 	cloned=1
 	echo "Cloning ${GO_ODATA_REPO}@${GO_ODATA_REF} -> ${ref_dir}"
-	git clone --depth 1 --branch "$GO_ODATA_REF" "$GO_ODATA_REPO" "$ref_dir"
+	# Fetch explicitly so GO_ODATA_REF supports immutable commit SHAs as well
+	# as branches, tags, and refs/pull/<number>/head.
+	git -C "$ref_dir" init -q
+	git -C "$ref_dir" fetch --depth 1 "$GO_ODATA_REPO" "$GO_ODATA_REF"
+	git -C "$ref_dir" checkout --detach -q FETCH_HEAD
 fi
 
 server_pid=""
