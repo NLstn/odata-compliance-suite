@@ -1,7 +1,13 @@
 package v4_0
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
+	"io"
+	"mime"
+	"mime/multipart"
+	"net/http"
 	"net/url"
 	"strings"
 
@@ -31,11 +37,11 @@ func BatchContentIDReferencing() *framework.TestSuite {
 	const productHeaders = "Content-Type: application/json\nX-User-Role: admin\n"
 
 	// -----------------------------------------------------------------------
-	// Test 1: create entity, then read it back via $<contentID>
+	// Test 1: create entity, write via $<contentID>, then read after commit
 	// -----------------------------------------------------------------------
 	suite.AddTest(
 		"test_content_id_read_back",
-		"Created entity can be read back via $<contentID> in same changeset",
+		"Entity updated via $<contentID> can be read after the changeset commits",
 		func(ctx *framework.TestContext) error {
 			batchBoundary := "batch_cid_rb"
 			changesetBoundary := "changeset_cid_rb"
@@ -58,8 +64,10 @@ Content-Type: application/http
 Content-Transfer-Encoding: binary
 Content-ID: 2
 
-GET /$1 HTTP/1.1
+PATCH /$1 HTTP/1.1
+Content-Type: application/json
 
+{"Name":"CID ReadBack Updated"}
 
 --%s--
 
@@ -82,10 +90,11 @@ GET /$1 HTTP/1.1
 			if !strings.Contains(respBody, "HTTP/1.1 201") {
 				return framework.NewError("expected 201 Created for POST with Content-ID")
 			}
-			if !strings.Contains(respBody, "CID ReadBack Product") {
-				return framework.NewError("GET via $1 did not return the created entity")
+			if !strings.Contains(respBody, "HTTP/1.1 200") && !strings.Contains(respBody, "HTTP/1.1 204") {
+				return framework.NewError("expected 200 or 204 for PATCH via $1")
 			}
-			return nil
+			_, err = contentIDProduct(ctx, "CID ReadBack Updated", false)
+			return err
 		},
 	)
 
@@ -308,7 +317,7 @@ X-User-Role: admin
 	// -----------------------------------------------------------------------
 	suite.AddTest(
 		"test_content_id_navigation_property",
-		"$<contentID> can be used in a navigation-property URL segment (GET /$1/Descriptions)",
+		"$<contentID> supports navigation-property writes verified after commit",
 		func(ctx *framework.TestContext) error {
 			batchBoundary := "batch_cid_nav"
 			changesetBoundary := "changeset_cid_nav"
@@ -331,8 +340,10 @@ Content-Type: application/http
 Content-Transfer-Encoding: binary
 Content-ID: 2
 
-GET /$1/Descriptions HTTP/1.1
+POST /$1/Descriptions HTTP/1.1
+Content-Type: application/json
 
+{"LanguageKey":"EN","Description":"CID navigation description"}
 
 --%s--
 
@@ -356,9 +367,20 @@ GET /$1/Descriptions HTTP/1.1
 			if !strings.Contains(respBody, "HTTP/1.1 201") {
 				return framework.NewError("expected 201 Created for POST with Content-ID")
 			}
-			if !strings.Contains(respBody, "HTTP/1.1 200") {
-				return framework.NewError(
-					fmt.Sprintf("GET via $1/Descriptions did not return 200; body: %s", respBody))
+			if strings.Count(respBody, "HTTP/1.1 201") != 2 {
+				return framework.NewError("expected 201 Created for both product and navigation POST")
+			}
+			product, err := contentIDProduct(ctx, "CID Nav Product", true)
+			if err != nil {
+				return err
+			}
+			descriptions, ok := product["Descriptions"].([]interface{})
+			if !ok || len(descriptions) != 1 {
+				return fmt.Errorf("expected one persisted description, got %v", product["Descriptions"])
+			}
+			description, ok := descriptions[0].(map[string]interface{})
+			if !ok || description["LanguageKey"] != "EN" || description["Description"] != "CID navigation description" {
+				return fmt.Errorf("navigation write did not persist expected description: %v", descriptions[0])
 			}
 			return nil
 		},
@@ -475,20 +497,10 @@ Content-Type: application/json
 				return err
 			}
 
-			// The second sub-request must fail (4xx).
-			respBody := string(resp.Body)
-			parts := strings.Split(respBody, "HTTP/1.1 ")
-			// Find the response for the $99 request (second sub-request).
-			if len(parts) < 3 {
-				return framework.NewError("expected at least 2 sub-responses in batch")
+			if err := assertFailedContentIDChangeset(ctx, resp); err != nil {
+				return err
 			}
-			secondStatus := parts[2]
-			statusCode := secondStatus[:3]
-			if statusCode[0] != '4' {
-				return framework.NewError(
-					fmt.Sprintf("expected 4xx for unresolvable $99, got HTTP/1.1 %s", statusCode))
-			}
-			return nil
+			return assertNoProductNamed(ctx, "CID Unres Product")
 		},
 	)
 
@@ -575,4 +587,69 @@ X-User-Role: admin
 	)
 
 	return suite
+}
+
+// A failed changeset is one application/http part, not a nested multipart
+// containing successful operations that were rolled back (§11.4.9.4).
+func assertFailedContentIDChangeset(ctx *framework.TestContext, resp *framework.HTTPResponse) error {
+	mediaType, params, err := mime.ParseMediaType(resp.Headers.Get("Content-Type"))
+	if err != nil {
+		return err
+	}
+	if mediaType != "multipart/mixed" || params["boundary"] == "" {
+		return fmt.Errorf("expected multipart batch response, got %q", resp.Headers.Get("Content-Type"))
+	}
+	reader := multipart.NewReader(bytes.NewReader(resp.Body), params["boundary"])
+	part, err := reader.NextPart()
+	if err != nil {
+		return fmt.Errorf("missing changeset error response: %w", err)
+	}
+	partType, _, err := mime.ParseMediaType(part.Header.Get("Content-Type"))
+	if err != nil {
+		return err
+	}
+	if partType != "application/http" {
+		return fmt.Errorf("failed changeset must be a single application/http error, got %q", partType)
+	}
+	inner, err := http.ReadResponse(bufio.NewReader(part), nil)
+	if err != nil {
+		return fmt.Errorf("invalid changeset HTTP response: %w", err)
+	}
+	defer inner.Body.Close()
+	body, err := io.ReadAll(inner.Body)
+	if err != nil {
+		return err
+	}
+	if inner.StatusCode < 400 || inner.StatusCode >= 500 {
+		return fmt.Errorf("expected 4xx for unresolvable $99, got %d", inner.StatusCode)
+	}
+	if err := ctx.AssertODataError(&framework.HTTPResponse{StatusCode: inner.StatusCode, Headers: inner.Header, Body: body}, inner.StatusCode, ""); err != nil {
+		return err
+	}
+	if _, err := reader.NextPart(); err != io.EOF {
+		return fmt.Errorf("expected exactly one changeset error response, got another part or parsing error: %v", err)
+	}
+	return nil
+}
+
+func contentIDProduct(ctx *framework.TestContext, name string, expand bool) (map[string]interface{}, error) {
+	query := url.Values{"$filter": {"Name eq '" + strings.ReplaceAll(name, "'", "''") + "'"}}
+	if expand {
+		query.Set("$expand", "Descriptions")
+	}
+	resp, err := ctx.GET("/Products?" + query.Encode())
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.AssertStatusCode(resp, 200); err != nil {
+		return nil, err
+	}
+	items, err := ctx.ParseEntityCollection(resp)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) != 1 {
+		return nil, fmt.Errorf("expected one persisted product named %q, got %d", name, len(items))
+	}
+	return items[0], nil
 }
