@@ -30,6 +30,7 @@ jobs:
 
       - name: Run compliance suite against go-odata reference server
         env:
-          # Pin to a branch/tag/commit of the reference implementation here.
-          GO_ODATA_REF: main
+          # Immutable reference baseline includes the fixes in NLstn/go-odata#950.
+          # Pinning allows coordinated server/suite fixes to pass before either merges.
+          GO_ODATA_REF: 573ce8651ca3370fc7a948d87f0de9536a70fc12
         run: ./scripts/run-reference.sh -verbose
