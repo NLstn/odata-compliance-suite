@@ -441,6 +441,12 @@ func (c *TestContext) POSTRaw(path string, body []byte, contentType string, head
 	return c.request("POST", path, body, hdrs...)
 }
 
+// QUERYRaw performs an OData QUERY request with a raw query-options body.
+func (c *TestContext) QUERYRaw(path string, body []byte, contentType string, headers ...Header) (*HTTPResponse, error) {
+	hdrs := append([]Header{{Key: "Content-Type", Value: contentType}}, headers...)
+	return c.request("QUERY", path, body, hdrs...)
+}
+
 // PUTRaw performs an HTTP PUT request with raw bytes and content type
 func (c *TestContext) PUTRaw(path string, body []byte, contentType string, headers ...Header) (*HTTPResponse, error) {
 	hdrs := append([]Header{{Key: "Content-Type", Value: contentType}}, headers...)

@@ -14,7 +14,7 @@ inputs:
     description: URL of the OData service under test (its root).
     required: true
   version:
-    description: 'OData version to test: 4.0 | 4.01 | vocabularies | all.'
+    description: 'OData version to test: 4.0 | 4.01 | 4.02 | vocabularies | all.'
     required: false
     default: all
   pattern:

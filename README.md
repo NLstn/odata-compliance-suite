@@ -1,11 +1,9 @@
 # OData v4 Compliance Test Suite
 
-A standalone, black-box compliance test suite for **OData v4.0 and v4.01**
-services. Point it at any running OData service and it reports which
-specification checks pass, fail, or are not exercised. The 4.01 suite also
-checks negotiation with clients that advertise `OData-MaxVersion: 4.02`.
-The [OData 4.02 Committee Specification](https://docs.oasis-open.org/odata/odata/v4.02/cs01/part1-protocol/odata-v4.02-cs01-part1-protocol.html#sec_OData402ServiceConformanceLevels)
-defines additional conformance requirements beyond the scope of the suite.
+A standalone, black-box compliance test suite for **OData v4.0, v4.01, and v4.02**.
+Point it at a running OData service to see which checks pass, fail, or are skipped.
+The v4.02 suites exercise changes from the
+[OData 4.02 Committee Specification](https://docs.oasis-open.org/odata/odata/v4.02/cs01/part1-protocol/odata-v4.02-cs01-part1-protocol.html).
 
 The suite is written in Go but is **language-agnostic about the service under
 test** — it only speaks HTTP. A .NET, Java, Python, Node, or Go OData service
@@ -32,6 +30,10 @@ can all be measured the same way.
   JSON batch, wildcard `$select`/`$expand`, unprefixed primitive literals,
   string-to-primitive casts, nested 4.01 query expressions, special-octet
   parameter aliases, `matchesPattern`, …)
+- OData 4.02-specific checks for protocol negotiation and CSDL, canonical
+  context fragments, `$select=$key`, empty and duplicate nested expansions,
+  `matchesPattern` flags, `QUERY` and new query body encodings, ordered JSON
+  batches and delta entries, and batch error continuation
 
 The Minimal/Intermediate/Advanced summary is a suite coverage grouping, not a
 formal OASIS certification. See [`CONFORMANCE.md`](./CONFORMANCE.md); skipped
@@ -61,9 +63,10 @@ go run . -server http://localhost:9090
 go build -o compliance-test .
 ./compliance-test -server http://localhost:8080
 
-# Only OData 4.0, or 4.01, or vocabulary suites
+# Run only the checks registered for one protocol version or for vocabularies
 ./compliance-test -version 4.0
 ./compliance-test -version 4.01
+./compliance-test -version 4.02
 ./compliance-test -version vocabularies
 
 # Run a subset of suites by name substring
@@ -82,7 +85,7 @@ return HTTP 200 before running.
 
 ```
 -server   URL of the OData service under test (default http://localhost:9090)
--version  4.0 | 4.01 | vocabularies | all (default all)
+-version  4.0 | 4.01 | 4.02 | vocabularies | all (default all)
 -pattern  Run only suites whose name contains this substring
 -verbose  Show every individual test result
 -debug    Show full HTTP request/response details
@@ -163,7 +166,7 @@ Start your service in the background, then run the Action against it:
   uses: NLstn/odata-compliance-suite@v1
   with:
     server: http://localhost:9090
-    # version: 4.01      # optional: 4.0 | 4.01 | vocabularies | all
+    # version: 4.01      # optional: 4.0 | 4.01 | 4.02 | vocabularies | all
     # pattern: filter    # optional: run only matching suites
     # verbose: 'true'    # optional
 ```
@@ -259,6 +262,7 @@ detail for failures.
 ├── tests/
 │   ├── v4_0/          # OData 4.0 protocol suites
 │   ├── v4_01/         # OData 4.01 protocol suites
+│   ├── v4_02/         # OData 4.02 protocol suites
 │   └── vocabularies/  # Core & Capabilities vocabulary suites
 ├── CONTRACT.md        # Reference data-model the service must expose
 ├── go.mod             # module github.com/nlstn/odata-compliance-suite (no deps)
