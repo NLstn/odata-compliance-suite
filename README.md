@@ -2,7 +2,10 @@
 
 A standalone, black-box compliance test suite for **OData v4.0 and v4.01**
 services. Point it at any running OData service and it reports which
-specification checks pass, fail, or are not exercised.
+specification checks pass, fail, or are not exercised. The 4.01 suite also
+checks negotiation with clients that advertise `OData-MaxVersion: 4.02`.
+The [OData 4.02 Committee Specification](https://docs.oasis-open.org/odata/odata/v4.02/cs01/part1-protocol/odata-v4.02-cs01-part1-protocol.html#sec_OData402ServiceConformanceLevels)
+defines additional conformance requirements beyond the scope of the suite.
 
 The suite is written in Go but is **language-agnostic about the service under
 test** — it only speaks HTTP. A .NET, Java, Python, Node, or Go OData service

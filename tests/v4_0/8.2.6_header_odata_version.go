@@ -303,7 +303,7 @@ func HeaderODataVersion() *framework.TestSuite {
 		"test_request_payload_invalid_versions",
 		"Malformed and unsupported payload versions return 4xx without mutation",
 		func(ctx *framework.TestContext) error {
-			for _, version := range []string{"4", "4.1", "4.00", "4.0, 4.01", "4.02", "5.0"} {
+			for _, version := range []string{"4", "4.1", "4.00", "4.0, 4.01", "5.0"} {
 				name := "Rejected Payload Version " + version
 				payload, err := buildProductPayload(ctx, name, 12.34)
 				if err != nil {

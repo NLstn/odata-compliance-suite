@@ -716,7 +716,7 @@ func JSONBatch() *framework.TestSuite {
 				"url":    "Products",
 				"headers": map[string]interface{}{
 					"Content-Type":  "application/json",
-					"OData-Version": "4.02",
+					"OData-Version": "5.0",
 				},
 				"body": map[string]interface{}{"Name": name, "Price": 12.34},
 			}),
@@ -764,7 +764,7 @@ func JSONBatch() *framework.TestSuite {
 					"url":    "Products",
 					"headers": map[string]interface{}{
 						"Content-Type":  "application/json",
-						"OData-Version": "4.02",
+						"OData-Version": "5.0",
 					},
 					"body":           map[string]interface{}{"Name": secondName, "Price": 12.34},
 					"atomicityGroup": "g-version",
