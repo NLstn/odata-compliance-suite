@@ -8,34 +8,35 @@ import (
 	"github.com/nlstn/odata-compliance-suite/framework"
 )
 
-// maxLengthOf extracts the MaxLength value for a given property in CSDL XML.
-// Returns 0 if the property has no MaxLength.
-func maxLengthOf(csdl, propertyName string) int {
-	needle := `Name="` + propertyName + `"`
-	idx := strings.Index(csdl, needle)
-	if idx == -1 {
-		return 0
+// productNameMaxLength finds the finite limit on Name for the Products entity set.
+func productNameMaxLength(doc *csdlDocument) (int, error) {
+	typeName := findCsdlEntitySetType(doc, "Products")
+	seen := map[string]bool{}
+	for typeName != "" {
+		if seen[typeName] {
+			return 0, fmt.Errorf("cycle in Products entity type hierarchy at %q", typeName)
+		}
+		seen[typeName] = true
+		entity, _, ok := findCsdlEntityType(doc, typeName)
+		if !ok {
+			return 0, fmt.Errorf("could not resolve Products entity type %q", typeName)
+		}
+		for _, property := range entity.Properties {
+			if property.Name != "Name" {
+				continue
+			}
+			if property.MaxLength == "" || property.MaxLength == "max" {
+				return 0, nil
+			}
+			limit, err := strconv.Atoi(property.MaxLength)
+			if err != nil || limit <= 0 {
+				return 0, fmt.Errorf("invalid Product.Name MaxLength %q", property.MaxLength)
+			}
+			return limit, nil
+		}
+		typeName = entity.BaseType
 	}
-	// The MaxLength= attribute is on the same Property element.
-	endTag := strings.Index(csdl[idx:], "/>")
-	if endTag == -1 {
-		return 0
-	}
-	elem := csdl[idx : idx+endTag]
-	mlIdx := strings.Index(elem, `MaxLength="`)
-	if mlIdx == -1 {
-		return 0
-	}
-	mlIdx += len(`MaxLength="`)
-	mlEnd := strings.Index(elem[mlIdx:], `"`)
-	if mlEnd == -1 {
-		return 0
-	}
-	n, err := strconv.Atoi(elem[mlIdx : mlIdx+mlEnd])
-	if err != nil {
-		return 0
-	}
-	return n
+	return 0, fmt.Errorf("Products entity type is missing its Name property")
 }
 
 // PrimitiveTypes creates the 4.4 Primitive Types test suite
@@ -248,18 +249,22 @@ func PrimitiveTypes() *framework.TestSuite {
 
 	// MaxLength write enforcement (CSDL §6.2.3): POST with a string that exceeds MaxLength
 	// must be rejected with 400.  Uses Product.Name which has MaxLength=100.
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_maxlength_write_enforcement",
 		"POST with string exceeding MaxLength is rejected with 400 (CSDL §6.2.3)",
+		[]framework.RequiredCapability{framework.Require(framework.CapInsert, "Products")},
 		func(ctx *framework.TestContext) error {
 			// Discover MaxLength of Product.Name from metadata.
-			metaResp, err := ctx.GET("/$metadata")
+			doc, err := getMetadataDocument(ctx)
 			if err != nil {
 				return err
 			}
-			maxLen := maxLengthOf(string(metaResp.Body), "Name")
+			maxLen, err := productNameMaxLength(doc)
+			if err != nil {
+				return err
+			}
 			if maxLen <= 0 {
-				return ctx.Skip("Product.Name has no MaxLength declared — enforcement cannot be tested")
+				return ctx.Skip("Product.Name has no finite MaxLength declared")
 			}
 
 			// Build a name that exceeds the declared MaxLength by 1 character.
@@ -276,10 +281,7 @@ func PrimitiveTypes() *framework.TestSuite {
 			if resp.StatusCode == 201 {
 				return fmt.Errorf("server accepted a Name of %d chars (MaxLength=%d) — MaxLength not enforced (CSDL §6.2.3)", maxLen+1, maxLen)
 			}
-			if resp.StatusCode != 400 {
-				return fmt.Errorf("expected 400 for MaxLength violation, got %d", resp.StatusCode)
-			}
-			return nil
+			return ctx.AssertODataError(resp, 400, "")
 		},
 	)
 

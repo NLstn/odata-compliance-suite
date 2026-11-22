@@ -45,6 +45,11 @@ type TestSuiteInfo struct {
 	Feature          string
 }
 
+type coverageBand struct {
+	version string
+	level   framework.ConformanceLevel
+}
+
 type preparedSuite struct {
 	info          TestSuiteInfo
 	suite         *framework.TestSuite
@@ -1350,8 +1355,16 @@ func main() {
 	// Prepare suites (apply pattern filter) so we can compute totals for concise progress output
 	var suitesToRun []preparedSuite
 	totalPlannedTests := 0
+	registeredBands := map[coverageBand]int{}
 
 	for _, suiteInfo := range testSuites {
+		if tag, ok := conformanceTags[suiteInfo.Name]; ok {
+			suiteInfo.ConformanceLevel = tag.Level
+			suiteInfo.Feature = tag.Feature
+		}
+		if suiteInfo.ConformanceLevel != framework.LevelUnspecified {
+			registeredBands[coverageBand{suiteInfo.Version, suiteInfo.ConformanceLevel}]++
+		}
 		if *pattern != "" && !strings.Contains(suiteInfo.Name, *pattern) {
 			continue
 		}
@@ -1366,10 +1379,6 @@ func main() {
 		suite.Strict = *strict
 		if reqs, ok := capabilityRequirements[suiteInfo.Name]; ok {
 			suite.RequiredCapabilities = reqs
-		}
-		if tag, ok := conformanceTags[suiteInfo.Name]; ok {
-			suiteInfo.ConformanceLevel = tag.Level
-			suiteInfo.Feature = tag.Feature
 		}
 
 		versionPrefix := "V4"
@@ -1575,14 +1584,14 @@ func main() {
 				// was not exercised (for example in a pattern-filtered run).
 				break
 			}
-			if ls.failed > 0 || ls.skipped > 0 {
+			if ls.total != registeredBands[coverageBand{ver, lvl}] || ls.failed > 0 || ls.skipped > 0 {
 				break
 			}
 			// Every OData 4.01 level also requires the corresponding 4.0
 			// level. A 4.01-only run therefore cannot make a complete claim.
 			if ver == "4.01" {
 				base := levelMap["4.0"][lvl]
-				if base == nil || base.total == 0 || base.failed > 0 || base.skipped > 0 {
+				if base == nil || base.total == 0 || base.total != registeredBands[coverageBand{"4.0", lvl}] || base.failed > 0 || base.skipped > 0 {
 					break
 				}
 			}
@@ -1618,7 +1627,7 @@ func main() {
 				case ls.failed > 0:
 					icon = ansi("0;31", "✗", useColor)
 					status = "Failures"
-				case ls.skipped > 0:
+				case ls.skipped > 0 || ls.total != registeredBands[coverageBand{ver, lvl}]:
 					icon = ansi("0;33", "⊘", useColor)
 					status = "Incomplete"
 				default:
@@ -1627,7 +1636,7 @@ func main() {
 				}
 				fmt.Fprintf(progressOut, "  %s [%s] %s: %s (%d/%d suites)\n",
 					icon, versionLabel, lvl.String(),
-					status, successfulSuites, ls.total)
+					status, successfulSuites, registeredBands[coverageBand{ver, lvl}])
 			}
 			if highest != framework.LevelUnspecified {
 				fmt.Fprintf(progressOut, "  → Highest fully completed coverage band: %s\n", ansi("0;32", versionLabel+" "+highest.String(), useColor))

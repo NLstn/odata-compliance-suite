@@ -1,8 +1,8 @@
 package v4_0
 
 import (
-	"encoding/json"
 	"fmt"
+	"mime"
 	"net/url"
 	"strconv"
 	"strings"
@@ -21,51 +21,32 @@ func CountSegment() *framework.TestSuite {
 	// Test 1: $count on entity set returns text/plain integer matching the size
 	suite.AddTest(
 		"test_entityset_count_segment",
-		"$count on entity set returns text/plain integer matching @odata.count",
+		"$count on entity set returns text/plain integer matching the full collection",
 		func(ctx *framework.TestContext) error {
 			resp, err := ctx.GET("/Products/$count")
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-			if err := ctx.AssertHeaderContains(resp, "Content-Type", "text/plain"); err != nil {
-				return err
-			}
-			segmentCount, err := parseCountBody(resp.Body)
+			segmentCount, err := readSegmentCount(ctx, resp)
 			if err != nil {
 				return err
 			}
-
-			// The $count segment must agree with the $count=true annotation.
-			queryResp, err := ctx.GET("/Products?$count=true")
+			items, err := fetchAllProducts(ctx)
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(queryResp, 200); err != nil {
-				return err
+			if segmentCount != len(items) {
+				return fmt.Errorf("/Products/$count=%d, want %d entities across all pages", segmentCount, len(items))
 			}
-			var body map[string]interface{}
-			if err := json.Unmarshal(queryResp.Body, &body); err != nil {
-				return fmt.Errorf("failed to parse JSON: %w", err)
-			}
-			countFloat, ok := body["@odata.count"].(float64)
-			if !ok {
-				return fmt.Errorf("@odata.count missing or not a number in $count=true response")
-			}
-			if segmentCount != int(countFloat) {
-				return fmt.Errorf("/Products/$count=%d does not match @odata.count=%d", segmentCount, int(countFloat))
-			}
-
 			return nil
 		},
 	)
 
 	// Test 2: $count respects $filter and matches @odata.count
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_count_segment_with_filter",
-		"$count segment respects $filter and matches @odata.count",
+		"$count segment respects $filter",
+		[]framework.RequiredCapability{framework.Require(framework.CapFilter, "Products")},
 		func(ctx *framework.TestContext) error {
 			filter := "Price gt 100"
 			qp := url.Values{}
@@ -75,48 +56,38 @@ func CountSegment() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(segmentResp, 200); err != nil {
-				return err
-			}
-			segmentCount, err := parseCountBody(segmentResp.Body)
+			segmentCount, err := readSegmentCount(ctx, segmentResp)
 			if err != nil {
 				return err
 			}
-
-			queryResp, err := ctx.GET("/Products?$count=true&" + qp.Encode())
+			products, err := fetchAllProducts(ctx)
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(queryResp, 200); err != nil {
-				return err
+			expected := 0
+			for _, product := range products {
+				if price, ok := productFloat(product, "Price"); ok && price > 100 {
+					expected++
+				}
 			}
-
-			var body map[string]interface{}
-			if err := json.Unmarshal(queryResp.Body, &body); err != nil {
-				return fmt.Errorf("failed to parse JSON: %w", err)
+			if segmentCount != expected {
+				return fmt.Errorf("$count segment=%d, want %d products with Price gt 100", segmentCount, expected)
 			}
-			countValue, ok := body["@odata.count"]
-			if !ok {
-				return fmt.Errorf("@odata.count missing from response")
-			}
-			countFloat, ok := countValue.(float64)
-			if !ok {
-				return fmt.Errorf("@odata.count is not a number")
-			}
-			if segmentCount != int(countFloat) {
-				return fmt.Errorf("$count segment=%d does not match @odata.count=%d", segmentCount, int(countFloat))
-			}
-
 			return nil
 		},
 	)
 
 	// Test 3: $count on navigation collection
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_navigation_count_segment",
-		"$count on navigation collection returns integer",
+		"$count on a populated navigation collection matches all related entities",
+		[]framework.RequiredCapability{
+			framework.Require(framework.CapFilter, "Products"),
+			framework.Require(framework.CapTop, "Products"),
+			framework.Require(framework.CapSelect, "Products"),
+		},
 		func(ctx *framework.TestContext) error {
-			productPath, err := firstEntityPath(ctx, "Products")
+			productPath, err := entityPathByFilter(ctx, "Products", "Name eq 'Laptop'")
 			if err != nil {
 				return err
 			}
@@ -124,44 +95,37 @@ func CountSegment() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-			if err := ctx.AssertHeaderContains(resp, "Content-Type", "text/plain"); err != nil {
-				return err
-			}
-			segmentCount, err := parseCountBody(resp.Body)
+			segmentCount, err := readSegmentCount(ctx, resp)
 			if err != nil {
 				return err
 			}
-
-			// Cross-check the navigation $count against the actual related collection.
-			collResp, err := ctx.GET(productPath + "/Descriptions")
+			items, err := collectEntityCollection(ctx, productPath+"/Descriptions")
 			if err != nil {
 				return err
 			}
-			if err := ctx.AssertStatusCode(collResp, 200); err != nil {
-				return err
+			if len(items) == 0 {
+				return fmt.Errorf("seeded Laptop must have related Descriptions")
 			}
-			items, err := ctx.ParseEntityCollection(collResp)
-			if err != nil {
-				return err
-			}
-			var coll map[string]interface{}
-			if err := json.Unmarshal(collResp.Body, &coll); err != nil {
-				return fmt.Errorf("failed to parse Descriptions collection: %w", err)
-			}
-			if segmentCount < len(items) {
-				return fmt.Errorf("Descriptions/$count=%d is smaller than the %d related entities returned", segmentCount, len(items))
-			}
-			if _, paged := coll["@odata.nextLink"]; !paged && segmentCount != len(items) {
-				return fmt.Errorf("Descriptions/$count=%d but the (unpaged) collection has %d entities", segmentCount, len(items))
+			if segmentCount != len(items) {
+				return fmt.Errorf("Descriptions/$count=%d, want %d related entities across all pages", segmentCount, len(items))
 			}
 			return nil
 		},
 	)
 
 	return suite
+}
+
+func readSegmentCount(ctx *framework.TestContext, resp *framework.HTTPResponse) (int, error) {
+	if err := ctx.AssertStatusCode(resp, 200); err != nil {
+		return 0, err
+	}
+	contentType := resp.Headers.Get("Content-Type")
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil || mediaType != "text/plain" {
+		return 0, fmt.Errorf("expected text/plain Content-Type, got %q", contentType)
+	}
+	return parseCountBody(resp.Body)
 }
 
 func parseCountBody(body []byte) (int, error) {

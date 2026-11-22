@@ -6,7 +6,8 @@ Runs the compliance suite end-to-end against the **go-odata reference
 implementation** ([`NLstn/go-odata`](https://github.com/NLstn/go-odata),
 `cmd/complianceserver`). It clones (or reuses) the reference repo, builds and
 starts its compliance server, runs this suite against it, and tears the server
-down — propagating the suite's exit code so it can gate CI.
+down, propagating the suite's exit code so it can gate CI. Each run uses its own
+temporary SQLite database, server binary, and log.
 
 ```bash
 # Full run against a fresh clone of go-odata@main

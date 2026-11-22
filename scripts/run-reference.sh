@@ -27,21 +27,7 @@ SERVER_URL="${SERVER_URL:-http://localhost:${SERVER_PORT}}"
 
 suite_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-cloned=0
-if [ -n "${GO_ODATA_DIR:-}" ]; then
-	ref_dir="$(cd "$GO_ODATA_DIR" && pwd)"
-	echo "Using existing go-odata checkout: $ref_dir"
-else
-	ref_dir="$(mktemp -d)"
-	cloned=1
-	echo "Cloning ${GO_ODATA_REPO}@${GO_ODATA_REF} -> ${ref_dir}"
-	# Fetch explicitly so GO_ODATA_REF supports immutable commit SHAs as well
-	# as branches, tags, and refs/pull/<number>/head.
-	git -C "$ref_dir" init -q
-	git -C "$ref_dir" fetch --depth 1 "$GO_ODATA_REPO" "$GO_ODATA_REF"
-	git -C "$ref_dir" checkout --detach -q FETCH_HEAD
-fi
-
+run_dir="$(mktemp -d)"
 server_pid=""
 cleanup() {
 	if [ -n "$server_pid" ] && kill -0 "$server_pid" 2>/dev/null; then
@@ -49,21 +35,32 @@ cleanup() {
 		kill "$server_pid" 2>/dev/null || true
 		wait "$server_pid" 2>/dev/null || true
 	fi
-	if [ "$cloned" = "1" ]; then
-		rm -rf "$ref_dir"
-	fi
+	rm -rf "$run_dir"
 }
 trap cleanup EXIT
 
+if [ -n "${GO_ODATA_DIR:-}" ]; then
+	ref_dir="$(cd "$GO_ODATA_DIR" && pwd)"
+	echo "Using existing go-odata checkout: $ref_dir"
+else
+	ref_dir="$run_dir/go-odata"
+	echo "Cloning ${GO_ODATA_REPO}@${GO_ODATA_REF} -> ${ref_dir}"
+	# Fetch explicitly so GO_ODATA_REF supports immutable commit SHAs as well
+	# as branches, tags, and refs/pull/<number>/head.
+	git init -q "$ref_dir"
+	git -C "$ref_dir" fetch --depth 1 "$GO_ODATA_REPO" "$GO_ODATA_REF"
+	git -C "$ref_dir" checkout --detach -q FETCH_HEAD
+fi
+
 # Build a native binary so we control the server's PID directly (`go run`
 # spawns a child process that a kill on the parent would not reach).
-server_bin="${ref_dir}/complianceserver.bin"
+server_bin="$run_dir/complianceserver"
 echo "Building reference compliance server..."
 (cd "${ref_dir}/cmd/complianceserver" && go build -o "$server_bin" .)
 
 echo "Starting reference compliance server on port ${SERVER_PORT}..."
-server_log="${ref_dir}/server.log"
-"$server_bin" -port "$SERVER_PORT" >"$server_log" 2>&1 &
+server_log="$run_dir/server.log"
+"$server_bin" -db sqlite -dsn "$run_dir/reference.db" -port "$SERVER_PORT" >"$server_log" 2>&1 &
 server_pid=$!
 
 echo "Running compliance suite against ${SERVER_URL}"

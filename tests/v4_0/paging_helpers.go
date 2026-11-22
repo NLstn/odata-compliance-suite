@@ -13,6 +13,10 @@ func collectEntityCollection(ctx *framework.TestContext, path string, headers ..
 	if err != nil {
 		return nil, err
 	}
+	return collectEntityPages(ctx, resp, headers...)
+}
+
+func collectEntityPages(ctx *framework.TestContext, resp *framework.HTTPResponse, headers ...framework.Header) ([]map[string]interface{}, error) {
 	seenLinks := map[string]bool{}
 	seenIDs := map[string]bool{}
 	var all []map[string]interface{}

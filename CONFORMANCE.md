@@ -9,9 +9,9 @@ exercise a mixture of required, recommended, optional, and negative behavior.
 The bands are therefore a navigation and progress aid. The individual test
 result and its linked specification section remain authoritative.
 
-A skipped test makes its band **Incomplete**. A filtered or 4.01-only run cannot
-claim a cumulative band whose prerequisites were not exercised, and every 4.01
-band depends on the corresponding 4.0 band.
+A band is **Incomplete** if any of its registered suites were filtered out or
+any of its tests were skipped. Each cumulative 4.01 band also requires completion
+of the corresponding 4.0 band.
 
 ## Levels
 
