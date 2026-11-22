@@ -1,6 +1,6 @@
 name: Reference compliance run
 
-# Runs the suites supported by the pinned go-odata reference implementation.
+# Runs the full suite against the pinned go-odata reference implementation.
 
 on:
   push:
@@ -28,11 +28,6 @@ jobs:
 
       - name: Run compliance suite against go-odata reference server
         env:
-          # Immutable reference baseline includes the fixes in NLstn/go-odata#950.
-          # Pinning allows coordinated server/suite fixes to pass before either merges.
-          GO_ODATA_REF: 573ce8651ca3370fc7a948d87f0de9536a70fc12
-        # The pinned reference predates 4.02. Run all versions after the pin advances.
-        run: |
-          for protocol_version in 4.0 4.01 vocabularies; do
-            ./scripts/run-reference.sh -version "$protocol_version" -verbose
-          done
+          # Pin the go-odata commit that implements the 4.02 behavior exercised here.
+          GO_ODATA_REF: 7f1f4237f5dad37bdcd9ea5fae3a25bc09a88285
+        run: ./scripts/run-reference.sh -verbose
