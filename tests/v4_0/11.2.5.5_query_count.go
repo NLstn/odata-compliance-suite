@@ -30,42 +30,7 @@ func QueryCount() *framework.TestSuite {
 				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
 			}
 
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse JSON: %w", err)
-			}
-
-			// @odata.count must be present and a non-negative integer.
-			countVal, ok := result["@odata.count"]
-			if !ok {
-				return fmt.Errorf("@odata.count field is missing")
-			}
-			countFloat, ok := countVal.(float64)
-			if !ok {
-				return fmt.Errorf("@odata.count is not a number, got %T", countVal)
-			}
-			if countFloat < 0 || math.Trunc(countFloat) != countFloat {
-				return fmt.Errorf("@odata.count must be a non-negative integer, got %v", countFloat)
-			}
-			count := int(countFloat)
-
-			value, ok := result["value"].([]interface{})
-			if !ok {
-				return fmt.Errorf("response missing 'value' array")
-			}
-
-			// @odata.count is the TOTAL count and must never be smaller than the
-			// number of items in the current page.
-			if count < len(value) {
-				return fmt.Errorf("@odata.count=%d is smaller than the %d items returned", count, len(value))
-			}
-			// Without a next link the full collection is in this page, so the count
-			// must equal the number of items returned (Part 1 §11.2.5.5).
-			if _, paged := result["@odata.nextLink"]; !paged && count != len(value) {
-				return fmt.Errorf("@odata.count=%d but the (unpaged) response contains %d items", count, len(value))
-			}
-
-			return nil
+			return assertCountMatchesCollection(ctx, resp)
 		},
 	)
 
@@ -100,9 +65,10 @@ func QueryCount() *framework.TestSuite {
 	)
 
 	// Test 3: $count with $filter returns filtered count
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_count_with_filter",
 		"$count with $filter returns filtered count",
+		[]framework.RequiredCapability{framework.Require(framework.CapFilter, "Products")},
 		func(ctx *framework.TestContext) error {
 			all, err := fetchAllProducts(ctx)
 			if err != nil {
@@ -119,25 +85,12 @@ func QueryCount() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			count, err := readInlineCount(ctx, resp)
+			if err != nil {
+				return err
 			}
 
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse JSON: %w", err)
-			}
-
-			countVal, ok := result["@odata.count"]
-			if !ok {
-				return fmt.Errorf("@odata.count field is missing")
-			}
-			count, ok := countVal.(float64)
-			if !ok {
-				return fmt.Errorf("@odata.count is not a number")
-			}
-
-			items, err := collectEntityCollection(ctx, "/Products?$count=true&$filter=Price%20gt%20100")
+			items, err := collectEntityPages(ctx, resp)
 			if err != nil {
 				return err
 			}
@@ -145,8 +98,8 @@ func QueryCount() *framework.TestSuite {
 			// Cross-check @odata.count against the independently computed oracle
 			// total, not merely against len(value) — a server that filters wrong
 			// but reports a self-consistent count would otherwise still pass.
-			if count < 0 || math.Trunc(count) != count || int(count) != len(expected) {
-				return fmt.Errorf("@odata.count=%d but %d product(s) actually satisfy Price gt 100", int(count), len(expected))
+			if count != float64(len(expected)) {
+				return fmt.Errorf("@odata.count=%v but %d product(s) actually satisfy Price gt 100", count, len(expected))
 			}
 			if len(items) != len(expected) {
 				return fmt.Errorf("response contains %d item(s) but %d product(s) actually satisfy Price gt 100", len(items), len(expected))
@@ -175,9 +128,10 @@ func QueryCount() *framework.TestSuite {
 	)
 
 	// Test 4: $count with $search returns search-filtered count
-	suite.AddTest(
+	suite.AddTestWithCapabilities(
 		"test_count_with_search",
 		"$count with $search returns search-filtered count",
+		[]framework.RequiredCapability{framework.Require(framework.CapSearch, "Products")},
 		func(ctx *framework.TestContext) error {
 			all, err := fetchAllProducts(ctx)
 			if err != nil {
@@ -198,26 +152,12 @@ func QueryCount() *framework.TestSuite {
 			if err != nil {
 				return err
 			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
+			countFloat, err := readInlineCount(ctx, resp)
+			if err != nil {
+				return err
 			}
 
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse JSON: %w", err)
-			}
-
-			countVal, ok := result["@odata.count"]
-			if !ok {
-				return fmt.Errorf("@odata.count field is missing")
-			}
-
-			countFloat, ok := countVal.(float64)
-			if !ok {
-				return fmt.Errorf("@odata.count is not a number")
-			}
-
-			items, err := collectEntityCollection(ctx, "/Products?$count=true&$search=Laptop")
+			items, err := collectEntityPages(ctx, resp)
 			if err != nil {
 				return err
 			}
@@ -226,7 +166,7 @@ func QueryCount() *framework.TestSuite {
 				return fmt.Errorf("expected at least one search result for 'Laptop'")
 			}
 
-			if countFloat < 0 || math.Trunc(countFloat) != countFloat || int(countFloat) != len(items) {
+			if countFloat != float64(len(items)) {
 				return fmt.Errorf("count=%v but response contains %d items", countFloat, len(items))
 			}
 
@@ -244,123 +184,90 @@ func QueryCount() *framework.TestSuite {
 		},
 	)
 
-	// Test 5: $count with $top still returns total count
-	suite.AddTest(
-		"test_count_with_top",
-		"$count with $top returns total count, not page count",
+	for _, tc := range []struct {
+		name, description, query string
+		required                 []framework.RequiredCapability
+		wantItems                int
+	}{
+		{"test_count_with_top", "$count includes entities outside $top", "&$top=1",
+			[]framework.RequiredCapability{framework.Require(framework.CapTop, "Products")}, 1},
+		{"test_count_with_top_zero", "$count includes entities when $top=0 returns no items", "&$top=0",
+			[]framework.RequiredCapability{framework.Require(framework.CapTop, "Products")}, 0},
+		{"test_count_with_skip", "$count includes entities excluded by $skip", "&$skip=2&$top=1",
+			[]framework.RequiredCapability{framework.Require(framework.CapSkip, "Products"), framework.Require(framework.CapTop, "Products")}, 1},
+	} {
+		suite.AddTestWithCapabilities(tc.name, tc.description, tc.required, func(ctx *framework.TestContext) error {
+			all, err := fetchAllProducts(ctx)
+			if err != nil {
+				return err
+			}
+			if len(all) < 3 {
+				return fmt.Errorf("expected at least three seeded Products, got %d", len(all))
+			}
+			return assertCountAndSize(ctx, "/Products?$count=true"+tc.query, len(all), tc.wantItems)
+		})
+	}
+
+	suite.AddTestWithCapabilities(
+		"test_count_with_no_matches",
+		"$count=true includes a zero count for an empty filtered collection",
+		[]framework.RequiredCapability{framework.Require(framework.CapFilter, "Products")},
 		func(ctx *framework.TestContext) error {
-			// First get total count without $top
-			totalResp, err := ctx.GET("/Products?$count=true")
-			if err != nil {
-				return err
-			}
-			if totalResp.StatusCode != 200 {
-				return fmt.Errorf("failed to get total count: status %d", totalResp.StatusCode)
-			}
-
-			var totalResult map[string]interface{}
-			if err := json.Unmarshal(totalResp.Body, &totalResult); err != nil {
-				return fmt.Errorf("failed to parse total count JSON: %w", err)
-			}
-
-			totalCountVal, ok := totalResult["@odata.count"]
-			if !ok {
-				return fmt.Errorf("total response missing @odata.count")
-			}
-			totalCountFloat, ok := totalCountVal.(float64)
-			if !ok {
-				return fmt.Errorf("@odata.count is not a number")
-			}
-			totalCount := int(totalCountFloat)
-
-			// Now get with $top=1
-			resp, err := ctx.GET("/Products?$count=true&$top=1")
-			if err != nil {
-				return err
-			}
-			if resp.StatusCode != 200 {
-				return fmt.Errorf("expected status 200, got %d", resp.StatusCode)
-			}
-
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse JSON: %w", err)
-			}
-
-			// Verify @odata.count is present
-			countVal, ok := result["@odata.count"]
-			if !ok {
-				return fmt.Errorf("@odata.count field is missing")
-			}
-
-			countFloat, ok := countVal.(float64)
-			if !ok {
-				return fmt.Errorf("@odata.count is not a number")
-			}
-			count := int(countFloat)
-
-			// Get the items
-			value, ok := result["value"].([]interface{})
-			if !ok {
-				return fmt.Errorf("response missing 'value' array")
-			}
-
-			items := len(value)
-
-			// The @odata.count should be the TOTAL count, not the page count
-			if count != totalCount {
-				return fmt.Errorf("count=%d but total count is %d (should match total, not page size)", count, totalCount)
-			}
-
-			// The number of items in the response should be 1 (due to $top=1)
-			if items != 1 {
-				return fmt.Errorf("expected 1 item in response (due to $top=1), got %d", items)
-			}
-
-			// The count should be greater than or equal to the items
-			if count < items {
-				return fmt.Errorf("count=%d should be >= items=%d", count, items)
-			}
-
-			return nil
-		},
-	)
-
-	suite.AddTest(
-		"test_count_with_skip",
-		"$count with $skip returns the total count before paging",
-		func(ctx *framework.TestContext) error {
-			baseResp, err := ctx.GET("/Products?$count=true")
-			if err != nil {
-				return err
-			}
-			var base map[string]interface{}
-			if err := json.Unmarshal(baseResp.Body, &base); err != nil {
-				return fmt.Errorf("failed to parse baseline count: %w", err)
-			}
-			total, ok := base["@odata.count"].(float64)
-			if !ok {
-				return fmt.Errorf("baseline response missing numeric @odata.count")
-			}
-
-			resp, err := ctx.GET("/Products?$count=true&$skip=2&$top=1")
-			if err != nil {
-				return err
-			}
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-			var result map[string]interface{}
-			if err := json.Unmarshal(resp.Body, &result); err != nil {
-				return fmt.Errorf("failed to parse paged count: %w", err)
-			}
-			count, ok := result["@odata.count"].(float64)
-			if !ok || count != total {
-				return fmt.Errorf("@odata.count with $skip = %v, want total %v", result["@odata.count"], total)
-			}
-			return nil
+			return assertCountAndSize(ctx, "/Products?$count=true&$filter=false", 0, 0)
 		},
 	)
 
 	return suite
+}
+
+func assertCountMatchesCollection(ctx *framework.TestContext, resp *framework.HTTPResponse) error {
+	count, err := readInlineCount(ctx, resp)
+	if err != nil {
+		return err
+	}
+	items, err := collectEntityPages(ctx, resp)
+	if err != nil {
+		return err
+	}
+	if count != float64(len(items)) {
+		return fmt.Errorf("@odata.count=%v but the collection contains %d entities across all pages", count, len(items))
+	}
+	return nil
+}
+
+func assertCountAndSize(ctx *framework.TestContext, path string, wantCount, wantItems int) error {
+	resp, err := ctx.GET(path)
+	if err != nil {
+		return err
+	}
+	count, err := readInlineCount(ctx, resp)
+	if err != nil {
+		return err
+	}
+	if count != float64(wantCount) {
+		return fmt.Errorf("@odata.count=%v, want %d", count, wantCount)
+	}
+	items, err := collectEntityPages(ctx, resp)
+	if err != nil {
+		return err
+	}
+	if len(items) != wantItems {
+		return fmt.Errorf("collection contains %d entities, want %d across all pages", len(items), wantItems)
+	}
+	return nil
+}
+
+func readInlineCount(ctx *framework.TestContext, resp *framework.HTTPResponse) (float64, error) {
+	if err := ctx.AssertStatusCode(resp, 200); err != nil {
+		return 0, err
+	}
+	var payload map[string]interface{}
+	if err := ctx.GetJSON(resp, &payload); err != nil {
+		return 0, err
+	}
+	count, ok := payload["@odata.count"].(float64)
+	if !ok || count < 0 || math.Trunc(count) != count {
+		return 0, fmt.Errorf("expected a non-negative integer @odata.count, got %v", payload["@odata.count"])
+	}
+	return count, nil
 }

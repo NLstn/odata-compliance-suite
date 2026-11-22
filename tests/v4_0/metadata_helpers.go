@@ -16,6 +16,7 @@ type csdlDocument struct {
 
 type csdlSchema struct {
 	Namespace        string                `xml:"Namespace,attr"`
+	Alias            string                `xml:"Alias,attr"`
 	EntityTypes      []csdlEntityType      `xml:"EntityType"`
 	EntityContainers []csdlEntityContainer `xml:"EntityContainer"`
 	Functions        []csdlOperation       `xml:"Function"`
@@ -41,8 +42,9 @@ type csdlEntityType struct {
 }
 
 type csdlProperty struct {
-	Name string `xml:"Name,attr"`
-	Type string `xml:"Type,attr"`
+	Name      string `xml:"Name,attr"`
+	Type      string `xml:"Type,attr"`
+	MaxLength string `xml:"MaxLength,attr"`
 }
 
 type csdlNavigationProperty struct {
@@ -162,16 +164,20 @@ func entityTypeForEntitySet(ctx *framework.TestContext, entitySetName string) (s
 	if err != nil {
 		return "", err
 	}
+	return findCsdlEntitySetType(doc, entitySetName), nil
+}
+
+func findCsdlEntitySetType(doc *csdlDocument, entitySetName string) string {
 	for _, schema := range doc.DataServices.Schemas {
 		for _, container := range schema.EntityContainers {
 			for _, set := range container.EntitySets {
 				if set.Name == entitySetName {
-					return set.EntityType, nil
+					return set.EntityType
 				}
 			}
 		}
 	}
-	return "", nil
+	return ""
 }
 
 func entityTypeHasProperty(ctx *framework.TestContext, entityTypeName, propertyName string) (bool, error) {
@@ -279,7 +285,8 @@ func entityTypeHasStreamProperty(ctx *framework.TestContext, entityTypeName, pro
 func findCsdlEntityType(doc *csdlDocument, entityTypeName string) (csdlEntityType, string, bool) {
 	for _, schema := range doc.DataServices.Schemas {
 		for _, entityType := range schema.EntityTypes {
-			if entityType.Name == entityTypeName || schema.Namespace+"."+entityType.Name == entityTypeName {
+			if entityType.Name == entityTypeName || schema.Namespace+"."+entityType.Name == entityTypeName ||
+				(schema.Alias != "" && schema.Alias+"."+entityType.Name == entityTypeName) {
 				return entityType, schema.Namespace, true
 			}
 		}

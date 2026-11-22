@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    name: Build & vet
+    name: Build, vet & test
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
@@ -34,7 +34,8 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      # The suite has no service to test against in its own CI; this just
-      # confirms the module stays buildable before a release tag is cut.
+      - name: Unit tests
+        run: go test ./...
+
       - name: Build
         run: go build -v ./...
