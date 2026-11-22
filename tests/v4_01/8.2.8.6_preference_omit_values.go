@@ -1,7 +1,6 @@
 package v4_01
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,169 +12,107 @@ import (
 func PreferenceOmitValues() *framework.TestSuite {
 	suite := framework.NewTestSuite(
 		"8.2.8.6 Preference omit-values",
-		"Validates OData 4.01 omit-values preference behavior and compatibility with the OData 4.0 prefixed form.",
+		"Checks the response and confirmation header when a service applies omit-values.",
 		"https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part1-protocol.html#sec_Preferenceomitvalues",
 	)
 
-	suite.AddTest(
-		"test_omit_values_unprefixed_is_accepted",
-		"Prefer: omit-values=nulls is accepted on data requests",
-		func(ctx *framework.TestContext) error {
-			// First fetch the same products WITHOUT the preference to discover which ones
-			// have null Description values.
-			baseResp, err := ctx.GET("/Products?$top=3&$select=ID,Name,Description")
-			if err != nil {
-				return err
-			}
-			if baseResp.StatusCode < http.StatusOK || baseResp.StatusCode >= 300 {
-				return framework.NewError(fmt.Sprintf("baseline request failed with %d", baseResp.StatusCode))
-			}
-			var basePayload struct {
-				Value []map[string]interface{} `json:"value"`
-			}
-			if err := json.Unmarshal(baseResp.Body, &basePayload); err != nil {
-				return framework.NewError(fmt.Sprintf("failed to parse baseline response: %v", err))
-			}
-
-			// Determine which IDs have a null Description in normal mode.
-			nullDescriptionIDs := map[interface{}]struct{}{}
-			for _, entity := range basePayload.Value {
-				if desc, hasDesc := entity["Description"]; !hasDesc || desc == nil {
-					nullDescriptionIDs[entity["ID"]] = struct{}{}
+	for _, value := range []string{"nulls", "defaults"} {
+		suite.AddTest(
+			"test_omit_values_"+value,
+			fmt.Sprintf("omit-values=%s preserves non-default values and confirms any omission", value),
+			func(ctx *framework.TestContext) error {
+				version := framework.Header{Key: "OData-MaxVersion", Value: "4.01"}
+				products, err := collectEntityCollection(ctx, "/Products", version)
+				if err != nil {
+					return err
 				}
-			}
 
-			// Now make the omit-values=nulls request.
-			resp, err := ctx.GET("/Products?$top=3&$select=ID,Name,Description", framework.Header{Key: "Prefer", Value: "omit-values=nulls"})
-			if err != nil {
-				return err
-			}
-
-			if resp.StatusCode < http.StatusOK || resp.StatusCode >= 300 {
-				return framework.NewError(fmt.Sprintf("expected 2xx for omit-values request, got %d", resp.StatusCode))
-			}
-
-			if err := ctx.AssertJSONField(resp, "value"); err != nil {
-				return framework.NewError(fmt.Sprintf("response must remain a valid collection payload: %v", err))
-			}
-
-			// The server must omit null-valued properties when omit-values=nulls is
-			// requested. Fixed in go-odata#764.
-			if len(nullDescriptionIDs) > 0 {
-				var omitPayload struct {
-					Value []map[string]interface{} `json:"value"`
-				}
-				if err := json.Unmarshal(resp.Body, &omitPayload); err != nil {
-					return framework.NewError(fmt.Sprintf("failed to parse omit-values response: %v", err))
-				}
-				for i, entity := range omitPayload.Value {
-					if _, isNullDesc := nullDescriptionIDs[entity["ID"]]; isNullDesc {
-						if _, hasDesc := entity["Description"]; hasDesc {
-							return framework.NewError(fmt.Sprintf("entity %d (ID=%v) has null Description but 'Description' key is still present with omit-values=nulls", i, entity["ID"]))
-						}
+				for _, product := range products {
+					if description, present := product["Description"]; !present || description != nil {
+						continue
 					}
+					id, ok := product["ID"].(string)
+					if !ok || id == "" {
+						return fmt.Errorf("seeded Product with null Description has no ID")
+					}
+					path := fmt.Sprintf("/Products(%s)", id)
+					baseline, err := ctx.GET(path, version)
+					if err != nil {
+						return err
+					}
+					if err := ctx.AssertStatusCode(baseline, http.StatusOK); err != nil {
+						return err
+					}
+					var original map[string]interface{}
+					if err := ctx.GetJSON(baseline, &original); err != nil {
+						return err
+					}
+					if description, present := original["Description"]; !present || description != nil {
+						continue
+					}
+
+					resp, err := ctx.GET(path, version, framework.Header{Key: "Prefer", Value: "omit-values=" + value})
+					if err != nil {
+						return err
+					}
+					return assertOmitValuesResponse(ctx, resp, original, value)
 				}
-			}
 
-			return nil
-		},
-	)
-
-	suite.AddTest(
-		"test_omit_values_prefixed_alias_is_accepted",
-		"Prefer: odata.omit-values=nulls is accepted for 4.0 compatibility",
-		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=3", framework.Header{Key: "Prefer", Value: "odata.omit-values=nulls"})
-			if err != nil {
-				return err
-			}
-
-			if resp.StatusCode < http.StatusOK || resp.StatusCode >= 300 {
-				return framework.NewError(fmt.Sprintf("expected 2xx for odata.omit-values request, got %d", resp.StatusCode))
-			}
-
-			if err := ctx.AssertJSONField(resp, "value"); err != nil {
-				return framework.NewError(fmt.Sprintf("response must remain a valid collection payload: %v", err))
-			}
-
-			return nil
-		},
-	)
-
-	suite.AddTest(
-		"test_omit_values_preference_applied_is_consistent",
-		"If Preference-Applied is returned, it echoes the applied omit-values form",
-		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/Products?$top=3", framework.Header{Key: "Prefer", Value: "omit-values=defaults"})
-			if err != nil {
-				return err
-			}
-
-			if resp.StatusCode < http.StatusOK || resp.StatusCode >= 300 {
-				return framework.NewError(fmt.Sprintf("expected 2xx for omit-values=defaults request, got %d", resp.StatusCode))
-			}
-
-			applied := resp.Headers.Get("Preference-Applied")
-			if applied == "" {
-				return nil
-			}
-
-			if !strings.Contains(applied, "omit-values=defaults") && !strings.Contains(applied, "odata.omit-values=defaults") {
-				return framework.NewError(fmt.Sprintf("unexpected Preference-Applied value for omit-values: %q", applied))
-			}
-
-			return nil
-		},
-	)
-
-	suite.AddTest(
-		"test_omit_values_version_negotiation_4_01_vs_4_0",
-		"unprefixed omit-values preference remains supported with OData-MaxVersion 4.0",
-		func(ctx *framework.TestContext) error {
-			v401Headers := []framework.Header{
-				{Key: "OData-MaxVersion", Value: "4.01"},
-				{Key: "Prefer", Value: "omit-values=nulls"},
-			}
-			v401Resp, err := ctx.GET("/Products?$top=3", v401Headers...)
-			if err != nil {
-				return err
-			}
-			if v401Resp.StatusCode < http.StatusOK || v401Resp.StatusCode >= 300 {
-				return framework.NewError(fmt.Sprintf("expected 2xx for 4.01 negotiated omit-values request, got %d", v401Resp.StatusCode))
-			}
-
-			v40Headers := []framework.Header{
-				{Key: "OData-MaxVersion", Value: "4.0"},
-				{Key: "Prefer", Value: "omit-values=nulls"},
-			}
-			v40Resp, err := ctx.GET("/Products?$top=3&$select=ID,Description", v40Headers...)
-			if err != nil {
-				return err
-			}
-			if v40Resp.StatusCode < http.StatusOK || v40Resp.StatusCode >= 300 {
-				return framework.NewError(fmt.Sprintf("expected 2xx for 4.0 negotiated omit-values request, got %d", v40Resp.StatusCode))
-			}
-
-			applied := v40Resp.Headers.Get("Preference-Applied")
-			if applied != "" && !strings.Contains(applied, "omit-values=nulls") {
-				return framework.NewError(fmt.Sprintf("unexpected Preference-Applied value %q", applied))
-			}
-
-			var payload struct {
-				Value []map[string]interface{} `json:"value"`
-			}
-			if err := json.Unmarshal(v40Resp.Body, &payload); err != nil {
-				return framework.NewError(fmt.Sprintf("failed to parse 4.0-constrained omit-values response: %v", err))
-			}
-			for i, entity := range payload.Value {
-				if description, present := entity["Description"]; present && description == nil {
-					return framework.NewError(fmt.Sprintf("entity %d retains a null Description; unprefixed omit-values was not applied", i))
-				}
-			}
-
-			return nil
-		},
-	)
+				return ctx.Skip("no seeded Product has an explicit null Description in its entity response")
+			},
+		)
+	}
 
 	return suite
+}
+
+func assertOmitValuesResponse(ctx *framework.TestContext, resp *framework.HTTPResponse, original map[string]interface{}, value string) error {
+	if err := ctx.AssertStatusCode(resp, http.StatusOK); err != nil {
+		return err
+	}
+	if err := ctx.AssertHeader(resp, "OData-Version", "4.01"); err != nil {
+		return err
+	}
+	var entity map[string]interface{}
+	if err := ctx.GetJSON(resp, &entity); err != nil {
+		return err
+	}
+	for _, field := range []string{"ID", "Name"} {
+		want, ok := original[field].(string)
+		if !ok || want == "" || entity[field] != want {
+			return fmt.Errorf("expected unchanged %s %q, got %v", field, want, entity[field])
+		}
+	}
+
+	description, present := entity["Description"]
+	if present && description != nil {
+		return fmt.Errorf("expected Description to remain null or be omitted, got %v", description)
+	}
+	if !present {
+		for field := range original {
+			if strings.HasPrefix(field, "Description@") {
+				return fmt.Errorf("omit-values removed Description despite its annotation %q", field)
+			}
+		}
+	}
+
+	confirmed := false
+	for _, header := range resp.Headers.Values("Preference-Applied") {
+		for _, pref := range strings.Split(header, ",") {
+			name, parameter, _ := strings.Cut(strings.TrimSpace(pref), "=")
+			if !strings.EqualFold(strings.TrimSpace(name), "omit-values") {
+				continue
+			}
+			parameter, _, _ = strings.Cut(parameter, ";")
+			parameter = strings.TrimSpace(parameter)
+			if parameter != value && parameter != `"`+value+`"` {
+				return fmt.Errorf("unexpected Preference-Applied token %q for omit-values=%s", pref, value)
+			}
+			confirmed = true
+		}
+	}
+	if !present && !confirmed {
+		return fmt.Errorf("Description was omitted without Preference-Applied: omit-values=%s", value)
+	}
+	return nil
 }

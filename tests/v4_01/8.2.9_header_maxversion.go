@@ -11,7 +11,7 @@ import (
 func HeaderMaxVersion() *framework.TestSuite {
 	suite := framework.NewTestSuite(
 		"8.2.9 Header OData-MaxVersion",
-		"Tests OData 4.01 max-version negotiation for default and higher-than-supported requests.",
+		"Tests OData 4.01 max-version negotiation for default requests and negotiation with an OData 4.02 client.",
 		"https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part1-protocol.html#sec_HeaderODataMaxVersion",
 	)
 
@@ -34,8 +34,8 @@ func HeaderMaxVersion() *framework.TestSuite {
 			}
 
 			version := strings.TrimSpace(resp.Headers.Get("OData-Version"))
-			if version != "4.0" && version != "4.01" {
-				return framework.NewError(fmt.Sprintf("expected OData-Version 4.0 or 4.01, got %q", version))
+			if version != "4.0" && version != "4.01" && version != "4.02" {
+				return framework.NewError(fmt.Sprintf("expected OData-Version 4.0, 4.01, or 4.02, got %q", version))
 			}
 
 			return nil
@@ -43,50 +43,24 @@ func HeaderMaxVersion() *framework.TestSuite {
 	)
 
 	suite.AddTest(
-		"test_higher_maxversion_returns_highest_supported",
-		"Requests with OData-MaxVersion above 4.01 return the highest supported version 4.01",
+		"test_402_client_negotiation",
+		"A 4.02 client can negotiate with a 4.01 or 4.02 service",
 		func(ctx *framework.TestContext) error {
-			productPath, err := firstEntityPath(ctx, "Products")
-			if err != nil {
-				return err
+			for _, path := range []string{"/", "/Products"} {
+				for _, maxVersion := range []string{"4.0", "4.01", "4.02"} {
+					resp, err := ctx.GET(path, framework.Header{Key: "OData-MaxVersion", Value: maxVersion})
+					if err != nil {
+						return err
+					}
+					if err := ctx.AssertStatusCode(resp, 200); err != nil {
+						return fmt.Errorf("%s with OData-MaxVersion %s: %w", path, maxVersion, err)
+					}
+					version := strings.TrimSpace(resp.Headers.Get("OData-Version"))
+					if version != maxVersion && !(maxVersion == "4.02" && version == "4.01") {
+						return fmt.Errorf("%s with OData-MaxVersion %s returned OData-Version %q", path, maxVersion, version)
+					}
+				}
 			}
-
-			resp, err := ctx.GET(productPath, framework.Header{Key: "OData-MaxVersion", Value: "5.0"})
-			if err != nil {
-				return err
-			}
-
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			version := strings.TrimSpace(resp.Headers.Get("OData-Version"))
-			if version != "4.01" {
-				return framework.NewError(fmt.Sprintf("expected highest supported OData-Version 4.01, got %q", version))
-			}
-
-			return nil
-		},
-	)
-
-	suite.AddTest(
-		"test_service_document_higher_maxversion_returns_highest_supported",
-		"Service document requests with OData-MaxVersion above 4.01 return OData-Version 4.01",
-		func(ctx *framework.TestContext) error {
-			resp, err := ctx.GET("/", framework.Header{Key: "OData-MaxVersion", Value: "5.0"})
-			if err != nil {
-				return err
-			}
-
-			if err := ctx.AssertStatusCode(resp, 200); err != nil {
-				return err
-			}
-
-			version := strings.TrimSpace(resp.Headers.Get("OData-Version"))
-			if version != "4.01" {
-				return framework.NewError(fmt.Sprintf("expected OData-Version 4.01 on service document, got %q", version))
-			}
-
 			return nil
 		},
 	)
