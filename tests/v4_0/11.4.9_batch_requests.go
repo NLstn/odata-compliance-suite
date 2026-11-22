@@ -326,7 +326,7 @@ Content-Transfer-Encoding: binary
 
 POST Products HTTP/1.1
 Content-Type: application/json
-OData-Version: 4.02
+OData-Version: 5.0
 
 %s
 --batch_invalid_version--`, payload)
@@ -380,7 +380,7 @@ Content-ID: 2
 
 POST Products HTTP/1.1
 Content-Type: application/json
-OData-Version: 4.02
+OData-Version: 5.0
 
 %s
 --changeset_version_rollback--

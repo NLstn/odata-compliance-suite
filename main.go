@@ -13,6 +13,7 @@ import (
 	"github.com/nlstn/odata-compliance-suite/framework"
 	v4_0 "github.com/nlstn/odata-compliance-suite/tests/v4_0"
 	v4_01 "github.com/nlstn/odata-compliance-suite/tests/v4_01"
+	v4_02 "github.com/nlstn/odata-compliance-suite/tests/v4_02"
 	"github.com/nlstn/odata-compliance-suite/tests/vocabularies/aggregation"
 	"github.com/nlstn/odata-compliance-suite/tests/vocabularies/capabilities"
 	"github.com/nlstn/odata-compliance-suite/tests/vocabularies/core"
@@ -27,7 +28,7 @@ var buildVersion = "dev"
 
 var (
 	serverURL  = flag.String("server", "http://localhost:9090", "URL of the OData service under test")
-	version    = flag.String("version", "all", "OData version to test (4.0, 4.01, vocabularies, or all)")
+	version    = flag.String("version", "all", "OData version to test (4.0, 4.01, 4.02, vocabularies, or all)")
 	pattern    = flag.String("pattern", "", "Run only suites whose name matches this substring")
 	debug      = flag.Bool("debug", false, "Enable debug mode with full HTTP request/response details")
 	verbose    = flag.Bool("verbose", false, "Enable verbose mode to show all individual test results")
@@ -1045,6 +1046,43 @@ func main() {
 		})
 	}
 
+	if *version == "all" || *version == "4.02" {
+		testSuites = append(testSuites,
+			TestSuiteInfo{
+				Name: "5.1_protocol_versioning_4_02", Version: "4.02", Suite: v4_02.ProtocolVersioning,
+				ConformanceLevel: framework.LevelMinimal, Feature: "HTTP Protocol",
+			},
+			TestSuiteInfo{
+				Name: "10.2_context_url_4_02", Version: "4.02", Suite: v4_02.ContextURL,
+				ConformanceLevel: framework.LevelMinimal, Feature: "URL Conventions",
+			},
+			TestSuiteInfo{
+				Name: "5.1.4_select_keys_4_02", Version: "4.02", Suite: v4_02.SelectKeys,
+				ConformanceLevel: framework.LevelIntermediate, Feature: "Selection",
+			},
+			TestSuiteInfo{
+				Name: "4.17_query_request_body_4_02", Version: "4.02", Suite: v4_02.QueryRequestBody,
+				ConformanceLevel: framework.LevelIntermediate, Feature: "Query Options",
+			},
+			TestSuiteInfo{
+				Name: "5.1.3_expand_4_02", Version: "4.02", Suite: v4_02.Expand,
+				ConformanceLevel: framework.LevelAdvanced, Feature: "Expansion",
+			},
+			TestSuiteInfo{
+				Name: "5.1.1.7.1_filter_matches_pattern_4_02", Version: "4.02", Suite: v4_02.MatchesPattern,
+				ConformanceLevel: framework.LevelAdvanced, Feature: "Filtering",
+			},
+			TestSuiteInfo{
+				Name: "19_json_batch_4_02", Version: "4.02", Suite: v4_02.JSONBatch,
+				ConformanceLevel: framework.LevelAdvanced, Feature: "Batch",
+			},
+			TestSuiteInfo{
+				Name: "15_delta_payload_4_02", Version: "4.02", Suite: v4_02.DeltaPayload,
+				ConformanceLevel: framework.LevelIntermediate, Feature: "Delta",
+			},
+		)
+	}
+
 	if len(testSuites) == 0 {
 		fmt.Fprintf(progressOut, "No test suites found for version: %s\n", *version)
 		os.Exit(1)
@@ -1382,8 +1420,8 @@ func main() {
 		}
 
 		versionPrefix := "V4"
-		if suiteInfo.Version == "4.01" {
-			versionPrefix = "V4.01"
+		if suiteInfo.Version == "4.01" || suiteInfo.Version == "4.02" {
+			versionPrefix = "V" + suiteInfo.Version
 		}
 
 		totalPlannedTests += len(suite.Tests)
@@ -1571,7 +1609,9 @@ func main() {
 
 	// Determine the highest fully completed coverage band per version (cumulative).
 	conformanceByVersion := map[string]framework.ConformanceLevel{}
-	for ver, lvls := range levelMap {
+	protocolVersions := []string{"4.0", "4.01", "4.02"}
+	for index, ver := range protocolVersions {
+		lvls := levelMap[ver]
 		highest := framework.LevelUnspecified
 		for _, lvl := range []framework.ConformanceLevel{
 			framework.LevelMinimal,
@@ -1587,26 +1627,22 @@ func main() {
 			if ls.total != registeredBands[coverageBand{ver, lvl}] || ls.failed > 0 || ls.skipped > 0 {
 				break
 			}
-			// Every OData 4.01 level also requires the corresponding 4.0
-			// level. A 4.01-only run therefore cannot make a complete claim.
-			if ver == "4.01" {
-				base := levelMap["4.0"][lvl]
-				if base == nil || base.total == 0 || base.total != registeredBands[coverageBand{"4.0", lvl}] || base.failed > 0 || base.skipped > 0 {
-					break
-				}
+			// The previously computed band already includes its own prerequisites.
+			if index > 0 && conformanceByVersion[protocolVersions[index-1]] < lvl {
+				break
 			}
 			highest = lvl
 		}
 		conformanceByVersion[ver] = highest
 	}
 
-	if levelMap["4.0"] != nil || levelMap["4.01"] != nil {
+	if levelMap["4.0"] != nil || levelMap["4.01"] != nil || levelMap["4.02"] != nil {
 		fmt.Fprintln(progressOut, "╔════════════════════════════════════════════════════════╗")
 		fmt.Fprintln(progressOut, "║              SUITE COVERAGE BAND REPORT                ║")
 		fmt.Fprintln(progressOut, "╚════════════════════════════════════════════════════════╝")
 		fmt.Fprintln(progressOut)
 
-		for _, ver := range []string{"4.0", "4.01"} {
+		for _, ver := range protocolVersions {
 			if _, ok := levelMap[ver]; !ok {
 				continue
 			}

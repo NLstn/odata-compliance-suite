@@ -10,8 +10,8 @@ The bands are therefore a navigation and progress aid. The individual test
 result and its linked specification section remain authoritative.
 
 A band is **Incomplete** if any of its registered suites were filtered out or
-any of its tests were skipped. Each cumulative 4.01 band also requires completion
-of the corresponding 4.0 band.
+any of its tests were skipped. Each cumulative 4.01 band requires the
+corresponding 4.0 band, and each 4.02 band requires the corresponding 4.01 band.
 
 ## Levels
 
@@ -156,3 +156,11 @@ Coverage bands are **cumulative** in the report.
 ```
 
 The per-feature matrix is printed in `--verbose` mode and shows passed/failed/skipped test counts per feature group.
+
+## OData 4.02 incremental coverage
+
+| Band | Suites |
+|------|--------|
+| Minimal | `5.1_protocol_versioning_4_02`, `10.2_context_url_4_02` |
+| Intermediate | `5.1.4_select_keys_4_02`, `4.17_query_request_body_4_02`, `15_delta_payload_4_02` |
+| Advanced | `5.1.3_expand_4_02`, `5.1.1.7.1_filter_matches_pattern_4_02`, `19_json_batch_4_02` |

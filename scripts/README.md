@@ -40,6 +40,7 @@ re-cloning on every run:
 ```bash
 git clone https://github.com/NLstn/go-odata /tmp/go-odata
 GO_ODATA_DIR=/tmp/go-odata ./scripts/run-reference.sh -verbose
+GO_ODATA_DIR=/tmp/go-odata ./scripts/run-reference.sh -version 4.02
 ```
 
 For coordinated server and suite fixes, set `GO_ODATA_REF` to the server's
